@@ -488,8 +488,16 @@ fn vehicle_tracks(ex: &ExtractionResult, c: &Calibration) -> Vec<(i32, u32, Vec<
     out
 }
 
-pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints) -> crate::Film {
+pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints) -> Result<crate::Film, crate::Error> {
     let film = Container::new(chunks, Framing::Packets);
+    // Every tick of a film sends the tick message; replay chunks without one
+    // aren't a film's.
+    let ticks = film
+        .frames()
+        .any(|f| crate::payload::find_tick_message(f.chunk, 8 * f.start as i64, 8 * f.end as i64).is_some());
+    if !ticks {
+        return Err(crate::Error::NoTicks);
+    }
     let packets = film.framing == Framing::Packets;
     let raw_header = crate::header::read(&film.chunks[0]);
     let highlights: Vec<HighlightEvent> =
@@ -1396,7 +1404,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         level: hints.level.or(raw_header.level.map(TagId)),
     };
 
-    crate::Film {
+    Ok(crate::Film {
         raw: film,
         params,
         has_highlights,
@@ -1419,7 +1427,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         scoreboard,
         states: states.into_iter().collect(),
         analysis: AnalysisData { accuracy, weapons, spawn_factors },
-    }
+    })
 }
 
 #[cfg(test)]

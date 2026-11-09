@@ -255,3 +255,26 @@ fn headshots_mark_their_kills() {
     }
     assert!(marked * 100 >= events * 90, "{marked} of {events} headshots on a kill");
 }
+
+/// A real header with replay chunks that aren't a film's is refused.
+#[test]
+fn garbage_replay_chunks_are_refused() {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("films/dc2ce439-0b30-445c-8185-19cb7a0a075b");
+    if !dir.exists() {
+        return;
+    }
+    let header = std::fs::read(dir.join("filmChunk0_dec")).unwrap();
+    let mut x = 0x2545_f491u32;
+    let noise: Vec<u8> = (0..200_000)
+        .map(|_| {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            x as u8
+        })
+        .collect();
+    for replay in [noise, vec![0u8; 4096]] {
+        let chunks = vec![Chunk::new(0, ChunkKind::Header, &header[..]), Chunk::new(1, ChunkKind::Replay, replay)];
+        assert_eq!(Film::from_chunks(chunks).unwrap_err(), Error::NoTicks);
+    }
+}

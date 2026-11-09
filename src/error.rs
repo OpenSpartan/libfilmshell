@@ -33,6 +33,9 @@ pub enum Error {
     UnknownHeader,
     /// The film has no replay chunk.
     NoReplay,
+    /// No replay chunk records a tick: the bytes given as replay chunks
+    /// aren't a film's.
+    NoTicks,
 }
 
 impl fmt::Display for Error {
@@ -51,6 +54,7 @@ impl fmt::Display for Error {
             }
             Error::UnknownHeader => write!(f, "chunk 0 is not a film header"),
             Error::NoReplay => write!(f, "the film has no replay chunk"),
+            Error::NoTicks => write!(f, "no replay chunk records a tick"),
         }
     }
 }

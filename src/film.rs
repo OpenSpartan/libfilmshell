@@ -97,7 +97,7 @@ impl Film {
         if crate::header::read(&data[0]).build.is_none() {
             return Err(Error::UnknownHeader);
         }
-        Ok(crate::assemble::assemble(data, has_highlights, hints))
+        crate::assemble::assemble(data, has_highlights, hints)
     }
 
     /// What chunk 0's header says: the build, the start time, the map.
