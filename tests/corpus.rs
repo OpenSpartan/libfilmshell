@@ -237,3 +237,21 @@ fn every_medal_is_kept() {
         assert_eq!(f.events().iter().filter(|e| matches!(e.event, Event::Medal(_))).count(), 458);
     }
 }
+
+/// Headshot events are headshot kills: nearly all join a kill by the same
+/// player, and no kill takes more than one.
+#[test]
+fn headshots_mark_their_kills() {
+    let (mut events, mut marked) = (0usize, 0usize);
+    for (name, f) in corpus() {
+        let n = f.events().iter().filter(|e| matches!(e.event, Event::Headshot(_))).count();
+        let m = f.kills().filter(|(_, k)| k.headshot == Some(true)).count();
+        assert!(m <= n, "{name}");
+        if n == 0 {
+            assert!(f.kills().all(|(_, k)| k.headshot.is_none()), "{name}");
+        }
+        events += n;
+        marked += m;
+    }
+    assert!(marked * 100 >= events * 90, "{marked} of {events} headshots on a kill");
+}

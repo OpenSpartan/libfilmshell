@@ -426,6 +426,38 @@ fn medal_clock(medals: &[(i32, f64)], events: &[(i64, u32)], hl_ticks: &[u32]) -
     near.get(near.len() / 2).copied()
 }
 
+/// Ticks between a kill and the headshot event sent with it.
+const HEADSHOT_TICKS: u32 = 2;
+
+/// Marks each kill the game counted as a headshot: the headshot event for
+/// its killer nearest it within [`HEADSHOT_TICKS`], each event used once.
+/// `events` are in tick order.
+fn mark_headshots(events: &mut [TimedEvent]) {
+    let shots: Vec<(Tick, PlayerId)> = events
+        .iter()
+        .filter_map(|e| match e.event {
+            Event::Headshot(p) => Some((e.tick, p)),
+            _ => None,
+        })
+        .collect();
+    if shots.is_empty() {
+        return;
+    }
+    let mut used = vec![false; shots.len()];
+    for e in events.iter_mut() {
+        let Event::Kill(k) = &mut e.event else { continue };
+        let from = shots.partition_point(|s| s.0 .0 + HEADSHOT_TICKS < e.tick.0);
+        let best = (from..shots.len())
+            .take_while(|&i| shots[i].0 .0 <= e.tick.0 + HEADSHOT_TICKS)
+            .filter(|&i| !used[i] && Some(shots[i].1) == k.killer)
+            .min_by_key(|&i| shots[i].0 .0.abs_diff(e.tick.0));
+        if let Some(i) = best {
+            used[i] = true;
+        }
+        k.headshot = Some(best.is_some());
+    }
+}
+
 /// The vehicle tracks: each tagged vehicle's position records, split where
 /// its id stands for a new vehicle, by first frame then id. Records with no
 /// known tag are chance matches of the scanner and are left out.
@@ -697,6 +729,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 assistant: assistant.and_then(|a| pid(a as i32)),
                 assistant_damage_percent: d.assistant_percent,
                 suicide: d.suicide,
+                headshot: None,
                 scored: scored(victim, frame),
                 cause,
                 weapon: weapon.map(|w| TagId(ff.weapons[w].id)).or(owner.map(TagId)),
@@ -1055,7 +1088,9 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     }
 
     events.sort_by_key(|e| e.0);
-    let events: Vec<TimedEvent> = events.into_iter().map(|(f, event)| TimedEvent { tick: tick(f), event }).collect();
+    let mut events: Vec<TimedEvent> =
+        events.into_iter().map(|(f, event)| TimedEvent { tick: tick(f), event }).collect();
+    mark_headshots(&mut events);
 
     // Lives: each path split at its life starts, then the unowned ones.
     let coordinates = calib.as_ref().map(|c| Coordinates {
@@ -1397,5 +1432,42 @@ mod tests {
         assert!((zero - 13.0).abs() <= 0.5, "{zero}");
         // Too few medals agree: no clock.
         assert_eq!(medal_clock(&medals[..2], &events[..2], &hl_ticks), None);
+    }
+
+    #[test]
+    fn headshots_join_their_kills() {
+        let kill = |killer: u8| {
+            Event::Kill(Kill {
+                victim: PlayerId(9),
+                killer: Some(PlayerId(killer)),
+                killer_damage_percent: 100,
+                assistant: None,
+                assistant_damage_percent: 0,
+                suicide: false,
+                headshot: None,
+                scored: None,
+                cause: None,
+                weapon: None,
+                position: None,
+            })
+        };
+        let at = |t: u32, event: Event| TimedEvent { tick: Tick(t), event };
+        let mut events = vec![
+            at(100, kill(1)),
+            at(101, Event::Headshot(PlayerId(1))),
+            at(200, Event::Headshot(PlayerId(2))),
+            at(200, kill(1)),
+            at(300, kill(3)),
+            at(400, Event::Headshot(PlayerId(4))),
+        ];
+        mark_headshots(&mut events);
+        let marks: Vec<Option<bool>> = events
+            .iter()
+            .filter_map(|e| match &e.event {
+                Event::Kill(k) => Some(k.headshot),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(marks, [Some(true), Some(false), Some(false)]);
     }
 }

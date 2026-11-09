@@ -54,7 +54,11 @@ pub enum Event {
     Zone(ZoneEvent),
     /// A player's respawn countdown started.
     RespawnCountdown(RespawnCountdown),
-    /// A kill was a headshot.
+    /// The game counted a headshot kill for the player: the mode script's
+    /// headshot event, which the scoreboard's headshot kills count. Sent on
+    /// the tick of the kill, which [`Kill::headshot`] marks; where the film
+    /// doesn't carry that kill's event, this is all the film has of it. PvP
+    /// modes only.
     Headshot(PlayerId),
 }
 
@@ -75,6 +79,10 @@ pub struct Kill {
     pub assistant_damage_percent: u32,
     /// The death was the victim's own doing.
     pub suicide: bool,
+    /// Whether the game counted the kill as a headshot: a headshot event for
+    /// the killer on the kill's tick or the two around it. None when the
+    /// film has no headshot events at all.
+    pub headshot: Option<bool>,
     /// Whether the scoreboard counted the death: false for the deaths the
     /// game deals everyone still alive when a match ends. None when the
     /// film's scoreboard isn't read.
