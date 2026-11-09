@@ -10,7 +10,7 @@ readme = "README.md"
 keywords = ["halo", "halo-infinite", "theater", "replay", "parser"]
 categories = ["parser-implementations", "game-development"]
 publish = false
-exclude = ["films/", "films-local/", "data/"]
+exclude = ["films/", "films-local/", "data/", "assets/"]
 
 [features]
 ## Derive `serde::Serialize` on the model types.
