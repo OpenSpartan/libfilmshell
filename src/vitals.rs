@@ -10,7 +10,7 @@ use crate::bits::bits_at;
 use crate::components::{dequantize, Params};
 use crate::container::Film;
 use crate::levels::LevelBox;
-use crate::payload::{for_each_payload_in, OpKind, Walker};
+use crate::payload::{OpKind, Payload};
 use crate::snapshot::{self, ENTITY_TABLE};
 use std::collections::HashMap;
 
@@ -28,6 +28,11 @@ struct Life {
     marks: Vec<(i64, Option<f64>, Option<f64>)>,
     shieldless: Option<bool>,
 }
+
+/// Each life's marks while a film is being read: [`Vitals::start`], then
+/// [`Vitals::reader`] over a walk, then [`Vitals::finish`].
+#[derive(Default)]
+pub struct Marks(HashMap<i32, Life>);
 
 pub struct Vitals {
     lives: HashMap<i32, Life>,
@@ -53,7 +58,8 @@ fn shieldless_at(c: &[u8], mut at: i64) -> bool {
 }
 
 impl Vitals {
-    pub fn read(film: &Film, params: &Params, level: Option<&LevelBox>) -> Vitals {
+    /// The marks the seek snapshots give.
+    pub fn start(film: &Film, params: &Params, level: Option<&LevelBox>) -> Marks {
         let mut lives: HashMap<i32, Life> = HashMap::new();
         // Snapshots first: sorting keeps them before a same-frame update.
         if let Some(level) = level {
@@ -87,8 +93,13 @@ impl Vitals {
                 }
             }
         }
-        let mut walker = Walker::new(&film.chunks[0], *params);
-        for_each_payload_in(film, &mut walker, |frame, _, payload| {
+        Marks(lives)
+    }
+
+    /// The marks the tick packets give, for a shared walk.
+    pub fn reader(marks: &mut Marks) -> impl FnMut(usize, &[u8], &Payload) + '_ {
+        let lives = &mut marks.0;
+        move |frame, _, payload| {
             for op in &payload.ops {
                 if !(512..768).contains(&op.index) || op.entity_type != Some(BIPED_TYPE) {
                     continue;
@@ -106,7 +117,12 @@ impl Vitals {
                     _ => {}
                 }
             }
-        });
+        }
+    }
+
+    /// The vitals from the marks of both.
+    pub fn finish(marks: Marks) -> Vitals {
+        let mut lives = marks.0;
         let (mut without, mut with) = (0, 0);
         for life in lives.values_mut() {
             life.marks.sort_by_key(|m| m.0);

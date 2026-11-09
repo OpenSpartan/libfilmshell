@@ -9,10 +9,8 @@
 //! is nearest the thrower, since bullets and other projectiles are created
 //! in the same window.
 
-use crate::components::Params;
-use crate::container::Film;
 use crate::events::Body;
-use crate::payload::{for_each_payload, OpKind, Walker};
+use crate::payload::{OpKind, Payload};
 use std::collections::HashMap;
 
 /// Registry block of projectile objects.
@@ -51,11 +49,9 @@ pub struct Flights {
 
 /// The throws of `film` and the projectiles created just after them.
 /// Packet framing only.
-pub fn read(film: &Film, params: Params) -> Flights {
-    let mut w = Walker::new(&film.chunks[0], params);
-    let mut out = Flights::default();
+pub fn reader(out: &mut Flights) -> impl FnMut(usize, &[u8], &Payload) + '_ {
     let mut live: HashMap<u32, usize> = HashMap::new();
-    for_each_payload(film, &mut w, |frame, p| {
+    move |frame, _, p| {
         let frame = frame as i64;
         for e in &p.events {
             if let Body::Throw { grenade, .. } = e.body {
@@ -94,6 +90,5 @@ pub fn read(film: &Film, params: Params) -> Flights {
                 }
             }
         }
-    });
-    out
+    }
 }

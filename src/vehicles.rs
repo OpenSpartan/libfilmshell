@@ -13,7 +13,7 @@
 
 use crate::components::Params;
 use crate::container::Film;
-use crate::payload::{for_each_payload, OpKind, Walker};
+use crate::payload::{walk_shared, OpKind, Payload};
 use crate::snapshot::{self, ENTITY_TABLE};
 use std::collections::HashMap;
 
@@ -47,16 +47,28 @@ impl Vehicles {
     /// Packet framing only (the tick packets' creates and the snapshots).
     pub fn read(film: &Film, params: Params) -> Vehicles {
         let mut v = Vehicles::default();
-        let mut walker = Walker::new(&film.chunks[0], params);
-        for_each_payload(film, &mut walker, |i, p| {
+        walk_shared(film, params, &mut [&mut v.reader()]);
+        v.finish(film, params);
+        v
+    }
+
+    /// [`Vehicles::read`]'s creates, for a shared walk; [`Vehicles::finish`]
+    /// adds the snapshots after it.
+    pub fn reader(&mut self) -> impl FnMut(usize, &[u8], &Payload) + '_ {
+        move |i, _, p| {
             for op in &p.ops {
                 if let (OpKind::Create { tag: Some(t) }, Some(id)) = (&op.kind, id(op.index, op.generation)) {
                     if op.entity_type.is_none_or(|e| e == VEHICLE) {
-                        v.tags.entry(id).or_default().push((i as i64, *t));
+                        self.tags.entry(id).or_default().push((i as i64, *t));
                     }
                 }
             }
-        });
+        }
+    }
+
+    /// The snapshots' vehicles and parts, after the walk.
+    pub fn finish(&mut self, film: &Film, params: Params) {
+        let v = self;
         let ctx = snapshot::Context::new(&film.chunks[0], params, params.box_bits);
         let mut frame = 0i64;
         for (ci, chunk) in film.chunks.iter().enumerate().skip(1) {
@@ -81,7 +93,6 @@ impl Vehicles {
         for t in v.tags.values_mut() {
             t.sort_unstable();
         }
-        v
     }
 
     /// A snapshot shows `id` as `tag` at `frame`: noted unless the latest

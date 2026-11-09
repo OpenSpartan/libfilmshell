@@ -6,7 +6,7 @@ use crate::components::Params;
 use crate::container::Film;
 use crate::gamestate::{stat_value, ENGINE, ENGINE_PLAYER, ENTRY_ROW, ROWS, STATBORG};
 use crate::holders::Holders;
-use crate::payload::{for_each_payload, OpKind, Walker};
+use crate::payload::{OpKind, Payload};
 use crate::snapshot::{self, ENTITY_TABLE};
 use std::collections::{BTreeMap, HashMap};
 
@@ -114,16 +114,19 @@ pub fn players_at_start(film: &Film, params: Params) -> Vec<u32> {
     ids
 }
 
-pub fn read(film: &Film, params: Params, holders: &Holders) -> Log {
+pub fn reader<'a>(
+    film: &'a Film,
+    params: Params,
+    holders: &'a Holders,
+    log: &'a mut Log,
+) -> impl FnMut(usize, &[u8], &Payload) + 'a {
     let entries = entries(film, params);
-    let mut walker = Walker::new(&film.chunks[0], params);
     let frames: Vec<_> = film.frames().collect();
     let at: BTreeMap<usize, usize> = frames.iter().enumerate().map(|(k, f)| (f.index, k)).collect();
     let chunk_of: HashMap<*const u8, usize> = film.chunks.iter().enumerate().map(|(i, c)| (c.as_ptr(), i)).collect();
     let mut last: HashMap<(u32, u32, u32), i32> = HashMap::new();
-    let mut log = Log::default();
     let mut left: HashMap<u32, u32> = HashMap::new();
-    for_each_payload(film, &mut walker, |i, p| {
+    move |i, _, p| {
         let Some(f) = at.get(&i).map(|&k| &frames[k]) else { return };
         for op in &p.ops {
             let OpKind::Update { fields, .. } = &op.kind else { continue };
@@ -171,9 +174,12 @@ pub fn read(film: &Film, params: Params, holders: &Holders) -> Log {
                 }
             }
         }
-    });
-    fix_respawn_owners(&mut log);
-    log
+    }
+}
+
+/// What [`reader`] leaves to do once the walk is over.
+pub fn finish(log: &mut Log) {
+    fix_respawn_owners(log);
 }
 
 /// A death and its countdown share a frame. An engine player slot is reused by

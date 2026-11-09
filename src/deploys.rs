@@ -2,9 +2,7 @@
 //! the object it put in the world, but not who used it. The object appears
 //! next to its user, so the user is the player nearest its first position.
 
-use crate::components::Params;
-use crate::container::Film;
-use crate::payload::{for_each_payload, OpKind, Walker};
+use crate::payload::{OpKind, Payload};
 use std::collections::HashMap;
 
 /// The event's type.
@@ -24,12 +22,18 @@ pub struct Use {
     pub at_box: u32,
 }
 
-pub fn read(film: &Film, params: Params) -> Vec<Use> {
-    let mut walker = Walker::new(&film.chunks[0], params);
-    let mut creates: HashMap<u32, Vec<(i64, u32)>> = HashMap::new();
-    let mut positions: HashMap<u32, Vec<(i64, (u32, [u32; 3]))>> = HashMap::new();
-    let mut events = Vec::new();
-    for_each_payload(film, &mut walker, |i, p| {
+/// What the walk gives: each entity's creates and positions, and the
+/// equipment events.
+#[derive(Default)]
+pub struct Seen {
+    creates: HashMap<u32, Vec<(i64, u32)>>,
+    positions: HashMap<u32, Vec<(i64, (u32, [u32; 3]))>>,
+    events: Vec<(i64, u32, u32)>,
+}
+
+pub fn reader(seen: &mut Seen) -> impl FnMut(usize, &[u8], &Payload) + '_ {
+    let Seen { creates, positions, events } = seen;
+    move |i, _, p| {
         for op in &p.ops {
             match &op.kind {
                 OpKind::Create { tag: Some(t) } => creates.entry(op.index).or_default().push((i as i64, *t)),
@@ -46,7 +50,13 @@ pub fn read(film: &Film, params: Params) -> Vec<Use> {
                 events.push((i as i64, a.entity(), b.entity()));
             }
         }
-    });
+    }
+}
+
+/// Each equipment event with the equipment, the object it put down and
+/// where the object first stood.
+pub fn finish(seen: Seen) -> Vec<Use> {
+    let Seen { creates, positions, events } = seen;
     let mut out = Vec::new();
     for (f, a, b) in events {
         // The equipment's latest create before; the object's nearest the event.

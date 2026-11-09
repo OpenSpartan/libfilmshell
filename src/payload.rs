@@ -525,6 +525,21 @@ fn component_list(r: &mut Bits) -> Result<Vec<u32>, Stop> {
     Ok(list)
 }
 
+/// A reader of walked payloads: f(frame index, chunk, payload).
+pub type Reader<'a> = dyn FnMut(usize, &[u8], &Payload) + 'a;
+
+/// One walk of every type-0 payload of `film`, each payload handed to every
+/// reader in turn. A walk depends only on the film and `params`, so the
+/// readers that need one share it.
+pub fn walk_shared(film: &Film, params: Params, readers: &mut [&mut Reader<'_>]) {
+    let mut walker = Walker::new(&film.chunks[0], params);
+    for_each_payload_in(film, &mut walker, |i, c, p| {
+        for r in readers.iter_mut() {
+            r(i, c, p);
+        }
+    });
+}
+
 /// Every type-0 payload of `film` walked in order: f(frame index, payload).
 /// Packet framing only (a frame is a packet); nothing under marker framing.
 pub fn for_each_payload(film: &Film, walker: &mut Walker, mut f: impl FnMut(usize, &Payload)) {
@@ -764,5 +779,21 @@ mod tests {
         let frames = film.frames().count();
         assert!(ticks * 100 >= frames * 99, "{ticks} of {frames}");
         assert_eq!(fire, 2854);
+    }
+
+    #[test]
+    fn a_shared_walk_hands_each_reader_the_same_payloads() {
+        let Some(chunks) = crate::testing::chunks("f9129808") else { return };
+        let film = Film::new(chunks, crate::container::Framing::Packets);
+        let widths = crate::header::read(&film.chunks[0]).level.and_then(crate::levels::level).unwrap().widths;
+        let params = Params::new(widths);
+        let summary = |i: usize, p: &Payload| (i, p.ops.len(), p.events.len(), p.end, p.stop);
+        let mut alone = Vec::new();
+        for_each_payload(&film, &mut Walker::new(&film.chunks[0], params), |i, p| alone.push(summary(i, p)));
+        let (mut a, mut b) = (Vec::new(), Vec::new());
+        walk_shared(&film, params, &mut [&mut |i, _, p| a.push(summary(i, p)), &mut |i, _, p| b.push(summary(i, p))]);
+        assert!(!alone.is_empty());
+        assert_eq!(a, alone);
+        assert_eq!(b, alone);
     }
 }

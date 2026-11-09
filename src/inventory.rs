@@ -19,10 +19,8 @@
 //! weapon despawns) or was picked up in a packet the walker didn't read to
 //! that entry.
 
-use crate::components::Params;
-use crate::container::Film;
 use crate::events::Body;
-use crate::payload::{for_each_payload, OpKind, Walker};
+use crate::payload::{OpKind, Payload};
 use std::collections::HashMap;
 
 /// Registry block of weapon objects.
@@ -66,14 +64,12 @@ pub struct Inventory {
 }
 
 /// The pickups and ground weapons of `film`. Packet framing only.
-pub fn read(film: &Film, params: Params) -> Inventory {
-    let mut w = Walker::new(&film.chunks[0], params);
-    let mut inv = Inventory::default();
+pub fn reader(inv: &mut Inventory) -> impl FnMut(usize, &[u8], &Payload) + '_ {
     // Weapon entity to index into inv.ground (while it exists), and created
     // ones not yet positioned.
     let mut live: HashMap<u32, usize> = HashMap::new();
     let mut pending: HashMap<u32, (u32, i64)> = HashMap::new();
-    for_each_payload(film, &mut w, |frame, p| {
+    move |frame, _, p| {
         let frame = frame as i64;
         // This packet's pickups and deleted ground weapons, matched after.
         let mut taken: Vec<u32> = Vec::new();
@@ -122,6 +118,5 @@ pub fn read(film: &Film, params: Params) -> Inventory {
                 inv.ground[g].taken = true;
             }
         }
-    });
-    inv
+    }
 }

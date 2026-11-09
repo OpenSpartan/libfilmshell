@@ -4,9 +4,8 @@
 //! `managed-object-networked-splash-message-static-component`.
 
 use crate::bits::bits_at;
-use crate::components::Params;
 use crate::container::Film;
-use crate::payload::{for_each_payload, OpKind, Walker};
+use crate::payload::{OpKind, Payload};
 use std::collections::BTreeMap;
 
 const PARTICIPANT: u32 = 47;
@@ -35,7 +34,7 @@ pub enum Arg {
 /// A parameter's value as read: a number (`[real:1]`, then 24 bits for a
 /// real or 32 for an integer) or a string id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum Value {
+pub enum Value {
     Real(u32),
     Int(u32),
     Key(u32),
@@ -100,12 +99,13 @@ fn text(c: &[u8], mut p: i64) -> Option<(u32, Vec<i32>, Vec<Option<Value>>)> {
     Some((key, params, values))
 }
 
-pub fn read(film: &Film, params: Params) -> Vec<Splash> {
-    let mut walker = Walker::new(&film.chunks[0], params);
+/// The splashes seen while walking, by (frame, key, parameters, values).
+pub type Seen = BTreeMap<(i64, u32, Vec<i32>, Vec<Option<Value>>), u32>;
+
+pub fn reader<'a>(film: &'a Film, seen: &'a mut Seen) -> impl FnMut(usize, &[u8], &Payload) + 'a {
     let frames: Vec<_> = film.frames().collect();
     let at: BTreeMap<usize, usize> = frames.iter().enumerate().map(|(k, f)| (f.index, k)).collect();
-    let mut seen: BTreeMap<(i64, u32, Vec<i32>, Vec<Option<Value>>), u32> = BTreeMap::new();
-    for_each_payload(film, &mut walker, |i, p| {
+    move |i, _, p| {
         let Some(f) = at.get(&i).map(|&k| &frames[k]) else { return };
         for op in p.ops.iter().filter(|o| o.entity_type == Some(PARTICIPANT)) {
             let OpKind::Update { fields, .. } = &op.kind else { continue };
@@ -115,7 +115,11 @@ pub fn read(film: &Film, params: Params) -> Vec<Splash> {
                 }
             }
         }
-    });
+    }
+}
+
+/// The splashes, each with how many viewers saw it.
+pub fn finish(seen: Seen) -> Vec<Splash> {
     seen.into_iter()
         .map(|((frame, key, params, values), seen_by)| Splash {
             frame,

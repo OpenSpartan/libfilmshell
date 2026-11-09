@@ -58,6 +58,9 @@ pub struct Film {
     packets: Vec<Option<Vec<Packet>>>,
     frames: Vec<FrameSpan>,
     ticks: Vec<u32>,
+    /// The object updates the record scan finds, kept from its first run
+    /// (`replication::for_each_object_update`).
+    pub(crate) object_updates: std::sync::OnceLock<Vec<crate::replication::Found>>,
 }
 
 #[derive(Clone, Copy)]
@@ -91,7 +94,15 @@ impl Film {
             chunks.iter().enumerate().map(|(ci, c)| if ci == 0 { Vec::new() } else { find_markers(c) }).collect();
         let packets: Vec<Option<Vec<Packet>>> =
             chunks.iter().enumerate().map(|(ci, c)| if ci == 0 { None } else { walk_packets(c) }).collect();
-        let mut film = Film { chunks, framing, markers, packets, frames: Vec::new(), ticks: Vec::new() };
+        let mut film = Film {
+            chunks,
+            framing,
+            markers,
+            packets,
+            frames: Vec::new(),
+            ticks: Vec::new(),
+            object_updates: std::sync::OnceLock::new(),
+        };
         // A chunk whose walk fails falls back to markers for the whole film,
         // so a film never mixes two frame definitions.
         if framing == Framing::Packets && film.packets.iter().skip(1).any(|p| p.is_none()) {
@@ -127,6 +138,20 @@ impl Film {
             gp: f.gp,
             ts_us: f.ts_us,
         })
+    }
+
+    /// Frame `index`.
+    pub fn frame(&self, index: usize) -> Frame<'_> {
+        let f = &self.frames[index];
+        Frame {
+            chunk: self.chunks[f.ci].as_slice(),
+            start: f.start,
+            body: f.body,
+            end: f.end,
+            index,
+            gp: f.gp,
+            ts_us: f.ts_us,
+        }
     }
 
     /// 60 Hz game tick of every frame index.

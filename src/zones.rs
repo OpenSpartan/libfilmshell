@@ -613,12 +613,23 @@ pub struct ZoneObject {
     pub states: Vec<ZoneState>,
 }
 
+/// What [`objects_reader`] gathers: each zone's object, and the crates'
+/// angles.
+#[derive(Default)]
+pub struct ObjectsSeen {
+    out: BTreeMap<u32, ZoneObject>,
+    angles: std::collections::HashMap<u32, f64>,
+}
+
 /// The letters, shapes and states of `zones` (entity indices).
-pub fn read_objects(film: &Film, params: crate::components::Params, zones: &[u32]) -> BTreeMap<u32, ZoneObject> {
-    use crate::payload::{for_each_payload_in, OpKind, Walker};
+pub fn objects_reader<'a>(
+    zones: &[u32],
+    seen: &'a mut ObjectsSeen,
+) -> impl FnMut(usize, &[u8], &crate::payload::Payload) + 'a {
+    use crate::payload::OpKind;
     use std::collections::HashMap;
-    let mut out: BTreeMap<u32, ZoneObject> = zones.iter().map(|&z| (z, ZoneObject::default())).collect();
-    let mut walker = Walker::new(&film.chunks[0], params);
+    seen.out = zones.iter().map(|&z| (z, ZoneObject::default())).collect();
+    let ObjectsSeen { out, angles } = seen;
     // Manager -> zone, navpoint -> zone. A navpoint's state is kept from its
     // create on: it is created a frame before its manager names it.
     let mut manager: HashMap<u32, u32> = HashMap::new();
@@ -630,20 +641,20 @@ pub fn read_objects(film: &Film, params: crate::components::Params, zones: &[u32
     let mut last: HashMap<u32, ZoneState> = HashMap::new();
     let fresh = ZoneState { owner: -1, capturing: -1, ..ZoneState::default() };
     // A zone takes its navpoint's state when it changes.
-    let mut emit = |out: &mut BTreeMap<u32, ZoneObject>, z: u32, mut s: ZoneState, letter: Option<char>, frame: i64| {
-        let Some(o) = out.get_mut(&z) else { return };
-        if let Some(l) = letter {
-            o.letter.get_or_insert(l);
-        }
-        s.frame = frame;
-        let key = |x: &ZoneState| (x.owner, x.capturing, x.progress, x.contested, x.inside);
-        if last.get(&z).is_none_or(|p| key(p) != key(&s)) {
-            o.states.push(s);
-            last.insert(z, s);
-        }
-    };
-    let mut angles: HashMap<u32, f64> = HashMap::new();
-    for_each_payload_in(film, &mut walker, |frame, c, p| {
+    let mut emit =
+        move |out: &mut BTreeMap<u32, ZoneObject>, z: u32, mut s: ZoneState, letter: Option<char>, frame: i64| {
+            let Some(o) = out.get_mut(&z) else { return };
+            if let Some(l) = letter {
+                o.letter.get_or_insert(l);
+            }
+            s.frame = frame;
+            let key = |x: &ZoneState| (x.owner, x.capturing, x.progress, x.contested, x.inside);
+            if last.get(&z).is_none_or(|p| key(p) != key(&s)) {
+                o.states.push(s);
+                last.insert(z, s);
+            }
+        };
+    move |frame, c, p| {
         for op in &p.ops {
             let blocks: &[(u32, i64)] = match &op.kind {
                 OpKind::Update { fields, .. } => &fields.blocks,
@@ -680,7 +691,7 @@ pub fn read_objects(film: &Film, params: crate::components::Params, zones: &[u32
                                 nav.insert(n, z);
                                 rows.insert((op.index, row), n);
                                 if let Some(&(s, l)) = nav_state.get(&n) {
-                                    emit(&mut out, z, s, l, frame as i64);
+                                    emit(out, z, s, l, frame as i64);
                                 }
                             } else if v == u32::MAX {
                                 // The hill's navpoint dropped: nobody counts
@@ -691,7 +702,7 @@ pub fn read_objects(film: &Film, params: crate::components::Params, zones: &[u32
                                     if let Some(&(s, l)) = nav_state.get(&n) {
                                         let idle =
                                             ZoneState { inside: 0, progress: 0, capturing: -1, contested: false, ..s };
-                                        emit(&mut out, z, idle, l, frame as i64);
+                                        emit(out, z, idle, l, frame as i64);
                                     }
                                 }
                             }
@@ -753,7 +764,7 @@ pub fn read_objects(film: &Film, params: crate::components::Params, zones: &[u32
                     }
                     nav_state.insert(op.index, (s, letter));
                     if let Some(&z) = nav.get(&op.index) {
-                        emit(&mut out, z, s, letter, frame as i64);
+                        emit(out, z, s, letter, frame as i64);
                     }
                 }
                 Some(crate::payload::CRATE) if out.contains_key(&op.index) => {
@@ -776,7 +787,12 @@ pub fn read_objects(film: &Film, params: crate::components::Params, zones: &[u32
                 _ => {}
             }
         }
-    });
+    }
+}
+
+/// The zones' objects, each shape turned by its crate's angle.
+pub fn finish_objects(seen: ObjectsSeen) -> BTreeMap<u32, ZoneObject> {
+    let ObjectsSeen { mut out, angles } = seen;
     for (z, o) in out.iter_mut() {
         if let (Some(sh), Some(&a)) = (o.shape.as_mut(), angles.get(z)) {
             sh.angle = a;
@@ -814,19 +830,16 @@ pub struct HillScore {
 }
 
 /// The hill points, from the properties above; None without them.
-pub fn read_hill_score(
-    film: &Film,
-    params: crate::components::Params,
-    team_of: impl Fn(i32) -> Option<i32>,
-) -> Option<HillScore> {
-    use crate::payload::{for_each_payload_in, OpKind, Walker};
+pub fn hill_score_reader<'a>(
+    team_of: impl Fn(i32) -> Option<i32> + 'a,
+    out: &'a mut HillScore,
+) -> impl FnMut(usize, &[u8], &crate::payload::Payload) + 'a {
+    use crate::payload::OpKind;
     use std::collections::HashMap;
-    let mut walker = Walker::new(&film.chunks[0], params);
     let mut names: HashMap<u32, u32> = HashMap::new();
-    let mut out = HillScore::default();
     let mut last: HashMap<i32, u32> = HashMap::new();
     let mut banks: std::collections::BTreeMap<i32, f64> = std::collections::BTreeMap::new();
-    for_each_payload_in(film, &mut walker, |frame, c, p| {
+    move |frame, c, p| {
         for op in &p.ops {
             if op.entity_type != Some(PROPERTY) {
                 continue;
@@ -883,6 +896,10 @@ pub fn read_hill_score(
                 }
             }
         }
-    });
+    }
+}
+
+/// The hill score [`hill_score_reader`] read, when the film has one.
+pub fn finish_hill_score(out: HillScore) -> Option<HillScore> {
     (out.to_win > 0 && !out.runs.is_empty()).then_some(out)
 }

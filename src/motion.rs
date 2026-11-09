@@ -1177,6 +1177,7 @@ pub fn extract_all_player_positions(
     highlights: &[HighlightEvent],
     xuids: &[String],
     level: Option<&crate::levels::LevelBox>,
+    vehicle_ident: Option<crate::vehicles::Vehicles>,
 ) -> ExtractionResult {
     let c1_at = crate::levels::c1_at(level);
     let n_players = roster.map(|r| r.len());
@@ -1190,7 +1191,8 @@ pub fn extract_all_player_positions(
         for (id, v) in vehicles.iter_mut() {
             v.iter_mut().for_each(|s| s.vehicle = *id);
         }
-        let ident = widths.map_or_else(crate::vehicles::Vehicles::default, |w| {
+        let ident = vehicle_ident.unwrap_or_else(|| {
+            let Some(w) = widths else { return crate::vehicles::Vehicles::default() };
             let mut params = crate::components::Params::new(w);
             params.set_level(level);
             crate::vehicles::Vehicles::read(film, params)

@@ -81,14 +81,39 @@ fn component_list(g: &Shifted, count: u32, arch: &Archetype) -> Option<u64> {
     Some(mask)
 }
 
-/// Scan every frame of chunks 1.. for object updates and dispatch
+/// An object update the scan found: its frame, where it starts, and what
+/// the scan read of it.
+#[derive(Clone, Copy, Debug)]
+pub struct Found {
+    frame: u32,
+    q: u32,
+    sh: u8,
+    kind: Kind,
+    id: i32,
+    off: i32,
+}
+
+/// Every object update in the frames of chunks 1.., dispatched as
 /// `f(g, gp, frame, kind, id, off)`. `off` is the bit shift of the data
 /// blocks against a 4-component list: position's c1 is at `read(7 + off)`
-/// (0 for stubs). Returning false stops the scan.
+/// (0 for stubs). Returning false stops. The scan runs once per film; later
+/// calls read what it found.
 pub fn for_each_object_update<'a, F>(film: &'a Film, mut f: F)
 where
     F: FnMut(&Shifted<'a>, i64, i64, Kind, i32, i32) -> bool,
 {
+    for u in film.object_updates.get_or_init(|| scan_object_updates(film)) {
+        let fr = film.frame(u.frame as usize);
+        let g = Shifted { c: fr.chunk, q: u.q as usize, sh: u.sh as u32 };
+        if !f(&g, fr.gp, u.frame as i64, u.kind, u.id, u.off) {
+            return;
+        }
+    }
+}
+
+/// Scan every frame of chunks 1.. for object updates.
+fn scan_object_updates(film: &Film) -> Vec<Found> {
+    let mut found = Vec::new();
     let schema = Schema::read(&film.chunks[0]);
     let stub_list = (1u64 << schema.biped.aim) | (1u64 << schema.biped.command_tick);
     let mut biped_max = [-1i32; 4];
@@ -153,9 +178,7 @@ where
                 } else {
                     continue;
                 }
-                if !f(&g, fr.gp, tick, kind, object_id(&g), off) {
-                    return;
-                }
+                found.push(Found { frame: tick as u32, q: q as u32, sh: sh as u8, kind, id: object_id(&g), off });
                 hit = true;
                 break;
             }
@@ -163,6 +186,7 @@ where
             q += if hit { 5 } else { 1 };
         }
     }
+    found
 }
 
 /// Smoothness of a 15-bit window at each candidate payload bit: the median
@@ -327,4 +351,28 @@ pub fn extract_multiplayer_composite(film: &Film, c1_at: i32, c2_start: i32, c2_
     }
     slots.retain(|_, v| !v.is_empty());
     CompositeExtraction { slots, stubs, vehicles, game_ticks, tick_gp }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_scan_runs_once_and_stops_where_asked() {
+        let Some(chunks) = crate::testing::chunks("f9129808") else { return };
+        let film = Film::new(chunks, crate::container::Framing::Packets);
+        let mut all = Vec::new();
+        for_each_object_update(&film, |g, gp, frame, kind, id, off| {
+            all.push((g.q, g.sh, gp, frame, kind, id, off));
+            true
+        });
+        assert!(all.len() > 10_000);
+        assert!(film.object_updates.get().is_some());
+        let mut first = Vec::new();
+        for_each_object_update(&film, |g, gp, frame, kind, id, off| {
+            first.push((g.q, g.sh, gp, frame, kind, id, off));
+            first.len() < 100
+        });
+        assert_eq!(first, all[..100]);
+    }
 }

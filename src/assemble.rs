@@ -20,7 +20,7 @@ use crate::levels::{self, LevelBox};
 use crate::model::*;
 use crate::motion::{detect_layout, extract_all_player_positions, small_lobby_deaths, ExtractionResult};
 use crate::objectives;
-use crate::payload::for_each_event_view;
+use crate::payload::{for_each_event_view, walk_shared, Reader};
 use crate::roster::{self, Roster};
 use crate::types::*;
 use crate::vitals::Vitals;
@@ -433,11 +433,49 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         roster.mark_present(&crate::statlog::players_at_start(&film, p));
     }
 
-    // The scoreboard first: it gives every player's deaths and spawns.
-    let stat_log = walk.map(|p| crate::statlog::read(&film, p, &holders)).unwrap_or_default();
+    // One walk for the readers that need no paths. The scoreboard gives
+    // every player's deaths and spawns, which the paths need.
+    let mut stat_log = crate::statlog::Log::default();
+    let mut vehicle_ident = crate::vehicles::Vehicles::default();
+    let mut vitals_marks = crate::vitals::Marks::default();
+    let mut inv = inventory::Inventory::default();
+    let mut inputs = crate::control::Inputs::new();
+    let mut splash_seen = crate::splash::Seen::new();
+    let mut thrown = grenades::Flights::default();
+    let mut deploys_seen = crate::deploys::Seen::default();
+    if let Some(p) = walk {
+        vitals_marks = Vitals::start(&film, &p, level);
+        walk_shared(
+            &film,
+            p,
+            &mut [
+                &mut crate::statlog::reader(&film, p, &holders, &mut stat_log),
+                &mut vehicle_ident.reader(),
+                &mut Vitals::reader(&mut vitals_marks),
+                &mut inventory::reader(&mut inv),
+                &mut crate::control::reader(&film, p, &mut inputs),
+                &mut crate::splash::reader(&film, &mut splash_seen),
+                &mut grenades::reader(&mut thrown),
+                &mut crate::deploys::reader(&mut deploys_seen),
+            ],
+        );
+        crate::statlog::finish(&mut stat_log);
+        vehicle_ident.finish(&film, p);
+    }
+    let vitals = walk.map(|_| Vitals::finish(vitals_marks));
+    let splashes = walk.map(|_| crate::splash::finish(splash_seen)).unwrap_or_default();
+    let deploys = walk.map(|_| crate::deploys::finish(deploys_seen)).unwrap_or_default();
     let entries = roster_entries(&roster, &stat_log);
     let xuids: Vec<String> = roster.players.iter().map(|p| p.xuid.map(|x| x.to_string()).unwrap_or_default()).collect();
-    let ex = extract_all_player_positions(&film, layout, Some(&entries), &highlights, &xuids, level);
+    let ex = extract_all_player_positions(
+        &film,
+        layout,
+        Some(&entries),
+        &highlights,
+        &xuids,
+        level,
+        walk.map(|_| vehicle_ident),
+    );
     let paths = &ex.paths;
 
     // Spawn pads from the hints anchor fitted coordinates.
@@ -463,7 +501,6 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     );
     let exact = calib.as_ref().is_some_and(|c| c.source == CalibSource::LevelTable);
 
-    let vitals = walk.map(|p| Vitals::read(&film, &p, level));
     let (states, jumps) = match (&walk, &calib, &vitals) {
         (Some(p), Some(c), Some(v)) => sample_states(&film, paths, p, level, c, v),
         _ => (vec![Vec::new(); paths.len()], vec![Vec::new(); paths.len()]),
@@ -474,16 +511,52 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         .zip(states)
         .map(|((p, positions), states)| WorldPath { player: p.player_index, positions, states })
         .collect();
-    let inv = walk.map(|p| inventory::read(&film, p)).unwrap_or_default();
     let extra: Vec<u32> = inv.pickups.iter().map(|p| p.tag).chain(inv.ground.iter().map(|g| g.tag)).collect();
     let fired: Option<FilmFire> = widths.map(|w| fire::read(&film, w, paths, &extra));
     let scripts = crate::scripts::script_names(&film.chunks[0]);
     let mode = GameMode::from_scripts(&scripts);
-    let acts = walk.map(|p| actions::read(&film, p, paths, mode.is_pvp()));
-    let aim = walk.map(|p| crate::accuracy::read(&film, p, paths)).unwrap_or_default();
-    let inputs = walk.map(|p| crate::control::read(&film, p)).unwrap_or_default();
-    let ammo = walk.map(|p| crate::ammo::read(&film, p, paths)).unwrap_or_default();
-    let splashes = walk.map(|p| crate::splash::read(&film, p)).unwrap_or_default();
+
+    // What zone modes read of their zones' objects, by the zones' entities.
+    let team_of = |pi: i32| roster.players.get(pi as usize).and_then(|p| p.team).map(|t| t as i32);
+    let zone_input = match (zones::mode(&scripts), walk, &calib, widths) {
+        (Some(m), Some(_), Some(_), Some(w)) => {
+            let evs = zones::read(&film, w, m, team_of);
+            let places = zones::event_places(&evs);
+            let crates = zones::crates(&film);
+            let mut ids: Vec<u32> = places.keys().copied().collect();
+            if m == zones::Mode::Koth {
+                ids.extend(crates.iter().filter(|c| c.1 == zones::HILL_TAG).map(|c| c.0));
+                ids.sort_unstable();
+                ids.dedup();
+            }
+            Some((m, evs, places, ids))
+        }
+        _ => None,
+    };
+
+    // A second walk for the readers that need the paths.
+    let mut acts_out = actions::FilmActions::default();
+    let mut aim = crate::accuracy::Aim::default();
+    let mut ammo = Vec::new();
+    let mut hill_seen = zones::HillScore::default();
+    let mut objects_seen = zones::ObjectsSeen::default();
+    let koth = zone_input.as_ref().is_some_and(|z| z.0 == zones::Mode::Koth) && exact;
+    if let Some(p) = walk {
+        let mut a = actions::reader(paths, mode.is_pvp(), &mut acts_out);
+        let mut b = crate::accuracy::reader(paths, &mut aim);
+        let mut c = crate::ammo::reader(paths, &mut ammo);
+        let mut d = koth.then(|| zones::hill_score_reader(team_of, &mut hill_seen));
+        let mut e = zone_input.as_ref().filter(|_| exact).map(|z| zones::objects_reader(&z.3, &mut objects_seen));
+        let mut readers: Vec<&mut Reader<'_>> = vec![&mut a, &mut b, &mut c];
+        if let Some(d) = d.as_mut() {
+            readers.push(d);
+        }
+        if let Some(e) = e.as_mut() {
+            readers.push(e);
+        }
+        walk_shared(&film, p, &mut readers);
+    }
+    let acts = walk.map(|_| acts_out);
 
     // The highlight clock: the kill events fix it to the tick.
     let hl_ticks = crate::lives::highlight_ticks(&ex.frame_ticks);
@@ -661,8 +734,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let mut vehicles = Vec::new();
     let mut rides = Vec::new();
     if let (Some(c), Some(w)) = (&calib, widths) {
-        let flights =
-            walk.map(|p| pair_grenades(&grenades::read(&film, p), paths, &world, w, c, level)).unwrap_or_default();
+        let flights = walk.map(|_| pair_grenades(&thrown, paths, &world, w, c, level)).unwrap_or_default();
         if let Some(a) = &acts {
             for &(frame, k, from, to) in &a.teleports {
                 let Some(player) = pid(paths[k].player_index) else { continue };
@@ -730,8 +802,8 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             }
         }
         // Equipment uses: the player nearest the object it put down.
-        if let Some(p) = walk {
-            for u in crate::deploys::read(&film, p) {
+        if walk.is_some() {
+            for u in deploys {
                 let Some((x, y)) = place(u.at_box, u.at, w, c, level) else { continue };
                 let mut d: Vec<(f64, i32)> = world
                     .iter()
@@ -757,20 +829,10 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             }
         }
         // Zones, hills and the skull.
-        if let (Some(m), Some(p)) = (zones::mode(&scripts), walk) {
-            let team_of = |pi: i32| roster.players.get(pi as usize).and_then(|p| p.team).map(|t| t as i32);
-            let evs = zones::read(&film, w, m, team_of);
-            let places = zones::event_places(&evs);
-            let crates = zones::crates(&film);
-            let mut ids: Vec<u32> = places.keys().copied().collect();
-            if m == zones::Mode::Koth {
-                ids.extend(crates.iter().filter(|c| c.1 == zones::HILL_TAG).map(|c| c.0));
-                ids.sort_unstable();
-                ids.dedup();
-            }
+        if let (Some((m, evs, places, ids)), Some(p)) = (zone_input, walk) {
             let snap = if exact { zones::snapshot_places(&film, p, &ids) } else { BTreeMap::new() };
             if m == zones::Mode::Koth && exact {
-                hill_score = zones::read_hill_score(&film, p, team_of).map(|h| HillScore {
+                hill_score = zones::finish_hill_score(hill_seen).map(|h| HillScore {
                     points_to_win: h.to_win,
                     hills_to_win: h.hills,
                     points: h
@@ -780,7 +842,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                         .collect(),
                 });
             }
-            let mut objects = if exact { zones::read_objects(&film, p, &ids) } else { BTreeMap::new() };
+            let mut objects = if exact { zones::finish_objects(objects_seen) } else { BTreeMap::new() };
             // The players inside, limited to the roster: before the match a
             // mask can name every slot.
             let on_roster = paths.iter().fold(0u32, |m, p| m | (0x8000_0000u32 >> (p.player_index as u32 & 31)));

@@ -5,18 +5,16 @@
 
 use crate::components::{control_view, Params};
 use crate::container::Film;
-use crate::payload::{for_each_payload, Walker};
+use crate::payload::Payload;
 use std::collections::BTreeMap;
 
 /// Player index -> (frame, forward, left, stance or -1), at each change.
 pub type Inputs = BTreeMap<u32, Vec<(i64, i32, i32, i32)>>;
 
-pub fn read(film: &Film, params: Params) -> Inputs {
-    let mut walker = Walker::new(&film.chunks[0], params);
+pub fn reader<'a>(film: &'a Film, params: Params, out: &'a mut Inputs) -> impl FnMut(usize, &[u8], &Payload) + 'a {
     let frames: Vec<_> = film.frames().collect();
     let at: BTreeMap<usize, usize> = frames.iter().enumerate().map(|(k, f)| (f.index, k)).collect();
-    let mut out = Inputs::new();
-    for_each_payload(film, &mut walker, |i, p| {
+    move |i, _, p| {
         if p.stop.is_some() {
             return;
         }
@@ -34,6 +32,5 @@ pub fn read(film: &Film, params: Params) -> Inputs {
                 series.push((i as i64, forward, left, stance));
             }
         }
-    });
-    out
+    }
 }

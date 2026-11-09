@@ -9,9 +9,8 @@
 //! Equipment is an object of its own; its energy and recharge go to the
 //! player whose biped it is attached to.
 
-use crate::components::{Fields, Params, Parent};
-use crate::container::Film;
-use crate::payload::{for_each_payload, OpKind, Walker, BIPED};
+use crate::components::{Fields, Parent};
+use crate::payload::{OpKind, Payload, BIPED};
 use crate::types::PlayerPath;
 use std::collections::HashMap;
 
@@ -66,11 +65,10 @@ fn push_change<K: Eq + std::hash::Hash, V: PartialEq + Copy, T>(
     }
 }
 
-pub fn read(film: &Film, params: Params, paths: &[PlayerPath]) -> Vec<PlayerAmmo> {
-    let mut out = vec![PlayerAmmo::default(); paths.len()];
+pub fn reader<'a>(paths: &'a [PlayerPath], out: &'a mut Vec<PlayerAmmo>) -> impl FnMut(usize, &[u8], &Payload) + 'a {
+    *out = vec![PlayerAmmo::default(); paths.len()];
     let owner: HashMap<i32, usize> =
         paths.iter().enumerate().flat_map(|(k, p)| p.life_slots.iter().flatten().map(move |&s| (s, k))).collect();
-    let mut walker = Walker::new(&film.chunks[0], params);
     let mut bipeds: HashMap<i32, Slots> = HashMap::new();
     // The generation of each biped index's current life, for equipment's
     // parents (a unit handle names the index only).
@@ -82,7 +80,7 @@ pub fn read(film: &Film, params: Params, paths: &[PlayerPath]) -> Vec<PlayerAmmo
     let mut last_heat = HashMap::new();
     let mut last_grenades = HashMap::new();
     let mut last_equipment = HashMap::new();
-    for_each_payload(film, &mut walker, |frame, p| {
+    move |frame, _, p| {
         let frame = frame as i64;
         for op in &p.ops {
             let fields: Option<&Fields> = match &op.kind {
@@ -170,6 +168,5 @@ pub fn read(film: &Film, params: Params, paths: &[PlayerPath]) -> Vec<PlayerAmmo
                 _ => {}
             }
         }
-    });
-    out
+    }
 }

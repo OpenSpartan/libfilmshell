@@ -22,10 +22,8 @@
 //! - PlayerGameEventSmall id 027: a headshot kill, by the player its mask
 //!   names. Read in PvP modes only: the ids index a per-mode list.
 
-use crate::components::Params;
-use crate::container::Film;
 use crate::events::Body;
-use crate::payload::{for_each_payload, OpKind, Walker};
+use crate::payload::{OpKind, Payload};
 use crate::types::PlayerPath;
 use std::collections::HashMap;
 
@@ -70,7 +68,11 @@ pub struct FilmActions {
 /// The actions of `film`, attributed to `paths` the way `fire.rs` does: the
 /// life the event's biped handle names, else the body's player index.
 /// Headshots only when `pvp`. Packet framing only.
-pub fn read(film: &Film, params: Params, paths: &[PlayerPath], pvp: bool) -> FilmActions {
+pub fn reader<'a>(
+    paths: &'a [PlayerPath],
+    pvp: bool,
+    out: &'a mut FilmActions,
+) -> impl FnMut(usize, &[u8], &Payload) + 'a {
     let mut slot_owner: HashMap<i32, usize> = HashMap::new();
     let mut by_index: HashMap<i32, usize> = HashMap::new();
     for (k, p) in paths.iter().enumerate() {
@@ -79,12 +81,11 @@ pub fn read(film: &Film, params: Params, paths: &[PlayerPath], pvp: bool) -> Fil
             slot_owner.insert(s, k);
         }
     }
-    let mut out = FilmActions { actions: vec![Vec::new(); paths.len()], ..Default::default() };
+    *out = FilmActions { actions: vec![Vec::new(); paths.len()], ..Default::default() };
     // Per life: the last spartan-ability state and weapon slot seen.
     let mut ability: HashMap<i32, u32> = HashMap::new();
     let mut weapon_slot: HashMap<i32, u32> = HashMap::new();
-    let mut w = Walker::new(&film.chunks[0], params);
-    for_each_payload(film, &mut w, |frame, p| {
+    move |frame, _, p| {
         let frame = frame as i64;
         for e in &p.events {
             // A kind-2 handle (an 8-bit biped index), else a unit handle.
@@ -156,6 +157,5 @@ pub fn read(film: &Film, params: Params, paths: &[PlayerPath], pvp: bool) -> Fil
                 }
             }
         }
-    });
-    out
+    }
 }

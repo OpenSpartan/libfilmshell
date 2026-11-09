@@ -9,11 +9,9 @@
 //! A hit is a `damage_aftermath` whose damage belongs to a weapon, once per
 //! attacker, victim and frame.
 
-use crate::components::Params;
-use crate::container::Film;
 use crate::damage::{self, Cause};
 use crate::events::Body;
-use crate::payload::{for_each_payload, OpKind, Walker};
+use crate::payload::{OpKind, Payload};
 use crate::types::PlayerPath;
 use crate::weapons;
 use std::collections::{HashMap, HashSet};
@@ -30,7 +28,7 @@ pub struct Aim {
     pub hits: Vec<Vec<i64>>,
 }
 
-pub fn read(film: &Film, params: Params, paths: &[PlayerPath]) -> Aim {
+pub fn reader<'a>(paths: &'a [PlayerPath], aim: &'a mut Aim) -> impl FnMut(usize, &[u8], &Payload) + 'a {
     let mut slot_owner: HashMap<i32, usize> = HashMap::new();
     let mut by_index: HashMap<i32, usize> = HashMap::new();
     for (k, p) in paths.iter().enumerate() {
@@ -39,11 +37,10 @@ pub fn read(film: &Film, params: Params, paths: &[PlayerPath]) -> Aim {
             slot_owner.insert(s, k);
         }
     }
-    let mut aim = Aim { projectiles: vec![Vec::new(); paths.len()], hits: vec![Vec::new(); paths.len()] };
+    *aim = Aim { projectiles: vec![Vec::new(); paths.len()], hits: vec![Vec::new(); paths.len()] };
     let mut grenade: HashMap<u32, bool> = HashMap::new();
     let mut seen = HashSet::new();
-    let mut walker = Walker::new(&film.chunks[0], params);
-    for_each_payload(film, &mut walker, |frame, p| {
+    move |frame, _, p| {
         let frame = frame as i64;
         for op in p.ops.iter().filter(|op| op.entity_type == Some(PROJECTILE)) {
             let OpKind::Create { tag } = op.kind else { continue };
@@ -76,6 +73,5 @@ pub fn read(film: &Film, params: Params, paths: &[PlayerPath]) -> Aim {
                 aim.hits[k].push(frame);
             }
         }
-    });
-    aim
+    }
 }
