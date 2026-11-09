@@ -1,12 +1,20 @@
-# libfilmshell
+<p align="center">
+  <img src="assets/icon.png" alt="" width="200">
+</p>
 
-A Rust library that reads Halo Infinite theater films into a typed data
-model: who played, every life with its positions and vitals, vehicles and
-what stood on the map, one stream of events, the scoreboard, and each
-player's inputs and ammunition.
+<h1 align="center">libfilmshell</h1>
 
-The library does no I/O and needs no network: give it a film's chunks and it
-returns the model. It compiles for `wasm32-unknown-unknown`.
+<p align="center">Reads Halo Infinite theater films into Rust data.</p>
+
+<p align="center">
+  <a href="https://github.com/OpenSpartan/libfilmshell/actions/workflows/ci.yml"><img src="https://github.com/OpenSpartan/libfilmshell/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/rust-1.85%2B-orange.svg" alt="Rust 1.85 or newer">
+</p>
+
+A theater film is a recording of a match: a header chunk, a run of replay chunks holding every tick the server sent, and a chunk of highlight events. `filmshell` takes those chunks and gives you the match as plain Rust types: who played, where everyone went, every kill, medal and shot, the scoreboard as it changed, and what each player pressed.
+
+It does no I/O. You hand it the bytes, however you got them.
 
 ## Install
 
@@ -15,81 +23,58 @@ returns the model. It compiles for `wasm32-unknown-unknown`.
 filmshell = { git = "https://github.com/OpenSpartan/libfilmshell" }
 ```
 
-Enable the `serde` feature to derive `serde::Serialize` on the model types.
-
 ## Quick start
 
-A film's manifest lists its chunks, each with an index and a chunk type: 1
-for the header, 2 for the replay chunks, 3 for the HighlightEvents chunk.
-Each becomes a `Chunk`; the bytes can be compressed as downloaded or already
-inflated.
+The Halo API lists a film's chunks with an index and a chunk type (1 header, 2 replay, 3 highlights). Pass each one as a `Chunk`, compressed as downloaded or already inflated, in any order:
 
 ```rust
 use filmshell::{Chunk, ChunkKind, Film};
 
-let chunks = manifest.iter().map(|entry| {
-    let kind = ChunkKind::from_manifest(entry.chunk_type).expect("a known chunk type");
-    Chunk::new(entry.index, kind, download(&entry.path))
-});
-let film = Film::from_chunks(chunks)?;
+/// `chunks`: (index, chunk type, bytes) for every chunk of one film.
+fn print_match(chunks: &[(u32, u32, Vec<u8>)]) -> Result<(), filmshell::Error> {
+    let film = Film::from_chunks(chunks.iter().map(|(index, chunk_type, bytes)| {
+        let kind = ChunkKind::from_manifest(*chunk_type).expect("a known chunk type");
+        Chunk::new(*index, kind, bytes.as_slice())
+    }))?;
 
-for player in film.players() {
-    println!("{} {}", player.id, player.name().unwrap_or("?"));
-}
-for (tick, kill) in film.kills() {
-    println!("{tick} {:?} killed {} with {:?}", kill.killer, kill.victim, kill.weapon);
+    for player in film.players() {
+        println!("{}", player.name().unwrap_or("unknown"));
+    }
+    for (tick, kill) in film.kills() {
+        println!("{tick}: {:?} killed {}", kill.killer, kill.victim);
+    }
+    Ok(())
 }
 ```
 
-The examples read a folder of `filmChunk{N}` or `filmChunk{N}_dec` files:
+The `examples` folder has three small programs that read a film saved as a folder of chunk files:
 
-```text
+```sh
 cargo run --release --example players -- path/to/film
 cargo run --release --example kills -- path/to/film
 cargo run --release --example timeline -- path/to/film 3
 ```
 
-## What it reads
+## What you get
 
-- **Header**: the game build, when the film starts, the map variant's ids
-  and the level.
-- **Clock**: frames, game ticks, the tick of every HighlightEvents time.
-- **Players**: people (XUID, gamertag, team) and bots (id, name), who joined
-  late and who left.
-- **Game variant**: name, description, the mode, respawn and scoring
-  settings, loadout, flags, stored options with their names and the mode
-  scripts' defaults, stat definitions, script names.
-- **Lives**: each biped life's owner and samples: raw and world position,
-  height, aim yaw, speed, health, shield, the vehicle it rode.
-- **Vehicles** and their tracks, **rides**, what stood on the map from the
-  seek snapshots, weapons on the ground, grenades in flight, zones and hills.
-- **Events**: kills (killer, assistant, damage shares, cause, weapon),
-  medals, shots, hits with damage, pickups, throws, detonations, reloads,
-  melee, zoom, abilities, jumps, weapon switches, teleports, vehicle exits,
-  equipment uses, voice lines, unit chatter, HUD messages, the mode scripts'
-  game events, flag and zone events, respawn countdowns, headshots.
-- **Scoreboard**: every statborg change, the match clock, the engine's
-  phase and lives left at each seek snapshot.
-- **Player state**: movement input, ammunition, energy and heat per weapon
-  slot, grenades carried, equipment charge.
+- **The match**: the game build, when the film starts, the map variant, the level, the game variant and its settings.
+- **Players**: gamertags and XUIDs, bots, teams, who joined late and who left.
+- **Lives**: every life with its positions over time, aim, speed, health and shield, and the vehicles it rode.
+- **Events**, in tick order: kills with the damage each player dealt, medals, shots, hits, pickups, grenades, melee, abilities, teleports, vehicle exits, voice lines, HUD messages, objectives and the mode's scoring events.
+- **Scoreboard**: every stat change as it happened, the match clock and rounds.
+- **Player state**: movement input, ammunition, weapon heat, grenades and equipment.
+- **The world**: vehicles and their tracks, weapons on the ground, grenades in flight, zones and hills.
 
-The `game` module holds what the library knows about the game itself, read
-from the game's files: weapons, vehicles, grenades, equipment, medals,
-damage effects, levels and their position boxes, variant option names. The
-`analysis` module derives estimates: accuracy, weapon numbers, spawn
-factors.
+The `game` module knows the game's own catalogue: weapons, vehicles, grenades, equipment, medals, damage effects and level bounds, as Rust enums and tables. The `analysis` module derives estimates from the data, such as accuracy.
 
-A film doesn't carry everything. For a level outside the catalogue,
-positions convert only when `Hints` give the level's box or the map's spawn
-points; otherwise samples keep their raw values.
+## Positions
 
-## The format layer
+Positions are in world units, as the game uses them. They convert exactly on every level the library knows. For any other level, give the level's bounds or the map's spawn points with `Hints` and `Film::from_chunks_with`, or use the raw quantized values each sample keeps.
 
-`Film::raw()` exposes the layers the model is built from: the inflated
-chunks, the packets of the replay chunks, frames (tick packets), each
-frame's event view and entity view, the seek snapshots, the component
-registry, and a bit reader for the MSB-first bit-packed payloads.
+## The raw format
+
+`Film::raw()` exposes what the data model is built from: the inflated chunks, packets, frames, each frame's events and entity updates, the seek snapshots and a bit reader. It is for working on the format itself; most programs won't need it.
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).
