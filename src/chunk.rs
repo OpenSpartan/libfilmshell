@@ -51,6 +51,10 @@ impl ChunkKind {
     }
 }
 
+/// The most bytes a compressed chunk may inflate to: 256 MiB, about a
+/// hundred times the largest real chunk.
+pub const MAX_CHUNK_BYTES: usize = 256 << 20;
+
 /// One chunk of a film: its index in the manifest, its kind, and its bytes,
 /// either as downloaded (zlib) or already inflated.
 #[derive(Clone, Debug)]

@@ -66,7 +66,7 @@ mod hints;
 mod model;
 mod tag;
 
-pub use chunk::{Chunk, ChunkKind};
+pub use chunk::{Chunk, ChunkKind, MAX_CHUNK_BYTES};
 pub use error::Error;
 pub use film::Film;
 pub use hints::{Hints, LevelBounds, SpawnPad};

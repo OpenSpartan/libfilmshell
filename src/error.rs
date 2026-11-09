@@ -24,6 +24,11 @@ pub enum Error {
         /// The chunk's index.
         index: u32,
     },
+    /// A compressed chunk inflates to more than [`MAX_CHUNK_BYTES`](crate::MAX_CHUNK_BYTES).
+    TooLarge {
+        /// The chunk's index.
+        index: u32,
+    },
     /// Chunk 0 is not a film header the library knows.
     UnknownHeader,
     /// The film has no replay chunk.
@@ -41,6 +46,9 @@ impl fmt::Display for Error {
             Error::DuplicateChunk(i) => write!(f, "chunk {i} given twice"),
             Error::UnexpectedKind { index, kind } => write!(f, "chunk {index} cannot be a {kind:?} chunk"),
             Error::Inflate { index } => write!(f, "chunk {index} does not inflate"),
+            Error::TooLarge { index } => {
+                write!(f, "chunk {index} inflates to more than {} bytes", crate::MAX_CHUNK_BYTES)
+            }
             Error::UnknownHeader => write!(f, "chunk 0 is not a film header"),
             Error::NoReplay => write!(f, "the film has no replay chunk"),
         }

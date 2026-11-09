@@ -126,7 +126,7 @@ fn dynamic(r: &mut Bits) -> Option<(Code, Code)> {
     Some((Code::new(&lengths[..nlen]), Code::new(&lengths[nlen..nlen + ndist])))
 }
 
-fn codes(r: &mut Bits, out: &mut Vec<u8>, lit: &Code, dist: &Code, limit: usize) -> Option<()> {
+fn codes(r: &mut Bits, out: &mut Vec<u8>, lit: &Code, dist: &Code, limit: usize, over: &mut bool) -> Option<()> {
     loop {
         let sym = lit.decode(r)? as usize;
         match sym {
@@ -146,6 +146,7 @@ fn codes(r: &mut Bits, out: &mut Vec<u8>, lit: &Code, dist: &Code, limit: usize)
             }
         }
         if out.len() > limit {
+            *over = true;
             return None;
         }
     }
@@ -164,9 +165,22 @@ fn adler32(b: &[u8]) -> u32 {
     (s2 << 16) | s1
 }
 
-/// A zlib stream's contents, at most `limit` bytes. None when it's malformed,
-/// truncated, fails its checksum or is longer.
-pub fn zlib(data: &[u8], limit: usize) -> Option<Vec<u8>> {
+/// Why a zlib stream didn't inflate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fault {
+    /// Malformed, truncated, or failing its checksum.
+    Malformed,
+    /// Longer than the limit.
+    TooLong,
+}
+
+/// A zlib stream's contents, at most `limit` bytes.
+pub fn zlib(data: &[u8], limit: usize) -> Result<Vec<u8>, Fault> {
+    let mut over = false;
+    inflate(data, limit, &mut over).ok_or(if over { Fault::TooLong } else { Fault::Malformed })
+}
+
+fn inflate(data: &[u8], limit: usize, over: &mut bool) -> Option<Vec<u8>> {
     if data.len() < 6 || data[0] & 0x0f != 8 || (data[0] as u32 * 256 + data[1] as u32) % 31 != 0 || data[1] & 0x20 != 0
     {
         return None;
@@ -182,7 +196,11 @@ pub fn zlib(data: &[u8], limit: usize) -> Option<Vec<u8>> {
                 r.align();
                 let head = data.get(r.p..r.p + 4)?;
                 let len = u16::from_le_bytes([head[0], head[1]]) as usize;
-                if len as u16 != !u16::from_le_bytes([head[2], head[3]]) || out.len() + len > limit {
+                if len as u16 != !u16::from_le_bytes([head[2], head[3]]) {
+                    return None;
+                }
+                if out.len() + len > limit {
+                    *over = true;
                     return None;
                 }
                 out.extend_from_slice(data.get(r.p + 4..r.p + 4 + len)?);
@@ -190,11 +208,11 @@ pub fn zlib(data: &[u8], limit: usize) -> Option<Vec<u8>> {
             }
             1 => {
                 let (lit, dist) = fixed();
-                codes(&mut r, &mut out, &lit, &dist, limit)?;
+                codes(&mut r, &mut out, &lit, &dist, limit, over)?;
             }
             2 => {
                 let (lit, dist) = dynamic(&mut r)?;
-                codes(&mut r, &mut out, &lit, &dist, limit)?;
+                codes(&mut r, &mut out, &lit, &dist, limit, over)?;
             }
             _ => return None,
         }
@@ -209,20 +227,21 @@ pub fn zlib(data: &[u8], limit: usize) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::zlib;
+    use super::{zlib, Fault};
 
     #[test]
     fn stored_and_compressed() {
         // zlib.compress(b"hello hello hello hello", 9)
         let z = [0x78, 0xda, 0xcb, 0x48, 0xcd, 0xc9, 0xc9, 0x57, 0xc8, 0x40, 0x27, 0x01, 0x68, 0x03, 0x08, 0xb1];
-        assert_eq!(zlib(&z, 100).as_deref(), Some(&b"hello hello hello hello"[..]));
-        assert_eq!(zlib(&z, 5), None);
+        assert_eq!(zlib(&z, 100).as_deref(), Ok(&b"hello hello hello hello"[..]));
+        assert_eq!(zlib(&z, 5), Err(Fault::TooLong));
         let mut bad = z;
         bad[15] ^= 1;
-        assert_eq!(zlib(&bad, 100), None);
-        assert_eq!(zlib(&z[..10], 100), None);
+        assert_eq!(zlib(&bad, 100), Err(Fault::Malformed));
+        assert_eq!(zlib(&z[..10], 100), Err(Fault::Malformed));
         // zlib.compress(b"abc", 0)
         let s = [0x78, 0x01, 0x01, 0x03, 0x00, 0xfc, 0xff, 0x61, 0x62, 0x63, 0x02, 0x4d, 0x01, 0x27];
-        assert_eq!(zlib(&s, 100).as_deref(), Some(&b"abc"[..]));
+        assert_eq!(zlib(&s, 100).as_deref(), Ok(&b"abc"[..]));
+        assert_eq!(zlib(&s, 2), Err(Fault::TooLong));
     }
 }

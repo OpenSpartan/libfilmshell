@@ -86,7 +86,10 @@ impl Film {
         let mut data = Vec::with_capacity(chunks.len());
         for c in chunks {
             data.push(if is_zlib(&c.data) {
-                crate::inflate::zlib(&c.data, usize::MAX).ok_or(Error::Inflate { index: c.index })?
+                crate::inflate::zlib(&c.data, crate::MAX_CHUNK_BYTES).map_err(|f| match f {
+                    crate::inflate::Fault::Malformed => Error::Inflate { index: c.index },
+                    crate::inflate::Fault::TooLong => Error::TooLarge { index: c.index },
+                })?
             } else {
                 c.data.into_owned()
             });
