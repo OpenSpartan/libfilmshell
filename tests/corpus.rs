@@ -217,3 +217,23 @@ fn the_dead_leave_the_map() {
     }
     assert!(seen * 100 >= kills * 90, "{seen} of {kills} victims placed at their kill");
 }
+
+/// Every medal of a player in the film is kept, and placed in the event
+/// stream whenever the film fixes the highlight clock.
+#[test]
+fn every_medal_is_kept() {
+    for (name, f) in corpus() {
+        let recorded =
+            f.highlights().iter().filter(|h| h.player.is_some() && matches!(h.kind, HighlightKind::Medal(_))).count();
+        assert_eq!(f.medals().count(), recorded, "{name}");
+        let placed = f.medals().filter(|m| m.0.is_some()).count();
+        let events = f.events().iter().filter(|e| matches!(e.event, Event::Medal(_))).count();
+        assert_eq!(events, placed, "{name}");
+        if recorded > 0 && f.events().iter().any(|e| matches!(e.event, Event::GameEvent(_))) {
+            assert_eq!(placed, recorded, "{name}: medals without a tick");
+        }
+    }
+    if let Some((_, f)) = corpus().iter().find(|(n, _)| n == "c3790060") {
+        assert_eq!(f.events().iter().filter(|e| matches!(e.event, Event::Medal(_))).count(), 458);
+    }
+}

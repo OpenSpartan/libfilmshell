@@ -381,6 +381,51 @@ fn game_events(film: &Container, w: [u32; 3], c: Option<&Calibration>, holders: 
     out
 }
 
+/// The highlight tick of HighlightEvents time 0 from the medals, for films
+/// whose kills don't fix it: the game sends a mode script's event to a
+/// medal's recipient on the tick it awards the medal, so the offset between
+/// a medal's time and the events naming its player peaks at the clock's
+/// zero. `medals` are (player index, ms), `events` (frame, player mask);
+/// `hl_ticks` is each frame's highlight tick. None unless one offset holds
+/// at least 3 medals and half of them.
+fn medal_clock(medals: &[(i32, f64)], events: &[(i64, u32)], hl_ticks: &[u32]) -> Option<f64> {
+    const NEAR: f64 = 1.5;
+    let mut votes: HashMap<i64, usize> = HashMap::new();
+    let mut offsets: Vec<Vec<f64>> = Vec::with_capacity(medals.len());
+    for &(player, ms) in medals {
+        let bit = 0x8000_0000u32.checked_shr(player as u32).unwrap_or(0);
+        let mut d: Vec<f64> = events
+            .iter()
+            .filter(|e| e.1 & bit != 0)
+            .filter_map(|e| Some(*hl_ticks.get(usize::try_from(e.0).ok()?)? as f64 - ms * crate::lives::TICKS_PER_MS))
+            .collect();
+        let mut bins: Vec<i64> = d.iter().map(|x| x.round() as i64).collect();
+        bins.sort_unstable();
+        bins.dedup();
+        for b in bins {
+            *votes.entry(b).or_default() += 1;
+        }
+        d.sort_by(f64::total_cmp);
+        offsets.push(d);
+    }
+    let (&peak, &n) = votes.iter().max_by_key(|(&b, &n)| (n, std::cmp::Reverse(b)))?;
+    if n < 3 || 2 * n < medals.len() {
+        return None;
+    }
+    // Each medal's offset nearest the peak, and their median.
+    let mut near: Vec<f64> = offsets
+        .iter()
+        .filter_map(|d| {
+            d.iter()
+                .copied()
+                .filter(|x| (x - peak as f64).abs() <= NEAR)
+                .min_by(|a, b| (a - peak as f64).abs().total_cmp(&(b - peak as f64).abs()))
+        })
+        .collect();
+    near.sort_by(f64::total_cmp);
+    near.get(near.len() / 2).copied()
+}
+
 /// The vehicle tracks: each tagged vehicle's position records, split where
 /// its id stands for a new vehicle, by first frame then id. Records with no
 /// known tag are chance matches of the scanner and are left out.
@@ -578,6 +623,21 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         }
         (_, z) => z,
     };
+    // The mode scripts' events, which also fix the highlight clock when the
+    // kills don't.
+    let script_events = match walk.map(|p| p.widths) {
+        Some(w) => game_events(&film, w, calib.as_ref(), &holders),
+        None => Vec::new(),
+    };
+    let hl_zero_tick = hl_zero_tick.or_else(|| {
+        let medals: Vec<(i32, f64)> = highlights
+            .iter()
+            .filter(|h| h.event_type == EventType::Medal)
+            .filter_map(|h| Some((*pi_of.get(h.xuid.as_str())?, h.time_ms)))
+            .collect();
+        let masks: Vec<(i64, u32)> = script_events.iter().map(|(f, g)| (*f, g.players.0)).collect();
+        medal_clock(&medals, &masks, &hl_ticks)
+    });
     let clock = Clock { frame_ticks: ex.frame_ticks.clone(), highlight_ticks: hl_ticks, highlight_zero: hl_zero_tick };
     let tick = |frame: i64| Tick(usize::try_from(frame).ok().and_then(|f| ex.frame_ticks.get(f)).copied().unwrap_or(0));
     let pid = |i: i32| u8::try_from(i).ok().map(PlayerId);
@@ -959,10 +1019,8 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             .collect();
         events.push((s.frame, Event::HudMessage(HudMessage { key: s.key, arguments, viewers: s.seen_by })));
     }
-    if let Some(w) = walk.map(|p| p.widths) {
-        for (frame, g) in game_events(&film, w, calib.as_ref(), &holders) {
-            events.push((frame, Event::GameEvent(g)));
-        }
+    for (frame, g) in script_events {
+        events.push((frame, Event::GameEvent(g)));
     }
     for r in &stat_log.respawns {
         if let Some(player) = pid(r.player as i32) {
@@ -1319,5 +1377,25 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         scoreboard,
         states: states.into_iter().collect(),
         analysis: AnalysisData { accuracy, weapons, spawn_factors },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn medals_fix_the_highlight_clock() {
+        let hl_ticks: Vec<u32> = (0..2000).collect();
+        // Medals at 1, 10 and 20 s for players 0 and 2; each recipient gets an
+        // event 13 ticks after the medal's time, among others.
+        let medals = [(0, 1000.0), (2, 10_000.0), (0, 20_000.0), (2, 25_000.0)];
+        let at = |ms: f64| (ms * crate::lives::TICKS_PER_MS).round() as i64 + 13;
+        let mut events: Vec<(i64, u32)> = medals.iter().map(|&(p, ms)| (at(ms), 0x8000_0000u32 >> p)).collect();
+        events.extend([(5, 0x8000_0000), (700, 0xa000_0000), (1500, 0x2000_0000)]);
+        let zero = medal_clock(&medals, &events, &hl_ticks).unwrap();
+        assert!((zero - 13.0).abs() <= 0.5, "{zero}");
+        // Too few medals agree: no clock.
+        assert_eq!(medal_clock(&medals[..2], &events[..2], &hl_ticks), None);
     }
 }

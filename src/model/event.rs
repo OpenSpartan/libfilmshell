@@ -19,7 +19,8 @@ pub struct TimedEvent {
 pub enum Event {
     /// A player was killed.
     Kill(Kill),
-    /// A player earned a medal (from the HighlightEvents chunk).
+    /// A player earned a medal (from the HighlightEvents chunk, when the
+    /// film fixes its clock; `Film::medals` lists every medal).
     Medal(MedalAward),
     /// A weapon fired a round.
     Shot(Shot),
@@ -468,7 +469,8 @@ pub struct Highlight {
     pub kind: HighlightKind,
     /// Milliseconds since the match started, on the highlight clock.
     pub time_ms: u32,
-    /// The record's tick, when the film's kills fix the highlight clock.
+    /// The record's tick, when the film's kills or medals fix the highlight
+    /// clock.
     pub tick: Option<Tick>,
 }
 

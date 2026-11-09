@@ -232,6 +232,17 @@ impl Film {
         })
     }
 
+    /// Every medal the HighlightEvents chunk records for a player of the
+    /// film, in its order, with the medal's tick. The tick is None when the
+    /// film fixes no highlight clock; only medals with a tick are also in
+    /// the event stream as [`Event::Medal`].
+    pub fn medals(&self) -> impl Iterator<Item = (Option<Tick>, MedalAward)> + '_ {
+        self.highlights.iter().filter_map(|h| match h.kind {
+            HighlightKind::Medal(index) => Some((h.tick, MedalAward { player: h.player?, index })),
+            _ => None,
+        })
+    }
+
     /// The HighlightEvents chunk's records, in its order.
     pub fn highlights(&self) -> &[Highlight] {
         &self.highlights

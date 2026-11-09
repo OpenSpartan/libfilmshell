@@ -78,8 +78,8 @@ impl Clock {
         &self.frame_ticks
     }
 
-    /// The tick of HighlightEvents time `ms`, when the film's kills fix the
-    /// highlight clock.
+    /// The tick of HighlightEvents time `ms`, when the film's kills, or its
+    /// medals and the mode events sent with them, fix the highlight clock.
     pub fn highlight_tick(&self, ms: u32) -> Option<Tick> {
         let at = (self.highlight_zero? + ms as f64 * TICKS_PER_MS).round().max(0.0) as u32;
         let k = self.highlight_ticks.partition_point(|&t| t <= at).checked_sub(1)?;
