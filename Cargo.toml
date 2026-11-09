@@ -1,0 +1,37 @@
+[package]
+name = "filmshell"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Reads Halo Infinite theater films into a typed data model"
+license = "MIT"
+repository = "https://github.com/OpenSpartan/libfilmshell"
+readme = "README.md"
+keywords = ["halo", "halo-infinite", "theater", "replay", "parser"]
+categories = ["parser-implementations", "game-development"]
+publish = false
+exclude = ["films/", "films-local/", "data/"]
+
+[features]
+## Derive `serde::Serialize` on the model types.
+serde = ["dep:serde"]
+
+[dependencies]
+indexmap = "2"
+serde = { version = "1", features = ["derive"], optional = true }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+[profile.dev]
+opt-level = 2
+
+[lints.clippy]
+# Bit layouts read field by field: tuples of fields, binary literals
+# grouped by field, readers that take a layout's parts.
+type_complexity = "allow"
+too_many_arguments = "allow"
+unusual_byte_groupings = "allow"
+large_enum_variant = "allow"
