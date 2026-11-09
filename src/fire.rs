@@ -33,10 +33,14 @@ const KILL_SHOT_TICKS: f64 = 120.0;
 const KILL_SHOT_LATE_TICKS: f64 = 3.0;
 /// How far a kill event can be from the estimated clock.
 const ZERO_SEARCH_TICKS: f64 = 90.0;
-/// How long a grenade can be the cause of a blast it didn't name: its fuse
-/// and flight, generously.
-const THROW_FRAMES: i64 = 360;
+/// Ticks before a death in which the last damage on the victim is its
+/// cause.
+const KILL_CAUSE_TICKS: u32 = 120;
+/// How long a grenade can be the cause of a blast it didn't name, in ticks:
+/// its fuse and flight, generously.
+const THROW_TICKS: u32 = 360;
 
+#[cfg_attr(test, derive(Default))]
 pub struct FilmFire {
     /// The weapons fired and the `extra` ones given to [`read`], by tag id;
     /// a shot's weapon is an index into it.
@@ -197,16 +201,30 @@ impl FilmFire {
     }
 }
 
+/// Whether frame `earlier` is at most `ticks` game ticks before frame
+/// `frame`, by the film's clock `frame_ticks`.
+pub fn within_ticks(frame_ticks: &[u32], earlier: i64, frame: i64, ticks: u32) -> bool {
+    let tick = |f: i64| usize::try_from(f).ok().and_then(|f| frame_ticks.get(f)).copied();
+    match (tick(earlier), tick(frame)) {
+        (Some(a), Some(b)) => earlier <= frame && b - a <= ticks,
+        _ => false,
+    }
+}
+
 /// What killed `victim` (an index into `paths`) at frame `frame`: the last
 /// damage tag on them in the 2 s before it.
-pub fn kill_cause(ff: &FilmFire, victim: usize, frame: i64) -> Option<u32> {
-    ff.damage.iter().rev().find(|d| d.1 == victim && d.0 <= frame && frame - d.0 <= 120).map(|d| d.2)
+pub fn kill_cause(ff: &FilmFire, victim: usize, frame_ticks: &[u32], frame: i64) -> Option<u32> {
+    ff.damage
+        .iter()
+        .rev()
+        .find(|d| d.1 == victim && within_ticks(frame_ticks, d.0, frame, KILL_CAUSE_TICKS))
+        .map(|d| d.2)
 }
 
 /// Whether the player at `paths` index `killer` threw a grenade in the
-/// `THROW_FRAMES` before `frame`.
-pub fn threw_before(ff: &FilmFire, killer: usize, frame: i64) -> bool {
-    ff.throws.get(killer).is_some_and(|t| t.iter().any(|&(f, _)| f <= frame && frame - f <= THROW_FRAMES))
+/// `THROW_TICKS` before `frame`.
+pub fn threw_before(ff: &FilmFire, killer: usize, frame_ticks: &[u32], frame: i64) -> bool {
+    ff.throws.get(killer).is_some_and(|t| t.iter().any(|&(f, _)| within_ticks(frame_ticks, f, frame, THROW_TICKS)))
 }
 
 /// The tick of HighlightEvents time 0, from the kill events themselves: the
@@ -263,4 +281,27 @@ pub fn shot_before(ff: &FilmFire, killer: usize, frame_ticks: &[u32], frame: i64
         .find(|&(t, _)| t <= death + KILL_SHOT_LATE_TICKS)
         .filter(|&(t, _)| t >= death - KILL_SHOT_TICKS)
         .map(|s| s.1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn kill_windows_are_game_time() {
+        // A 30 Hz film: two ticks a frame, so 2 s is 60 frames.
+        let ticks: Vec<u32> = (0..400).map(|f| 2 * f).collect();
+        assert!(within_ticks(&ticks, 140, 200, 120));
+        assert!(!within_ticks(&ticks, 139, 200, 120));
+        assert!(!within_ticks(&ticks, 201, 200, 120));
+        let ff = FilmFire {
+            damage: vec![(100, 0, 7), (150, 0, 8)],
+            throws: vec![vec![(10, Some(1))]],
+            ..FilmFire::default()
+        };
+        assert_eq!(kill_cause(&ff, 0, &ticks, 200), Some(8));
+        assert_eq!(kill_cause(&ff, 0, &ticks, 211), None);
+        assert!(threw_before(&ff, 0, &ticks, 190));
+        assert!(!threw_before(&ff, 0, &ticks, 191));
+    }
 }

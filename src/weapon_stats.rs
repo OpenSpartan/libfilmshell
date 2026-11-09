@@ -8,9 +8,9 @@ use crate::hit_damage::apply;
 use crate::sandbox;
 use std::collections::HashMap;
 
-/// Frames before a hit in which the attacker's last shot names its weapon
+/// Ticks before a hit in which the attacker's last shot names its weapon
 /// when the damage tag doesn't: a projectile's flight.
-const SHOT_FRAMES: i64 = 120;
+const SHOT_TICKS: u32 = 120;
 /// A shot this many frames after the hit still counts (the event order in a
 /// packet).
 const SHOT_LATE_FRAMES: i64 = 3;
@@ -35,7 +35,7 @@ pub struct WeaponStats {
 /// one the damage tag belongs to, else, for a projectile with no weapon on
 /// record, the attacker's last shot in the 2 s before. A melee swing, a
 /// grenade the list lacks, a vehicle or the world has none.
-pub fn hit_weapons(ff: &FilmFire) -> Vec<Option<usize>> {
+pub fn hit_weapons(ff: &FilmFire, frame_ticks: &[u32]) -> Vec<Option<usize>> {
     ff.hits
         .iter()
         .zip(&ff.hit_details)
@@ -52,7 +52,7 @@ pub fn hit_weapons(ff: &FilmFire) -> Vec<Option<usize>> {
                 .iter()
                 .rev()
                 .find(|s| s.0 <= frame + SHOT_LATE_FRAMES)
-                .filter(|s| s.0 >= frame - SHOT_FRAMES)
+                .filter(|s| s.0 >= frame || crate::fire::within_ticks(frame_ticks, s.0, frame, SHOT_TICKS))
                 .map(|s| s.1)
         })
         .collect()

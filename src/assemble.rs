@@ -47,9 +47,9 @@ const GRENADE_STEP_WU: f64 = 15.0;
 /// Frames after a grenade flight's end in which a detonation naming its
 /// object is still that grenade's.
 const BLAST_AFTER_END_FRAMES: i64 = 60;
-/// Frames before an event in which the player's latest sample places an
+/// Ticks before an event in which the player's latest sample places an
 /// event that carries no position.
-const SAMPLE_FRAMES: i64 = 120;
+const SAMPLE_TICKS: u32 = 120;
 /// A ride's exit comes this many frames after its last sample at most.
 const EXIT_SLACK: i64 = 90;
 /// Statborg slots of deaths and spawns.
@@ -255,6 +255,7 @@ fn pair_grenades(
     w: [u32; 3],
     c: &Calibration,
     level: Option<&LevelBox>,
+    frame_ticks: &[u32],
 ) -> Vec<Flight> {
     let owner: HashMap<i32, usize> =
         paths.iter().enumerate().flat_map(|(k, p)| p.life_slots.iter().flatten().map(move |&s| (s, k))).collect();
@@ -265,7 +266,9 @@ fn pair_grenades(
         let wp = &world[k];
         let at = |frame: i64| {
             let i = wp.positions.partition_point(|s| s.frame <= frame);
-            i.checked_sub(1).map(|i| &wp.positions[i]).filter(|s| frame - s.frame <= SAMPLE_FRAMES)
+            i.checked_sub(1)
+                .map(|i| &wp.positions[i])
+                .filter(|s| fire::within_ticks(frame_ticks, s.frame, frame, SAMPLE_TICKS))
         };
         let best = f
             .projectiles
@@ -677,7 +680,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         let wp = &world[k];
         let i = wp.positions.partition_point(|s| s.frame <= frame).checked_sub(1)?;
         let s = &wp.positions[i];
-        (calib.is_some() && frame - s.frame <= SAMPLE_FRAMES).then(|| Position {
+        (calib.is_some() && fire::within_ticks(&ex.frame_ticks, s.frame, frame, SAMPLE_TICKS)).then(|| Position {
             x: s.x,
             y: s.y,
             z: wp.states.get(i).and_then(|st| st.z),
@@ -704,9 +707,12 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             let Some(victim) = victim.and_then(|v| pid(v as i32)) else { continue };
             let vk = path_of(victim.0 as i32);
             let kk = killer.and_then(|c| path_of(c as i32));
-            let tag = vk.and_then(|k| fire::kill_cause(ff, k, frame));
+            let tag = vk.and_then(|k| fire::kill_cause(ff, k, &ex.frame_ticks, frame));
             let (cause, owner) = match tag {
-                Some(t) if damage::grenade_blast(t) && kk.is_some_and(|c| fire::threw_before(ff, c, frame)) => {
+                Some(t)
+                    if damage::grenade_blast(t)
+                        && kk.is_some_and(|c| fire::threw_before(ff, c, &ex.frame_ticks, frame)) =>
+                {
                     (Some(Cause::Grenade), None)
                 }
                 Some(t) => {
@@ -744,7 +750,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             }
         }
         let hit_damage = vitals.as_ref().map(|v| crate::hit_damage::read(ff, v)).unwrap_or_default();
-        let hit_weapons = crate::weapon_stats::hit_weapons(ff);
+        let hit_weapons = crate::weapon_stats::hit_weapons(ff, &ex.frame_ticks);
         for (i, &(frame, attacker, victim)) in ff.hits.iter().enumerate() {
             let Some(victim) = pid(paths[victim].player_index) else { continue };
             let dmg = hit_damage.get(i).copied().unwrap_or_default();
@@ -827,7 +833,8 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let mut vehicles = Vec::new();
     let mut rides = Vec::new();
     if let (Some(c), Some(w)) = (&calib, widths) {
-        let flights = walk.map(|_| pair_grenades(&thrown, paths, &world, w, c, level)).unwrap_or_default();
+        let flights =
+            walk.map(|_| pair_grenades(&thrown, paths, &world, w, c, level, &ex.frame_ticks)).unwrap_or_default();
         if let Some(a) = &acts {
             for &(frame, k, from, to) in &a.teleports {
                 let Some(player) = pid(paths[k].player_index) else { continue };
@@ -1323,7 +1330,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         })
         .collect();
     let weapons = fired.as_ref().map_or(Vec::new(), |ff| {
-        let hit_weapons = crate::weapon_stats::hit_weapons(ff);
+        let hit_weapons = crate::weapon_stats::hit_weapons(ff, &ex.frame_ticks);
         let shieldless = vitals.as_ref().is_some_and(|v| v.shieldless());
         crate::weapon_stats::stats(ff, &hit_weapons, shieldless)
             .into_iter()
