@@ -1,0 +1,3 @@
+* text=auto eol=lf
+# Tables generated from the game's files.
+src/game/*_data.rs linguist-generated=true
