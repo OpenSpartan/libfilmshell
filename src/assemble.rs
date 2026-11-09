@@ -1045,17 +1045,26 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             let slot = p.life_slots.as_ref().and_then(|s| s.get(k)).copied();
             let entity = slot.and_then(|s| u16::try_from(s).ok());
             let died = slot.is_some_and(|s| deaths.iter().any(|d| d.slot_id == s));
-            lives.push(Life { player: pid(p.player_index), entity, died, samples });
+            lives.push(Life { player: pid(p.player_index), entity, died, death: None, samples });
         }
     }
     if let Some(c) = &calib {
         for p in &ex.unassigned {
             let w = apply_calibration(&p.positions, c);
             let samples = p.positions.iter().zip(&w).map(|(m, w)| sample(m, Some(w), None)).collect();
-            lives.push(Life { player: None, entity: None, died: false, samples });
+            lives.push(Life { player: None, entity: None, died: false, death: None, samples });
         }
     }
     lives.sort_by_key(|l| l.start());
+    // Each kill ends the victim's life that started last before it.
+    for e in &events {
+        let Event::Kill(k) = &e.event else { continue };
+        let life =
+            lives.iter_mut().filter(|l| l.player == Some(k.victim) && l.start().is_some_and(|s| s <= e.tick)).last();
+        if let Some(l) = life.filter(|l| l.death.is_none()) {
+            l.death = Some(e.tick);
+        }
+    }
 
     let players: Vec<Player> = roster
         .players

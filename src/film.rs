@@ -149,9 +149,31 @@ impl Film {
     }
 
     /// Where `player` was at `tick`: their last sample at or before it, in
-    /// the life it belongs to.
+    /// the life under way then. None while the player isn't alive: before
+    /// their first life, between a death and the next spawn, after the last
+    /// sample of a life no kill ended once another has begun, and after a
+    /// player who left was last listed.
     pub fn sample_at(&self, player: PlayerId, tick: Tick) -> Option<&Sample> {
-        self.lives_of(player).filter(|l| l.start().is_some_and(|s| s <= tick)).last()?.at(tick)
+        let mut lives = self.lives_of(player).peekable();
+        let mut current = None;
+        while let Some(l) = lives.next_if(|l| l.start().is_some_and(|s| s <= tick)) {
+            current = Some(l);
+        }
+        let life = current?;
+        let last = lives.peek().is_none();
+        if !last && life.death.is_none() && life.end().is_some_and(|e| tick > e) {
+            return None;
+        }
+        if last && self.player(player).and_then(|p| p.left).is_some_and(|left| tick > left) {
+            return None;
+        }
+        life.at(tick)
+    }
+
+    /// Whether `player` is alive at `tick`, by the rules of
+    /// [`Film::sample_at`].
+    pub fn alive_at(&self, player: PlayerId, tick: Tick) -> bool {
+        self.sample_at(player, tick).is_some()
     }
 
     /// Every vehicle track, in the order of their first record.

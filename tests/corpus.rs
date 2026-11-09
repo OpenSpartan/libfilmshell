@@ -197,3 +197,23 @@ fn compressed_chunks_read_the_same() {
     assert_eq!(a.events(), b.events());
     assert_eq!(a.players(), b.players());
 }
+
+/// A player killed is not on the map three seconds later unless they have
+/// spawned again, and is on it at the kill.
+#[test]
+fn the_dead_leave_the_map() {
+    let (mut kills, mut seen) = (0usize, 0usize);
+    for (name, f) in corpus() {
+        for (t, k) in f.kills() {
+            kills += 1;
+            seen += usize::from(f.alive_at(k.victim, t));
+            let later = Tick(t.0 + 3 * Tick::PER_SECOND);
+            let respawned = f.lives_of(k.victim).any(|l| l.start().is_some_and(|s| s > t && s <= later));
+            if !respawned {
+                assert!(f.sample_at(k.victim, later).is_none(), "{name} {t}: {} still on the map", k.victim);
+                assert!(!f.alive_at(k.victim, later), "{name} {t}");
+            }
+        }
+    }
+    assert!(seen * 100 >= kills * 90, "{seen} of {kills} victims placed at their kill");
+}

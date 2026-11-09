@@ -94,6 +94,9 @@ pub struct Life {
     pub entity: Option<u16>,
     /// The life ended in a death, as the life assignment counts them.
     pub died: bool,
+    /// The tick of the kill that ended the life, when the film's kill
+    /// events name one.
+    pub death: Option<Tick>,
     /// Its samples, in tick order.
     pub samples: Vec<Sample>,
 }
@@ -109,8 +112,66 @@ impl Life {
         self.samples.last().map(|s| s.tick)
     }
 
-    /// The last sample at or before `tick`.
+    /// Whether the life is over at `tick`: after its death, or, for a life
+    /// that ended in a death no kill event names, after its last sample.
+    pub fn over_at(&self, tick: Tick) -> bool {
+        match (self.death, self.end()) {
+            (Some(d), _) => tick > d,
+            (None, Some(end)) => self.died && tick > end,
+            (None, None) => true,
+        }
+    }
+
+    /// The last sample at or before `tick`, while the life lasts: None
+    /// before its first sample and once it is over ([`Life::over_at`]).
     pub fn at(&self, tick: Tick) -> Option<&Sample> {
+        if self.over_at(tick) {
+            return None;
+        }
         self.samples.partition_point(|s| s.tick <= tick).checked_sub(1).map(|i| &self.samples[i])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn life(ticks: &[u32], died: bool, death: Option<u32>) -> Life {
+        let sample = |t: u32| Sample {
+            tick: Tick(t),
+            raw: [0.0; 2],
+            position: None,
+            yaw: None,
+            speed: None,
+            health: None,
+            shield: None,
+            in_vehicle: false,
+            vehicle: None,
+        };
+        Life {
+            player: None,
+            entity: None,
+            died,
+            death: death.map(Tick),
+            samples: ticks.iter().map(|&t| sample(t)).collect(),
+        }
+    }
+
+    #[test]
+    fn a_life_ends_at_its_death() {
+        let l = life(&[10, 20, 30], true, Some(32));
+        assert!(l.at(Tick(9)).is_none());
+        assert_eq!(l.at(Tick(25)).map(|s| s.tick), Some(Tick(20)));
+        assert_eq!(l.at(Tick(32)).map(|s| s.tick), Some(Tick(30)));
+        assert!(l.at(Tick(33)).is_none());
+        // A death the kill events don't name ends at the last sample.
+        let l = life(&[10, 20, 30], true, None);
+        assert!(l.at(Tick(30)).is_some() && l.at(Tick(31)).is_none());
+        // Samples past the kill (a vehicle's) don't extend the life.
+        let l = life(&[10, 20, 30, 90], true, Some(30));
+        assert!(l.at(Tick(31)).is_none());
+        // A life that didn't end in a death lasts past its last sample.
+        let l = life(&[10, 20], false, None);
+        assert_eq!(l.at(Tick(1000)).map(|s| s.tick), Some(Tick(20)));
     }
 }
