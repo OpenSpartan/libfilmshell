@@ -37,19 +37,28 @@ impl ChunkKind {
         }
     }
 
-    /// The kind a complete film's chunk `index` has when there are `count`
-    /// chunks in all: the first is the header, the last the highlights.
-    /// For chunks without a manifest at hand.
-    pub fn by_position(index: u32, count: u32) -> ChunkKind {
+    /// The kind of chunk `index` from its inflated bytes, for chunks without
+    /// a manifest at hand. Chunk 0 is the header. The others are packets,
+    /// each a 16-byte head (a 16-bit type, a 32-bit size, a timestamp) and
+    /// its payload, that end on the chunk's last byte: a replay chunk's
+    /// first packet is type 1, the highlights chunk's type 9. None for bytes
+    /// that are neither.
+    pub fn detect(index: u32, inflated: &[u8]) -> Option<ChunkKind> {
         if index == 0 {
-            ChunkKind::Header
-        } else if index + 1 == count {
-            ChunkKind::Highlights
-        } else {
-            ChunkKind::Replay
+            return Some(ChunkKind::Header);
+        }
+        match crate::container::walk_packets(inflated)?.first()?.kind {
+            REPLAY_FIRST => Some(ChunkKind::Replay),
+            HIGHLIGHTS_FIRST => Some(ChunkKind::Highlights),
+            _ => None,
         }
     }
 }
+
+/// The type of a replay chunk's first packet.
+const REPLAY_FIRST: u16 = 1;
+/// The type of the highlights chunk's first packet.
+const HIGHLIGHTS_FIRST: u16 = 9;
 
 /// The most bytes a compressed chunk may inflate to: 256 MiB, about a
 /// hundred times the largest real chunk.
@@ -71,6 +80,26 @@ impl<'a> Chunk<'a> {
     /// A chunk from borrowed or owned bytes.
     pub fn new(index: u32, kind: ChunkKind, data: impl Into<Cow<'a, [u8]>>) -> Chunk<'a> {
         Chunk { index, kind, data: data.into() }
+    }
+
+    /// A chunk saved as a file: `filmChunk{N}` as downloaded or
+    /// `filmChunk{N}_dec` inflated, `name` the file's name without its
+    /// folder. The index comes from the name and the kind from the bytes
+    /// ([`ChunkKind::detect`]); compressed bytes are inflated here. None
+    /// when the name isn't a chunk's or the bytes are no chunk of a film.
+    pub fn from_file(name: &str, data: impl Into<Cow<'a, [u8]>>) -> Option<Chunk<'a>> {
+        let digits = name.strip_prefix("filmChunk")?;
+        let digits = digits.strip_suffix("_dec").unwrap_or(digits);
+        if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        let index: u32 = digits.parse().ok()?;
+        let mut data = data.into();
+        if is_zlib(&data) {
+            data = Cow::Owned(crate::inflate::zlib(&data, MAX_CHUNK_BYTES).ok()?);
+        }
+        let kind = ChunkKind::detect(index, &data)?;
+        Some(Chunk { index, kind, data })
     }
 
     /// Whether the bytes are a zlib stream: a deflate method byte with a

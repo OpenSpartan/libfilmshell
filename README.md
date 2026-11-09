@@ -47,7 +47,7 @@ fn print_match(chunks: &[(u32, u32, Vec<u8>)]) -> Result<(), filmshell::Error> {
 }
 ```
 
-The `examples` folder has three small programs that read a film saved as a folder of chunk files:
+Chunks saved as files named `filmChunk{N}` (as downloaded) or `filmChunk{N}_dec` (inflated) need no manifest: `Chunk::from_file(name, bytes)` takes the index from the file name and the kind from the bytes. The `examples` folder has three small programs that read a film saved that way:
 
 ```sh
 cargo run --release --example players -- path/to/film

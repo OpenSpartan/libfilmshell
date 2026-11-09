@@ -4,32 +4,27 @@
 //! `ChunkType` (1 header, 2 replay, 3 highlights) and a `FileRelativePath`
 //! such as `/filmChunk0`. A downloader maps each entry to
 //! `Chunk::new(entry.Index, ChunkKind::from_manifest(entry.ChunkType)?, bytes)`.
-//! Without the manifest, a folder of `filmChunk{N}` files (as downloaded) or
-//! `filmChunk{N}_dec` files (inflated) gives the kinds by position.
+//! Without the manifest, `Chunk::from_file` reads the index from a
+//! `filmChunk{N}` (as downloaded) or `filmChunk{N}_dec` (inflated) file name
+//! and the kind from the bytes.
 
-use filmshell::{Chunk, ChunkKind};
+use filmshell::Chunk;
+use std::io::{Error, ErrorKind};
 use std::path::Path;
 
-/// The chunks of the film in `dir`.
+/// The chunks of the film in `dir`, the inflated copy of a chunk where both
+/// are there.
 pub fn load_folder(dir: &Path) -> std::io::Result<Vec<Chunk<'static>>> {
-    let mut found = Vec::new();
+    let mut chunks = Vec::new();
     for entry in std::fs::read_dir(dir)? {
         let path = entry?.path();
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-        let Some(rest) = name.strip_prefix("filmChunk") else { continue };
-        let Ok(index) = rest.trim_end_matches("_dec").parse::<u32>() else { continue };
-        // Prefer the inflated copy when both are there.
-        if let Some(i) = found.iter().position(|(n, _): &(u32, _)| *n == index) {
-            if name.ends_with("_dec") {
-                found[i] = (index, path);
-            }
+        if !name.starts_with("filmChunk") || dir.join(format!("{name}_dec")).exists() {
             continue;
         }
-        found.push((index, path));
+        let chunk = Chunk::from_file(name, std::fs::read(&path)?)
+            .ok_or_else(|| Error::new(ErrorKind::InvalidData, format!("{name} is not a film chunk")))?;
+        chunks.push(chunk);
     }
-    let count = found.len() as u32;
-    found
-        .into_iter()
-        .map(|(index, path)| Ok(Chunk::new(index, ChunkKind::by_position(index, count), std::fs::read(path)?)))
-        .collect()
+    Ok(chunks)
 }

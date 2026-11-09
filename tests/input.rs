@@ -1,5 +1,7 @@
 //! Chunk validation, with no film needed.
 
+mod common;
+
 use filmshell::{Chunk, ChunkKind, Error, Film};
 
 fn chunk(index: u32, kind: ChunkKind) -> Chunk<'static> {
@@ -53,9 +55,45 @@ fn manifest_types() {
     assert_eq!(ChunkKind::from_manifest(1), Some(ChunkKind::Header));
     assert_eq!(ChunkKind::from_manifest(3).map(ChunkKind::manifest_type), Some(3));
     assert_eq!(ChunkKind::from_manifest(7), None);
-    assert_eq!(ChunkKind::by_position(0, 5), ChunkKind::Header);
-    assert_eq!(ChunkKind::by_position(2, 5), ChunkKind::Replay);
-    assert_eq!(ChunkKind::by_position(4, 5), ChunkKind::Highlights);
+}
+
+/// Packets of the given types, each with a 4-byte payload.
+fn packets(types: &[u16]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for &t in types {
+        out.extend(t.to_le_bytes());
+        out.extend([0, 0]);
+        out.extend(4u32.to_le_bytes());
+        out.extend([0; 8]);
+        out.extend([1, 2, 3, 4]);
+    }
+    out
+}
+
+#[test]
+fn kinds_from_the_bytes() {
+    assert_eq!(ChunkKind::detect(0, &[0; 16]), Some(ChunkKind::Header));
+    assert_eq!(ChunkKind::detect(3, &packets(&[1, 0, 0, 2])), Some(ChunkKind::Replay));
+    assert_eq!(ChunkKind::detect(9, &packets(&[9, 7])), Some(ChunkKind::Highlights));
+    // A walk that doesn't end on the last byte, or another first type.
+    let mut cut = packets(&[1, 0]);
+    cut.pop();
+    assert_eq!(ChunkKind::detect(1, &cut), None);
+    assert_eq!(ChunkKind::detect(1, &packets(&[4])), None);
+}
+
+#[test]
+fn chunks_from_file_names() {
+    let replay = packets(&[1, 0]);
+    let c = Chunk::from_file("filmChunk12_dec", &replay[..]).unwrap();
+    assert_eq!((c.index, c.kind), (12, ChunkKind::Replay));
+    // As downloaded: inflated on the way in.
+    let c = Chunk::from_file("filmChunk5", common::zlib_stored(&packets(&[9, 7]))).unwrap();
+    assert_eq!((c.index, c.kind, c.is_compressed()), (5, ChunkKind::Highlights, false));
+    assert!(Chunk::from_file("filmChunk", &replay[..]).is_none());
+    assert!(Chunk::from_file("filmChunk+3", &replay[..]).is_none());
+    assert!(Chunk::from_file("meta.json", &replay[..]).is_none());
+    assert!(Chunk::from_file("filmChunk2", &[0u8; 20][..]).is_none());
 }
 
 /// A deflate stream (fixed codes) of a zero byte and then `copies` copies of

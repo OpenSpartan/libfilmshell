@@ -278,3 +278,28 @@ fn garbage_replay_chunks_are_refused() {
         assert_eq!(Film::from_chunks(chunks).unwrap_err(), Error::NoTicks);
     }
 }
+
+/// Chunk files are told apart by their bytes: the highlights chunk is the
+/// last, and a folder without it reads as a film with no highlights.
+#[test]
+fn chunk_files_name_their_kinds() {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("films/1a743b49-a67b-4c2b-99e5-fb79e82d3522");
+    if !dir.exists() {
+        return;
+    }
+    let mut chunks = common::load_folder(&dir).unwrap();
+    chunks.sort_by_key(|c| c.index);
+    let last = chunks.len() - 1;
+    for c in &chunks {
+        let want = match c.index {
+            0 => ChunkKind::Header,
+            i if i as usize == last => ChunkKind::Highlights,
+            _ => ChunkKind::Replay,
+        };
+        assert_eq!(c.kind, want, "chunk {}", c.index);
+    }
+    chunks.pop();
+    let without = Film::from_chunks(chunks).unwrap();
+    assert!(without.highlights().is_empty());
+    assert!(!without.players().is_empty() && without.kills().count() > 0);
+}

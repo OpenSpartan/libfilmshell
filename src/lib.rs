@@ -9,16 +9,23 @@
 //! ammunition.
 //!
 //! The library does no I/O. Hand it the chunks' bytes, compressed as
-//! downloaded or already inflated, from wherever they come from.
+//! downloaded or already inflated, from wherever they come from: with the
+//! manifest's chunk types ([`ChunkKind::from_manifest`]), or, for chunks
+//! saved as `filmChunk{N}` files, with [`Chunk::from_file`], which takes the
+//! index from the file name and the kind from the bytes.
 //!
 //! # Quick start
 //!
 //! ```no_run
 //! use filmshell::{Chunk, ChunkKind, Event, Film};
 //!
-//! # fn bytes(i: u32) -> Vec<u8> { Vec::new() }
+//! # struct Entry { index: u32, chunk_type: u32, bytes: Vec<u8> }
+//! # let manifest: Vec<Entry> = Vec::new();
 //! // One `Chunk` per manifest entry: its index, its type and its bytes.
-//! let chunks = (0..=31).map(|i| Chunk::new(i, ChunkKind::by_position(i, 32), bytes(i)));
+//! let chunks = manifest.iter().map(|e| {
+//!     let kind = ChunkKind::from_manifest(e.chunk_type).expect("a known chunk type");
+//!     Chunk::new(e.index, kind, e.bytes.as_slice())
+//! });
 //! let film = Film::from_chunks(chunks)?;
 //!
 //! for p in film.players() {
