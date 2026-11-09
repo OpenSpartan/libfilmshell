@@ -55,16 +55,6 @@ cargo run --release --example kills -- path/to/film
 cargo run --release --example timeline -- path/to/film 3
 ```
 
-## What you get
-
-- **The match**: the game build, when the film starts, the map variant, the level, the game variant and its settings.
-- **Players**: gamertags and XUIDs, bots, teams, who joined late and who left.
-- **Lives**: every life with its positions over time, aim, speed, health and shield, and the vehicles it rode.
-- **Events**, in tick order: kills with the damage each player dealt, medals, shots, hits, pickups, grenades, melee, abilities, teleports, vehicle exits, voice lines, HUD messages, objectives and the mode's scoring events.
-- **Scoreboard**: every stat change as it happened, the match clock and rounds.
-- **Player state**: movement input, ammunition, weapon heat, grenades and equipment.
-- **The world**: vehicles and their tracks, weapons on the ground, grenades in flight, zones and hills.
-
 The `game` module knows the game's own catalogue: weapons, vehicles, grenades, equipment, medals, damage effects and level bounds, as Rust enums and tables. The `analysis` module derives estimates from the data, such as accuracy.
 
 ## Positions
