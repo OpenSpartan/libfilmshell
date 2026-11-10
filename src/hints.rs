@@ -31,6 +31,7 @@ impl SpawnPad {
     }
 
     /// The same point reserved for `team`.
+    #[must_use]
     pub fn for_team(mut self, team: TeamId) -> SpawnPad {
         self.team = Some(team);
         self
@@ -84,6 +85,7 @@ impl Hints {
 
     /// The `levl` tag the map variant is built on, in place of the one the
     /// film names.
+    #[must_use]
     pub fn level(mut self, level: TagId) -> Hints {
         self.level = Some(level);
         self
@@ -92,6 +94,7 @@ impl Hints {
     /// The level's play-space box, in place of the catalogue's. A box whose
     /// corners aren't finite, or whose low corner isn't below its high one,
     /// is ignored.
+    #[must_use]
     pub fn level_bounds(mut self, bounds: LevelBounds) -> Hints {
         let ok = (0..3).all(|i| {
             let (lo, hi) = (bounds.min[i], bounds.max[i]);
@@ -105,6 +108,7 @@ impl Hints {
     /// [`SpawnFactor::pad`](crate::analysis::SpawnFactor::pad) indexes them.
     /// Points whose coordinates aren't finite or lie more than a million
     /// world units out are kept in the order but never used.
+    #[must_use]
     pub fn spawn_pads(mut self, pads: impl IntoIterator<Item = SpawnPad>) -> Hints {
         self.spawn_pads = pads.into_iter().collect();
         self

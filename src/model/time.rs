@@ -51,6 +51,7 @@ impl Tick {
     }
 
     /// `ticks` earlier, stopping at tick 0.
+    #[must_use]
     pub fn saturating_sub(self, ticks: u32) -> Tick {
         Tick(self.0.saturating_sub(ticks))
     }

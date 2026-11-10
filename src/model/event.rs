@@ -182,7 +182,9 @@ impl Event {
     }
 }
 
-/// A kill: the game's PlayerKilledEvent, with what dealt the fatal hit.
+/// A kill: the game's PlayerKilledEvent, with what dealt the fatal hit. The
+/// game sends no such event for some deaths, a bot's among them; those are
+/// kills too, marked [`inferred`](Kill::inferred).
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
@@ -228,6 +230,13 @@ pub struct Kill {
     /// Where the victim was.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
+    /// The film has no kill event for this death: it is where the victim's
+    /// player let go of the life; the killer is the one player whose kills
+    /// the scoreboard counts up then, else the attacker of the last hit on
+    /// the victim in the 2 s before (None: neither names one); the damage
+    /// percentages and the assistant are unknown.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "std::ops::Not::not"))]
+    pub inferred: bool,
 }
 
 /// A medal award.

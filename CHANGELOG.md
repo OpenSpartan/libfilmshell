@@ -32,3 +32,10 @@ First release.
 - Without HighlightEvents to time them (a human against bots, a human who never dies), lives go to
   the player the film names as controlling them and end in a death where that player let go,
   which agrees with the match stats' deaths; calibration falls back on bots' paths.
+- A death the game sends no kill event for (a bot's, among others) is still a `Kill`, marked
+  `inferred`: its killer is the player whose kills the scoreboard counts up then, else the attacker
+  of the last hit. Against bots, every player's kills now equal the match stats'.
+- `StatChange::round` is the round a scoreboard value is for, as the game sends it, and
+  `Scoreboard::rounds`, `round_value` and `round_starts` work from it; a match's totals
+  (`Scoreboard::total`) agree with the match stats in Attrition, Elimination and Grifball too.
+- The `Hints` builder methods and `Tick::saturating_sub` are `#[must_use]`.

@@ -486,6 +486,78 @@ fn lives_die_as_the_match_stats_count() {
     }
 }
 
+/// Each player's kills of players on the other team that the scoreboard
+/// counts, inferred kills included, are the match stats' Kills. Exact on the
+/// matches against bots, whose bot deaths have no kill event.
+#[test]
+fn kills_count_as_the_match_stats_do() {
+    let (mut players, mut agree) = (0usize, 0usize);
+    for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
+        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
+        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        let rows = stats["Players"].as_array().cloned().unwrap_or_default();
+        if rows.len() != f.players().len() {
+            continue;
+        }
+        let team = |id: PlayerId| f.player(id).and_then(|p| p.team);
+        for (i, s) in rows.iter().enumerate() {
+            // CoreStats counts AI kills too (PveStats); PvpStats are players'.
+            // Firefight has no PvpStats: its kills are all of AI.
+            let stats = &s["PlayerTeamStats"][0]["Stats"];
+            if stats["PvpStats"].is_null() && !stats["PveStats"].is_null() {
+                continue;
+            }
+            let Some(want) = stats["PvpStats"]["Kills"].as_u64().or(stats["CoreStats"]["Kills"].as_u64()) else {
+                continue;
+            };
+            let p = PlayerId(i as u8);
+            let got = f
+                .kills()
+                .filter(|(_, k)| k.killer == Some(p) && k.victim != p && k.scored != Some(false))
+                .filter(|(_, k)| team(k.victim) != team(p) || team(p).is_none())
+                .count() as u64;
+            players += 1;
+            agree += usize::from(got == want);
+            if got != want {
+                println!("MISS {name} {} p{i}: {got} want {want}", f.variant().map_or("", |v| v.name.as_str()));
+            }
+            if got != want && ["813ff0a6", "f2b9163d"].contains(&name.as_str()) {
+                panic!("{name}: player {i} has {got} kills, the stats say {want}");
+            }
+        }
+    }
+    println!("{agree} of {players} players");
+    assert!(corpus().is_empty() || agree * 100 >= players * 95, "{agree} of {players} players");
+}
+
+/// A team's score over the match, every round's added up, is the one the
+/// match stats give: rounds won in Attrition, Elimination and Grifball,
+/// points in Oddball.
+#[test]
+fn team_scores_agree_with_the_match_stats() {
+    let (mut teams, mut agree) = (0usize, 0usize);
+    for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
+        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
+        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        if f.scoreboard().changes.is_empty() {
+            continue;
+        }
+        for t in stats["Teams"].as_array().into_iter().flatten() {
+            let (Some(id), Some(want)) = (t["TeamId"].as_u64(), t["Stats"]["CoreStats"]["Score"].as_i64()) else {
+                continue;
+            };
+            let got = f.scoreboard().total_stat(StatOwner::Team(TeamId(id as u8)), Stat::Score) as i64;
+            teams += 1;
+            agree += usize::from(got == want);
+            if got != want {
+                println!("{name}: team {id} scored {got}, the stats say {want}");
+            }
+        }
+    }
+    assert!(corpus().is_empty() || teams > 0);
+    assert!(agree * 100 >= teams * 95, "{agree} of {teams} teams");
+}
+
 /// Every player on a team in the match from its start to its end has a life.
 /// (A player the roster lists with no team never played.)
 #[test]

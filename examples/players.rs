@@ -16,9 +16,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let level = film.level().map_or("unknown level", |l| l.display_name.unwrap_or(l.name));
     println!("{variant} on {level}, {:.0} s", film.clock().end().seconds());
 
+    // The scoreboard's values added up over every round.
     let board = film.scoreboard();
     for team in board.teams() {
-        println!("team {team}: {}", board.final_stat(StatOwner::Team(team), Stat::Score));
+        println!("team {team}: {}", board.total_stat(StatOwner::Team(team), Stat::Score));
     }
     for p in film.players() {
         let row = StatOwner::Player(p.id);
@@ -28,8 +29,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             p.name().unwrap_or("unnamed"),
             if p.is_bot() { "bot" } else { "" },
             p.team.map_or(String::new(), |t| format!("team {t}")),
-            board.final_stat(row, Stat::Kills),
-            board.final_stat(row, Stat::Deaths),
+            board.total_stat(row, Stat::Kills),
+            board.total_stat(row, Stat::Deaths),
         );
     }
     Ok(())
