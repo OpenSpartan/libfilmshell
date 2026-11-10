@@ -812,7 +812,11 @@ pub fn scale_paths_to_world(
     level: Option<&LevelBox>,
     c2_width: Option<u32>,
 ) -> (Vec<Vec<WorldPosition>>, Option<Calibration>) {
-    let humans: Vec<&PlayerPath> = paths.iter().filter(|p| !p.is_bot).collect();
+    // Bots are in the same units: with no human positions they anchor it.
+    let mut humans: Vec<&PlayerPath> = paths.iter().filter(|p| !p.is_bot && !p.positions.is_empty()).collect();
+    if humans.is_empty() {
+        humans = paths.iter().collect();
+    }
     let calib =
         calibrate_from_spawns(&humans, initial_spawns, map_bounds, composite, asset_id, coord_layout, level, c2_width);
     let world = paths

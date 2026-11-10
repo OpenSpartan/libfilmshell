@@ -21,6 +21,9 @@ pub struct Control {
     pub spawn: Option<(i64, u32, [u32; 3])>,
     /// The first frame after that no player controls it, or it is deleted.
     pub end: Option<i64>,
+    /// Whether `end` is the player giving it up, which a death does, rather
+    /// than its deletion.
+    pub released: bool,
 }
 
 /// Life slot -> what its creates and updates say.
@@ -33,6 +36,8 @@ pub struct Owner {
     pub player: u32,
     pub spawn: Option<(i64, u32, [u32; 3])>,
     pub end: Option<i64>,
+    /// See [`Control::released`].
+    pub released: bool,
 }
 
 /// The lives of `controls` that a player controls, with the players' roster
@@ -42,7 +47,7 @@ pub fn owners(controls: &Controls, holders: &crate::holders::Holders) -> HashMap
         .iter()
         .filter_map(|(&slot, c)| {
             let (frame, id) = c.player?;
-            Some((slot, Owner { player: holders.api(id, frame), spawn: c.spawn, end: c.end }))
+            Some((slot, Owner { player: holders.api(id, frame), spawn: c.spawn, end: c.end, released: c.released }))
         })
         .collect()
 }
@@ -77,8 +82,9 @@ pub fn reader(out: &mut Controls) -> impl FnMut(usize, &[u8], &Payload) + '_ {
                     out.entry(slot).or_default().player.get_or_insert((frame, id));
                 }
                 Some(None) => {
-                    if let Some(c) = out.get_mut(&slot).filter(|c| c.player.is_some()) {
-                        c.end.get_or_insert(frame);
+                    if let Some(c) = out.get_mut(&slot).filter(|c| c.player.is_some() && c.end.is_none()) {
+                        c.end = Some(frame);
+                        c.released = true;
                     }
                 }
                 None => {}

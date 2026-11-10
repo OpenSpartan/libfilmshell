@@ -381,6 +381,19 @@ fn roster_entries(roster: &Roster, log: &crate::statlog::Log, hl_ticks: &[u32]) 
         (!rounds.is_empty()).then(|| rounds.values().map(|&v| v as f64).sum())
     };
     let known = !log.changes.is_empty();
+    // A death is the row's count going up; a clear (a round, or a leaver)
+    // takes it down, and the next death counts up from there.
+    let death_frames = |id: usize| {
+        let mut out = Vec::new();
+        let mut prev = 0;
+        for c in log.changes.iter().filter(|c| c.kind == 0 && c.id as usize == id && c.slot == DEATHS_SLOT) {
+            if c.value > prev {
+                out.extend(std::iter::repeat_n(c.frame, (c.value - prev) as usize));
+            }
+            prev = c.value;
+        }
+        out
+    };
     roster
         .players
         .iter()
@@ -397,6 +410,7 @@ fn roster_entries(roster: &Roster, log: &crate::statlog::Log, hl_ticks: &[u32]) 
                 deaths: if uncounted { Some(UNCOUNTED - 1.0) } else { most(i, DEATHS_SLOT).or(known.then_some(0.0)) },
                 spawns: if uncounted { Some(UNCOUNTED) } else { most(i, SPAWNS_SLOT).or(known.then_some(0.0)) },
                 listed: uncounted.then(|| (p.first.map_or(0.0, at), p.left.map_or(f64::INFINITY, at))),
+                death_frames: known.then(|| death_frames(i)),
             }
         })
         .collect()
