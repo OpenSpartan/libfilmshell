@@ -7,9 +7,11 @@ use crate::{StringId, TagId};
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum GameMode {
-    /// Slayer and its variants (Big Team Battle Slayer, Fiesta).
+    /// Slayer and its variants (Big Team Battle Slayer, Fiesta), and the modes
+    /// that run Slayer's scripts: Grifball, Juggernaut, Headhunter.
     Slayer,
-    /// Capture the Flag.
+    /// Capture the Flag, Big Team Battle's too, and the bomb modes that run
+    /// its scripts.
     CaptureTheFlag,
     /// Oddball.
     Oddball,
@@ -28,6 +30,12 @@ pub enum GameMode {
     Extraction,
     /// Escalation Slayer: a weapon ladder.
     Escalation,
+    /// Infection. Told apart by its event script as films of older builds
+    /// carry it; no film of the current format has been read yet.
+    Infection,
+    /// VIP. Told apart by its event script as films of older builds carry
+    /// it; no film of the current format has been read yet.
+    Vip,
     /// Scripts the library doesn't tell apart.
     Other,
 }
@@ -38,7 +46,7 @@ impl GameMode {
         if has("firefightevents.lua") {
             return if has("fbastionevents.lua") { GameMode::FirefightKingOfTheHill } else { GameMode::Firefight };
         }
-        if has("arenaflagevents.lua") {
+        if has("arenaflagevents.lua") || has("btbflagevents.lua") {
             GameMode::CaptureTheFlag
         } else if has("oddballevents.lua") {
             GameMode::Oddball
@@ -52,6 +60,10 @@ impl GameMode {
             GameMode::Extraction
         } else if has("gungameevents.lua") {
             GameMode::Escalation
+        } else if has("infectionevents.lua") {
+            GameMode::Infection
+        } else if has("vipevents.lua") {
+            GameMode::Vip
         } else if has("slayerevents.lua") || has("btbslayerevents.lua") {
             GameMode::Slayer
         } else {
@@ -77,6 +89,8 @@ impl GameMode {
             GameMode::Attrition => "Attrition",
             GameMode::Extraction => "Extraction",
             GameMode::Escalation => "Escalation Slayer",
+            GameMode::Infection => "Infection",
+            GameMode::Vip => "VIP",
             GameMode::Other => "Other",
         }
     }
@@ -314,5 +328,25 @@ impl GameVariant {
             }
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mode(names: &[&str]) -> GameMode {
+        GameMode::from_scripts(&names.iter().map(|s| s.to_string()).collect())
+    }
+
+    #[test]
+    fn modes_come_from_their_event_scripts() {
+        // The mode-specific scripts films carry, beside the shared ones.
+        assert_eq!(mode(&["infectionevents.lua", "pvpevents.lua"]), GameMode::Infection);
+        assert_eq!(mode(&["vipevents.lua", "vipoptions.lua", "pvpevents.lua"]), GameMode::Vip);
+        assert_eq!(mode(&["btbflagevents.lua", "flageventstubs.lua", "ctfbtboptions.lua"]), GameMode::CaptureTheFlag);
+        assert_eq!(mode(&["attritionevents.lua", "eliminationconfig.lua"]), GameMode::Attrition);
+        assert_eq!(mode(&["slayerevents.lua"]), GameMode::Slayer);
+        assert_eq!(mode(&["pvpevents.lua"]), GameMode::Other);
     }
 }
