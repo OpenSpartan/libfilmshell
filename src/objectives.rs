@@ -9,7 +9,7 @@
 //! returner stood.
 
 use crate::container::Film;
-use crate::events::{Body, Value};
+use crate::events::{Body, Layout, Value};
 use crate::payload::for_each_event_view;
 
 /// Objective kinds.
@@ -42,7 +42,8 @@ pub struct Objective {
 }
 
 /// The film's objective events in frame order; empty unless `ctf`.
-pub fn read(film: &Film, widths: [u32; 3], ctf: bool) -> Vec<Objective> {
+/// `layout` is how the level lays out a position.
+pub fn read(film: &Film, layout: Layout, ctf: bool) -> Vec<Objective> {
     let mut out = Vec::new();
     if !ctf {
         return out;
@@ -50,7 +51,7 @@ pub fn read(film: &Film, widths: [u32; 3], ctf: bool) -> Vec<Objective> {
     let pos = |g: &crate::events::GameEvent| {
         g.values.iter().flatten().find_map(|(_, v)| if let Value::Pos(p) = v { *p } else { None })
     };
-    for_each_event_view(film, widths, |frame, evs| {
+    for_each_event_view(film, layout, |frame, evs| {
         let start = out.len();
         for e in evs {
             let Body::Game(g) = e.body else { continue };

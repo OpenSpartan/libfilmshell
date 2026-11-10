@@ -25,7 +25,7 @@
 //! spawn.
 
 use crate::container::Film;
-use crate::events::{Body, Value};
+use crate::events::{Body, Layout, Value};
 use crate::payload::for_each_event_view;
 use std::collections::BTreeMap;
 
@@ -168,11 +168,12 @@ pub struct ZoneEvent {
     pub at: Option<[u32; 3]>,
 }
 
-/// The film's events in frame order. `team_of` gives a player's team.
-pub fn read(film: &Film, widths: [u32; 3], mode: Mode, team_of: impl Fn(i32) -> Option<i32>) -> Vec<ZoneEvent> {
+/// The film's events in frame order. `layout` is how the level lays out a
+/// position, `team_of` gives a player's team.
+pub fn read(film: &Film, layout: Layout, mode: Mode, team_of: impl Fn(i32) -> Option<i32>) -> Vec<ZoneEvent> {
     let ids = table(mode);
     let mut out = Vec::new();
-    for_each_event_view(film, widths, |frame, evs| {
+    for_each_event_view(film, layout, |frame, evs| {
         // Per id this frame: the recipients, the zone and the position.
         let mut seen: BTreeMap<u32, (Vec<i32>, Option<u32>, Option<[u32; 3]>)> = BTreeMap::new();
         for e in evs {

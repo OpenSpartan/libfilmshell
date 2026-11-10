@@ -444,9 +444,9 @@ struct Exit {
     tick: i64,
 }
 
-fn read_exits(film: &Film, widths: [u32; 3]) -> Vec<Exit> {
+fn read_exits(film: &Film, layout: crate::events::Layout) -> Vec<Exit> {
     let mut out = Vec::new();
-    for_each_event_view(film, widths, |frame, evs| {
+    for_each_event_view(film, layout, |frame, evs| {
         for e in evs {
             if let (Body::Exit { .. }, Some(life), Some(vehicle)) =
                 (&e.body, e.handles[0].and_then(|h| h.biped_slot()), e.handles[1].and_then(|h| h.vehicle_slot()))
@@ -1257,16 +1257,19 @@ pub fn extract_all_player_positions(
         let ex = extract_multiplayer_composite(film, c1_at, coord_layout, c2_width);
         let mut slots = ex.slots;
         let widths = crate::assemble::position_widths(film, true, coord_layout as i64, Some(c2_width), level);
-        let exits = widths.map_or(Vec::new(), |w| read_exits(film, w));
+        let params = widths.map(|w| {
+            let mut p = crate::components::Params::new(w);
+            p.set_level(level);
+            p
+        });
+        let exits = params.map_or(Vec::new(), |p| read_exits(film, (&p).into()));
         let mut vehicles = ex.vehicles.clone();
         for (id, v) in vehicles.iter_mut() {
             v.iter_mut().for_each(|s| s.vehicle = *id);
         }
-        let ident = vehicle_ident.unwrap_or_else(|| {
-            let Some(w) = widths else { return crate::vehicles::Vehicles::default() };
-            let mut params = crate::components::Params::new(w);
-            params.set_level(level);
-            crate::vehicles::Vehicles::read(film, params)
+        let ident = vehicle_ident.unwrap_or_else(|| match params {
+            Some(p) => crate::vehicles::Vehicles::read(film, p),
+            None => crate::vehicles::Vehicles::default(),
         });
         let attachments = attachments.unwrap_or_default();
         if attachments.read {

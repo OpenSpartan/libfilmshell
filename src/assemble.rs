@@ -364,9 +364,10 @@ fn roster_entries(roster: &Roster, log: &crate::statlog::Log, hl_ticks: &[u32]) 
 
 /// The film's game events (PlayerGameEventSmall), positions in world units
 /// when the calibration is known.
-fn game_events(film: &Container, w: [u32; 3], c: Option<&Calibration>, holders: &Holders) -> Vec<(i64, GameEvent)> {
+fn game_events(film: &Container, p: &Params, c: Option<&Calibration>, holders: &Holders) -> Vec<(i64, GameEvent)> {
+    let w = p.widths;
     let mut out = Vec::new();
-    for_each_event_view(film, w, |frame, evs| {
+    for_each_event_view(film, p, |frame, evs| {
         for e in evs {
             let Body::Game(g) = &e.body else { continue };
             let values = g
@@ -637,15 +638,15 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         .map(|((p, positions), states)| WorldPath { player: p.player_index, positions, states })
         .collect();
     let extra: Vec<u32> = inv.pickups.iter().map(|p| p.tag).chain(inv.ground.iter().map(|g| g.tag)).collect();
-    let fired: Option<FilmFire> = widths.map(|w| fire::read(&film, w, paths, &extra));
+    let fired: Option<FilmFire> = params.map(|p| fire::read(&film, (&p).into(), paths, &extra));
     let scripts = crate::scripts::script_names(&film.chunks[0]);
     let mode = GameMode::from_scripts(&scripts);
 
     // What zone modes read of their zones' objects, by the zones' entities.
     let team_of = |pi: i32| roster.players.get(pi as usize).and_then(|p| p.team).map(|t| t as i32);
-    let zone_input = match (zones::mode(&scripts), walk, &calib, widths) {
-        (Some(m), Some(_), Some(_), Some(w)) => {
-            let evs = zones::read(&film, w, m, team_of);
+    let zone_input = match (zones::mode(&scripts), walk, &calib) {
+        (Some(m), Some(p), Some(_)) => {
+            let evs = zones::read(&film, (&p).into(), m, team_of);
             let places = zones::event_places(&evs);
             let crates = zones::crates(&film);
             let mut ids: Vec<u32> = places.keys().copied().collect();
@@ -705,8 +706,8 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     };
     // The mode scripts' events, which also fix the highlight clock when the
     // kills don't.
-    let script_events = match walk.map(|p| p.widths) {
-        Some(w) => game_events(&film, w, calib.as_ref(), &holders),
+    let script_events = match &walk {
+        Some(p) => game_events(&film, p, calib.as_ref(), &holders),
         None => Vec::new(),
     };
     let hl_zero_tick = hl_zero_tick.or_else(|| {
@@ -924,8 +925,8 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         }
         // Flags, placed where the event says, else at the player's latest
         // sample in the two seconds before.
-        if walk.is_some() {
-            for o in objectives::read(&film, w, mode == GameMode::CaptureTheFlag) {
+        if let Some(p) = &walk {
+            for o in objectives::read(&film, p.into(), mode == GameMode::CaptureTheFlag) {
                 let position = match o.at {
                     Some(q) => {
                         let (x, y) = window_to_world(q, w, c);
