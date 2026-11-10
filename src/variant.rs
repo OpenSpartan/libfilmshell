@@ -59,6 +59,9 @@ const RULES: &[(&[u32], &str)] = &[
 /// name, and 8 bytes of value (`Variant::options`).
 const OPTION_HASH: &[u32] = &[3, 9, 0, 0, 0];
 const OPTION_VALUE: &[u32] = &[3, 9, 0, 1, 0];
+/// The header struct's m_iconIndex: the mode's image in the game's sheet of
+/// mode icons. Not written when 0.
+const ICON_INDEX: &[u32] = &[10];
 /// Byte 4 of an option's value: its type.
 const OPTION_FLOAT: u8 = 3;
 const OPTION_BOOL: u8 = 2;
@@ -106,6 +109,8 @@ pub struct Variant {
     /// The options the variant sets: each name's hash, and its value, in
     /// hash order.
     pub options: Vec<(u32, OptionValue)>,
+    /// The header's icon index; None when the header wasn't found.
+    pub icon: Option<u8>,
 }
 
 pub use crate::game::OptionValue;
@@ -255,6 +260,19 @@ fn fields(b: &[u8], p: &mut usize, path: &mut Vec<u32>, f: &mut impl FnMut(&[u32
     }
 }
 
+/// Where the header struct's fields start: after the struct field (id 0) and
+/// length that end exactly at `end`, the byte after its closing path's NUL.
+fn header_start(b: &[u8], end: usize) -> Option<usize> {
+    (end.saturating_sub(600)..end.saturating_sub(8)).rev().find_map(|s| {
+        if b[s] != 0x0a {
+            return None;
+        }
+        let mut q = s + 1;
+        let len = varint(b, &mut q)?;
+        (q as u64 + len == end as u64).then_some(q)
+    })
+}
+
 fn shifted(r: &[u8], s: u32) -> Vec<u8> {
     let at = |i: usize| r.get(i).copied().unwrap_or(0) as u32;
     (0..r.len()).map(|i| (((at(i) << 8 | at(i + 1)) << s) >> 8) as u8).collect()
@@ -324,6 +342,15 @@ pub fn read(chunk0: &[u8]) -> Option<Variant> {
     // The settings struct follows the header struct's path and stop.
     if let Some(at) = b.windows(MODE_PATH.len()).position(|w| w == MODE_PATH) {
         let mut p = at + b[at..].iter().position(|&c| c == 0)? + 1;
+        if let Some(mut q) = header_start(&b, p) {
+            let mut icon = 0;
+            let _ = fields(&b, &mut q, &mut Vec::new(), &mut |path: &[u32], x: i64| {
+                if path == ICON_INDEX {
+                    icon = x;
+                }
+            }, 0);
+            v.icon = u8::try_from(icon).ok();
+        }
         let (mut last_chance_on, mut last_chance) = (false, None);
         let mut rules: Vec<(usize, i64)> = Vec::new();
         let mut flags: Vec<usize> = Vec::new();
