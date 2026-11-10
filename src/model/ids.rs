@@ -1,4 +1,6 @@
+use crate::text::{ParseIdError, serde_as_text};
 use std::fmt;
+use std::str::FromStr;
 
 /// A player's place in the film's roster: everyone present at the start in
 /// the roster's order, then joiners and bots as they appear. Every player
@@ -11,7 +13,7 @@ use std::fmt;
 /// take over from someone who left; the library maps those to the player
 /// who held the id at the time.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PlayerId(pub u8);
 
 impl PlayerId {
@@ -35,7 +37,7 @@ impl fmt::Display for PlayerId {
 /// the same time: a biped's id names one life, a vehicle's one
 /// [`Vehicle`](crate::Vehicle) track.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct EntityId(pub u16);
 
 impl fmt::Display for EntityId {
@@ -45,9 +47,13 @@ impl fmt::Display for EntityId {
 }
 
 /// An Xbox user id.
+///
+/// It serializes as its decimal text: a XUID is past the integers
+/// JavaScript holds exactly.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Xuid(pub u64);
+
+serde_as_text!(Xuid);
 
 impl fmt::Display for Xuid {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -55,10 +61,19 @@ impl fmt::Display for Xuid {
     }
 }
 
+impl FromStr for Xuid {
+    type Err = ParseIdError;
+
+    /// The decimal number: `2533274857096890`.
+    fn from_str(s: &str) -> Result<Xuid, ParseIdError> {
+        s.parse().map(Xuid).map_err(|_| ParseIdError { kind: "XUID" })
+    }
+}
+
 /// A team id: 0 is the first team, 1 the second, up to 7 in modes with
 /// more teams.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TeamId(pub u8);
 
 impl fmt::Display for TeamId {
@@ -71,7 +86,7 @@ impl fmt::Display for TeamId {
 /// the index a [`PlayerId`]'s, so at most the first 32 players. Voice lines,
 /// game events and zones name their players this way.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PlayerMask(pub u32);
 
 impl PlayerMask {
@@ -114,10 +129,30 @@ impl fmt::Debug for Guid {
     }
 }
 
-#[cfg(feature = "serde")]
-impl serde::Serialize for Guid {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.collect_str(self)
+serde_as_text!(Guid);
+
+impl FromStr for Guid {
+    type Err = ParseIdError;
+
+    /// The form [`Display`](fmt::Display) prints:
+    /// `33075df7-01c8-40e1-8b3e-1baee0054c76`.
+    fn from_str(s: &str) -> Result<Guid, ParseIdError> {
+        let err = ParseIdError { kind: "GUID" };
+        let parts: Vec<&str> = s.split('-').collect();
+        if parts.iter().map(|p| p.len()).ne([8, 4, 4, 4, 12]) {
+            return Err(err);
+        }
+        let hex: String = parts.concat();
+        let mut v = [0u8; 16];
+        for (i, b) in v.iter_mut().enumerate() {
+            *b = u8::from_str_radix(hex.get(2 * i..2 * i + 2).ok_or(err.clone())?, 16).map_err(|_| err.clone())?;
+        }
+        // The first three fields are stored little-endian.
+        let mut b = v;
+        b[..4].reverse();
+        b[4..6].reverse();
+        b[6..8].reverse();
+        Ok(Guid(b))
     }
 }
 
@@ -125,13 +160,14 @@ impl serde::Serialize for Guid {
 /// files). `x` and `y` are horizontal, `z` is up and known only when the
 /// film's level is in the catalogue.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Position {
     /// The first horizontal axis: minus ten times engine y.
     pub x: f64,
     /// The second horizontal axis: ten times engine x.
     pub y: f64,
     /// Height, when known.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub z: Option<f64>,
 }
 
@@ -155,6 +191,16 @@ mod tests {
     fn a_guid_prints_as_the_services_write_it() {
         let b = [0xf7, 0x5d, 0x07, 0x33, 0xc8, 0x01, 0xe1, 0x40, 0x8b, 0x3e, 0x1b, 0xae, 0xe0, 0x05, 0x4c, 0x76];
         assert_eq!(Guid(b).to_string(), "33075df7-01c8-40e1-8b3e-1baee0054c76");
+        assert_eq!("33075df7-01c8-40e1-8b3e-1baee0054c76".parse(), Ok(Guid(b)));
+        assert!("33075df7-01c8-40e1-8b3e".parse::<Guid>().is_err());
+    }
+
+    #[test]
+    fn ids_parse_back() {
+        assert_eq!("2b1824d5".parse(), Ok(crate::TagId(0x2b1824d5)));
+        assert_eq!("0x7ca9".parse(), Ok(crate::TagId(0x7ca9)));
+        assert!("2b1824d5f".parse::<crate::TagId>().is_err());
+        assert_eq!("2533274857096890".parse(), Ok(Xuid(2533274857096890)));
     }
 
     #[test]

@@ -4,9 +4,10 @@ use super::medals::{MedalDifficulty, MedalKind};
 
 /// A medal. Its discriminant is the game's medal index, the value films carry.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 #[repr(u8)]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum Medal {
     /// Double Kill.
     DoubleKill = 0,

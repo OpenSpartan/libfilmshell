@@ -38,7 +38,7 @@ pub use damage::{DamageAmount, DamageCause, DamageEffect, damage_effect, spartan
 pub use items::{
     Equipment, Grenade, Item, ObjectKind, TagInfo, Vehicle, Weapon, item, tag_info, tags, weapon_variant_name,
 };
-pub use levels::{Level, LevelBox, catalogue_build, level, levels};
+pub use levels::{Level, LevelBox, catalogue_build, level, level_by_api_id, levels};
 pub use medals::{Medal, MedalDifficulty, MedalKind};
 pub use options::{ModeOption, ModeOptions, OptionValue, modes, murmur3, option_name};
 pub use sandbox::{FireStats, ProjectileStats, fire_stats, projectile_stats, vehicle_bounds};

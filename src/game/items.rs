@@ -6,8 +6,9 @@ use crate::TagId;
 
 /// What kind of object a tag is, from the group the game files it under.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum ObjectKind {
     /// A weapon, including vehicles' guns and turrets.
     Weapon,
@@ -32,8 +33,9 @@ pub enum ObjectKind {
 /// A grenade. The film's grenade type is one more than its index in the
 /// game's grenade list: 1 frag, 2 plasma, 3 dynamo, 4 spike.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum Grenade {
     /// M9 Frag Grenade.
     Frag,
@@ -75,8 +77,9 @@ impl Grenade {
 
 /// Something a player can hold, use or ride.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum Item {
     /// A weapon.
     Weapon(Weapon),

@@ -145,6 +145,8 @@ fn level_box(header: &crate::header::Header, hints: &Hints) -> (Option<LevelBox>
         let level = Level {
             id: TagId(id.unwrap_or(0)),
             name: "",
+            display_name: None,
+            api_id: None,
             structure: TagId(0),
             play: game::LevelBox { index: 0, min: b.min, max: b.max, widths },
             index_bits: 1,
@@ -505,7 +507,7 @@ fn mark_headshots(events: &mut [TimedEvent]) {
     let shots: Vec<(Tick, PlayerId)> = events
         .iter()
         .filter_map(|e| match e.event {
-            Event::Headshot(p) => Some((e.tick, p)),
+            Event::Headshot { player } => Some((e.tick, player)),
             _ => None,
         })
         .collect();
@@ -904,7 +906,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         }
         for &(frame, pi) in &a.headshots {
             if let Some(p) = pid(pi) {
-                events.push((frame, Event::Headshot(p)));
+                events.push((frame, Event::Headshot { player: p }));
             }
         }
     }
@@ -1414,12 +1416,12 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             random: v.loadout_random,
             equipment: v.equipment.map(TagId),
         },
-        settings: v.rules,
-        flags: v.flags,
+        settings: v.rules.into_iter().map(|(k, x)| (k.to_string(), x)).collect(),
+        flags: v.flags.into_iter().map(str::to_string).collect(),
         options: v
             .options
             .iter()
-            .map(|&(hash, value)| VariantOption { hash, name: game::option_name(hash), value })
+            .map(|&(hash, value)| VariantOption { hash, name: game::option_name(hash).map(str::to_string), value })
             .collect(),
         scripts: scripts.iter().cloned().collect(),
         stat_settings: crate::variant_stats::read(&film.chunks[0]).map(|d| StatSettings {
@@ -1595,11 +1597,11 @@ mod tests {
         let at = |t: u32, event: Event| TimedEvent { tick: Tick(t), event };
         let mut events = vec![
             at(100, kill(1)),
-            at(101, Event::Headshot(PlayerId(1))),
-            at(200, Event::Headshot(PlayerId(2))),
+            at(101, Event::Headshot { player: PlayerId(1) }),
+            at(200, Event::Headshot { player: PlayerId(2) }),
             at(200, kill(1)),
             at(300, kill(3)),
-            at(400, Event::Headshot(PlayerId(4))),
+            at(400, Event::Headshot { player: PlayerId(4) }),
         ];
         mark_headshots(&mut events);
         let marks: Vec<Option<bool>> = events

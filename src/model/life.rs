@@ -2,8 +2,9 @@ use super::{EntityId, PlayerId, Position, Tick};
 
 /// How the film's quantized positions became world units.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum CoordinateSource {
     /// The level's own quantization box, from the level catalogue or the
     /// hints: exact.
@@ -25,7 +26,7 @@ pub enum CoordinateSource {
 /// The affine map from raw positions to world units:
 /// `x = -scale_x * raw[1] + offset_x`, `y = scale_y * raw[0] + offset_y`.
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Coordinates {
     /// Where the map came from.
@@ -40,6 +41,7 @@ pub struct Coordinates {
     pub offset_y: f64,
     /// For a fit to spawn pads: the life starts checked against the pads,
     /// and how many landed within 5 world units of one.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub spawn_fit: Option<(usize, usize)>,
 }
 
@@ -53,7 +55,7 @@ impl Coordinates {
 /// One sample of a life: where the biped was and its state as of its last
 /// update.
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Sample {
     /// When.
@@ -64,22 +66,28 @@ pub struct Sample {
     /// [`Coordinates::to_world`] converts them.
     pub raw: [f64; 2],
     /// The position in world units, when the film's coordinates are known.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
     /// Aim yaw in radians, in world axes (from +x toward +y). The aim, speed,
     /// health and shield are None in small lobbies, whose biped updates
     /// aren't read field by field.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub yaw: Option<f64>,
     /// On-foot speed, world units a second; None in a vehicle.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub speed: Option<f64>,
     /// Health as a fraction of the maximum.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub health: Option<f64>,
     /// Shield as a fraction of the maximum, above 1 with an overshield; None
     /// in a mode without shields.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub shield: Option<f64>,
     /// In a vehicle: the sample is the vehicle's position.
     pub in_vehicle: bool,
     /// The vehicle, when known: [`Film::vehicle_at`](crate::Film::vehicle_at)
     /// finds its track.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub vehicle: Option<EntityId>,
 }
 
@@ -93,20 +101,24 @@ pub struct Sample {
 /// For playback, prefer [`Film::sample_at`](crate::Film::sample_at) to
 /// [`Life::at`]: it also ends a life when its player leaves.
 #[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Life {
     /// The player whose life it is.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub player: Option<PlayerId>,
     /// The biped's id, unique among the lives under way at the same time.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub entity: Option<EntityId>,
     /// Whether the life ended in a death, by the HighlightEvents death times
     /// or, without them, by a respawn following it.
     pub died: bool,
     /// The tick of the kill event that ended the life. It can be None when
     /// `died` is true: no kill event names that death.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub death: Option<Tick>,
     /// Its samples, in tick order.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub samples: Vec<Sample>,
 }
 

@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let film = Film::from_chunks(common::load_folder(dir.as_ref())?)?;
 
     let variant = film.variant().map_or("unknown variant", |v| v.name.as_str());
-    let level = film.level().map_or("unknown level", |l| l.name);
+    let level = film.level().map_or("unknown level", |l| l.display_name.unwrap_or(l.name));
     println!("{variant} on {level}, {:.0} s", film.clock().end().seconds());
 
     let board = film.scoreboard();

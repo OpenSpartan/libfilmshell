@@ -72,7 +72,12 @@
 //!
 //! # Features
 //!
-//! - `serde`: derives `serde::Serialize` on the types at the crate root.
+//! - `serde`: derives `Serialize` and `Deserialize` on the types at the
+//!   crate root and the `game` enums. An [`Event`] is an object with a
+//!   `type` (`{"type": "kill", "victim": 3, ...}`), enum variants are
+//!   snake_case, [`TagId`]s, [`Xuid`]s and [`Guid`]s are strings, and empty
+//!   `Option` and `Vec` fields are left out. With `serde_json`, turn on its
+//!   `float_roundtrip` feature for floats to read back exactly.
 //! - `research`: makes the internal readers public under a hidden
 //!   `research` module, for studying the format; they are outside the API's
 //!   stability guarantees.
@@ -88,6 +93,7 @@ pub mod game;
 mod hints;
 mod model;
 mod tag;
+mod text;
 
 pub use chunk::{Chunk, ChunkKind, MAX_CHUNK_BYTES, MAX_FILM_BYTES};
 pub use error::Error;
@@ -95,6 +101,7 @@ pub use film::Film;
 pub use hints::{Hints, LevelBounds, SpawnPad};
 pub use model::*;
 pub use tag::TagId;
+pub use text::ParseIdError;
 
 // The README's code compiles as a doc test.
 #[cfg(doctest)]

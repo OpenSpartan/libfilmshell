@@ -266,7 +266,7 @@ fn every_medal_is_kept() {
 fn headshots_mark_their_kills() {
     let (mut events, mut marked) = (0usize, 0usize);
     for (name, f) in corpus() {
-        let n = f.events().iter().filter(|e| matches!(e.event, Event::Headshot(_))).count();
+        let n = f.events().iter().filter(|e| matches!(e.event, Event::Headshot { .. })).count();
         let m = f.kills().filter(|(_, k)| k.headshot == Some(true)).count();
         assert!(m <= n, "{name}");
         if n == 0 {
@@ -421,6 +421,49 @@ fn teams_agree_with_the_match_stats() {
     assert!(corpus().is_empty() || players > 0);
     assert!(agree * 100 >= players * 98, "{agree} of {players} players");
     assert!(bots_with_team * 100 >= bots * 90, "{bots_with_team} of {bots} bots have a team");
+}
+
+/// The film's level is the one the match stats name by the services' id.
+#[test]
+fn levels_match_the_match_stats() {
+    let mut checked = 0;
+    for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
+        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
+        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        let Some(want) = stats["MatchInfo"]["LevelId"].as_str() else { continue };
+        let level = f.level().unwrap_or_else(|| panic!("{name}: no level"));
+        assert_eq!(level.api_id.map(|g| g.to_string()).as_deref(), Some(want), "{name}");
+        checked += 1;
+    }
+    assert!(corpus().is_empty() || checked > 0);
+}
+
+/// The model survives a trip through JSON: every film's players, lives,
+/// events, rides, vehicles, zones, header, variant and scoreboard read back
+/// equal.
+#[cfg(feature = "serde")]
+#[test]
+fn the_model_reads_back_from_json() {
+    fn round<T: serde::Serialize + serde::de::DeserializeOwned + PartialEq + std::fmt::Debug>(
+        name: &str,
+        what: &str,
+        v: &T,
+    ) {
+        let json = serde_json::to_string(v).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let back: T = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert!(&back == v, "{name}: {what} differ after a round trip");
+    }
+    for (name, f) in corpus() {
+        round(name, "players", &f.players().to_vec());
+        round(name, "lives", &f.lives().to_vec());
+        round(name, "events", &f.events().to_vec());
+        round(name, "rides", &f.rides().to_vec());
+        round(name, "vehicles", &f.vehicles().to_vec());
+        round(name, "zones", &f.zones().to_vec());
+        round(name, "header", f.header());
+        round(name, "variant", &f.variant().cloned());
+        round(name, "scoreboard", f.scoreboard());
+    }
 }
 
 /// Every person has a gamertag (chunk 0's roster, a player struct, or their

@@ -4,8 +4,9 @@ pub use super::medals_data::Medal;
 
 /// A medal's category.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum MedalKind {
     /// Kills without dying.
     Spree,
@@ -23,8 +24,9 @@ pub enum MedalKind {
 
 /// How hard a medal is to earn, as the game ranks it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum MedalDifficulty {
     /// Normal.
     Normal,

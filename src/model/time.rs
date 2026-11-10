@@ -19,7 +19,7 @@ use std::time::Duration;
 /// assert_eq!(death.to_string(), "0:17.500");
 /// ```
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Tick(pub u32);
 
 impl Tick {

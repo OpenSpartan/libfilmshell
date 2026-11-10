@@ -5,8 +5,9 @@ use crate::TagId;
 
 /// What dealt a hit, from where its damage effect sits in the game's tags.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum DamageCause {
     /// A weapon's projectile, or a projectile with no weapon on record.
     Weapon,

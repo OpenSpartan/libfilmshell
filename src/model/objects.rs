@@ -5,7 +5,7 @@ use crate::game::{self, Grenade, Item};
 /// A vehicle's track: one vehicle object from its creation, or the film's
 /// start, to its last position record.
 #[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Vehicle {
     /// The vehicle's id. Later vehicles reuse it; each creation starts a new
@@ -14,6 +14,7 @@ pub struct Vehicle {
     /// The vehicle's tag.
     pub tag: TagId,
     /// Where it was, in tick order.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub track: Vec<(Tick, Position)>,
 }
 
@@ -49,7 +50,7 @@ impl Vehicle {
 /// updates can't be read, rides are inferred from the exits and from where
 /// the vehicles went.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Ride {
     /// The rider.
@@ -57,9 +58,11 @@ pub struct Ride {
     /// The vehicle, an index into [`Film::vehicles`](crate::Film::vehicles),
     /// when it has a track. A rider in a part (a Falcon's side gun, a
     /// Scorpion's turret) rides the vehicle that carries the part.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub vehicle: Option<usize>,
     /// The seat, 0 the driver's: the parent state's, else on a film without
     /// it that of the exit that ends the ride. None when neither names one.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub seat: Option<u32>,
     /// The first tick in the vehicle.
     pub from: Tick,
@@ -70,7 +73,7 @@ pub struct Ride {
 /// An object standing on the map, from the seek snapshots: vehicles, weapons
 /// and equipment on their spawners, devices.
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct WorldObject {
     /// The object's tag.
@@ -82,6 +85,7 @@ pub struct WorldObject {
     /// The first snapshot that had it.
     pub from: Tick,
     /// The first snapshot without it (snapshots are 20 s apart, so it went somewhere in between); None if it was there to the end.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub to: Option<Tick>,
 }
 
@@ -95,7 +99,7 @@ impl WorldObject {
 /// A weapon lying on the ground after it was dropped or spawned, where it
 /// came to rest.
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct GroundWeapon {
     /// The weapon's tag.
@@ -105,6 +109,7 @@ pub struct GroundWeapon {
     /// When it came to rest.
     pub from: Tick,
     /// When it was removed; None if it was still there at the end.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub to: Option<Tick>,
     /// Removed by a player picking it up.
     pub taken: bool,
@@ -112,14 +117,16 @@ pub struct GroundWeapon {
 
 /// A thrown grenade's flight.
 #[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct GrenadeFlight {
     /// The thrower.
     pub player: PlayerId,
     /// The grenade.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub grenade: Option<Grenade>,
     /// Its path, thinned to within a quarter of a world unit of the full one.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub path: Vec<(Tick, Position)>,
     /// When it went off: its deletion, else its last position.
     pub end: Tick,
@@ -129,8 +136,9 @@ pub struct GrenadeFlight {
 
 /// The ground a zone covers, in world units.
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum ZoneArea {
     /// A circle.
     Cylinder {
@@ -148,7 +156,7 @@ pub enum ZoneArea {
 
 /// A zone's or a hill's shape, from its object's properties.
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct ZoneShape {
     /// The ground it covers.
@@ -160,19 +168,22 @@ pub struct ZoneShape {
     /// The direction of its forward axis, radians from +x toward +y.
     pub angle: f64,
     /// The team the map gives it.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub team: Option<TeamId>,
 }
 
 /// A zone's state from `tick` on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct ZoneState {
     /// From when.
     pub tick: Tick,
     /// The team that holds it.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub owner: Option<TeamId>,
     /// The team capturing it.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub capturing: Option<TeamId>,
     /// The capture's progress, 0 to 100.
     pub progress: u32,
@@ -184,7 +195,7 @@ pub struct ZoneState {
 
 /// A Strongholds zone, a hill, or a Firefight hill.
 #[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Zone {
     /// The zone object's entity index.
@@ -192,16 +203,19 @@ pub struct Zone {
     /// Where it stands.
     pub position: Position,
     /// Its letter.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub letter: Option<char>,
     /// Its shape.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub shape: Option<ZoneShape>,
     /// Its state over time.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub states: Vec<ZoneState>,
 }
 
 /// King of the Hill's points on the current hill.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct HillScore {
     /// Points that win a hill.
@@ -209,5 +223,6 @@ pub struct HillScore {
     /// Hills that win the match.
     pub hills_to_win: u32,
     /// Each team's points on the current hill, at each change.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub points: Vec<(Tick, TeamId, u32)>,
 }

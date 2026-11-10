@@ -2,7 +2,8 @@ use super::{PlayerId, TeamId, Tick};
 
 /// Whose row of the scoreboard a value is in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum StatOwner {
     /// A player's row.
     Player(PlayerId),
@@ -14,8 +15,9 @@ pub enum StatOwner {
 /// slot. The variant's [`stat_labels`](crate::GameVariant::stat_labels) name
 /// every slot, these included.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum Stat {
     /// The mode's score.
     Score,
@@ -89,7 +91,7 @@ impl Stat {
 
 /// One scoreboard value changing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct StatChange {
     /// When.
@@ -104,7 +106,7 @@ pub struct StatChange {
 
 /// The match clock when its limit or state changes.
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct MatchClock {
     /// When.
@@ -119,7 +121,7 @@ pub struct MatchClock {
 
 /// The engine's state at a seek snapshot, every 20 s.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct EngineState {
     /// The snapshot's tick.
@@ -127,24 +129,29 @@ pub struct EngineState {
     /// The match phase: 1 in play, 2 over.
     pub phase: u32,
     /// The lives each player in the game has left, -1 for unlimited.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub lives_left: Vec<(PlayerId, i32)>,
     /// The scoreboard's rows as the snapshot holds them: each player's and
     /// team's values of the statborg's 56 slots, by slot. The values the
     /// snapshot misses are carried from the one before.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub rows: Vec<(StatOwner, Vec<i32>)>,
 }
 
 /// The game's scoreboard over the match: every value the statborg
 /// replicates as it changes, and the match clock.
 #[derive(Clone, Debug, Default, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Scoreboard {
     /// Every change, in tick order.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub changes: Vec<StatChange>,
     /// The match clock at each change of its limit or state.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub clock: Vec<MatchClock>,
     /// The engine's state at each seek snapshot.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub engine: Vec<EngineState>,
 }
 

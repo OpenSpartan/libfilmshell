@@ -17,8 +17,11 @@ First release.
 - `filmshell::format` exposes the raw layers, with the game's names for every event and entity
   type.
 - `filmshell::analysis` estimates what films don't state: accuracy, weapon numbers, spawn factors.
-- Features: `serde` derives `Serialize` on the types at the crate root; `research` makes the
-  internal readers public, outside the stability guarantees.
+- `game::Level` carries the level's English name where the game's map info gives one, and the
+  services' level id (`MatchInfo.LevelId`); `game::level_by_api_id` finds a level by it.
+- Features: `serde` derives `Serialize` and `Deserialize` (events tagged by `type`, ids as text,
+  empty fields left out); `research` makes the internal readers public, outside the stability
+  guarantees.
 - A film whose chunks inflate past 1 GiB, or a chunk past 256 MiB, is refused. `Hints` ignore
   spawn points with coordinates that aren't finite or lie more than a million world units out,
   and level boxes that aren't finite or whose low corner isn't below their high one.

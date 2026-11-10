@@ -9,8 +9,9 @@ use super::options_data::{MODES, OPTION_NAMES};
 
 /// An option's value.
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum OptionValue {
     /// A number.
     Number(f64),

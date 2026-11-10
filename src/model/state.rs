@@ -4,7 +4,7 @@ use crate::game::Grenade;
 
 /// A player's movement input from `tick` on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Input {
     /// From when.
@@ -14,12 +14,13 @@ pub struct Input {
     /// Sideways throttle, -31 (right) to 31 (left).
     pub left: i8,
     /// The control record's 5-bit stance field, when sent.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub stance: Option<u8>,
 }
 
 /// A weapon slot's rounds from `tick` on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Ammo {
     /// From when.
@@ -34,7 +35,7 @@ pub struct Ammo {
 
 /// An energy weapon's charge from `tick` on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Energy {
     /// From when.
@@ -47,7 +48,7 @@ pub struct Energy {
 
 /// A weapon's heat from `tick` on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Heat {
     /// From when.
@@ -62,7 +63,7 @@ pub struct Heat {
 
 /// The grenades a player carries from `tick` on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct GrenadeCount {
     /// From when.
@@ -80,7 +81,7 @@ impl GrenadeCount {
 
 /// A player's equipment charge from `tick` on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct EquipmentCharge {
     /// From when.
@@ -93,7 +94,7 @@ pub struct EquipmentCharge {
 
 /// The weapon in one of a player's weapon slots from `tick` on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct WeaponSlot {
     /// From when.
@@ -101,12 +102,13 @@ pub struct WeaponSlot {
     /// The weapon slot, 0 to 3.
     pub slot: u32,
     /// The weapon; None when the slot is empty.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub weapon: Option<TagId>,
 }
 
 /// The weapon slot a player holds from `tick` on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct HeldSlot {
     /// From when.
@@ -127,24 +129,32 @@ fn latest<T>(series: &[T], tick: Tick, at: impl Fn(&T) -> Tick) -> Option<&T> {
 /// alive: [`Film::weapon_at`](crate::Film::weapon_at) combines them with the
 /// player's lives.
 #[derive(Clone, Debug, Default, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct PlayerState {
     /// Movement input.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub inputs: Vec<Input>,
     /// Weapon magazines and reserves.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub ammo: Vec<Ammo>,
     /// Energy weapons' charge.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub energy: Vec<Energy>,
     /// Weapon heat.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub heat: Vec<Heat>,
     /// Grenades carried.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub grenades: Vec<GrenadeCount>,
     /// Equipment charge.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub equipment: Vec<EquipmentCharge>,
     /// The weapons in the weapon slots.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub weapons: Vec<WeaponSlot>,
     /// The weapon slot held.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub held: Vec<HeldSlot>,
 }
 
