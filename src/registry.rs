@@ -122,16 +122,9 @@ mod tests {
 
     #[test]
     fn every_reference_film_has_the_default_schema() {
-        let films = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("films");
-        if !films.exists() {
-            return;
-        } // films/ is local only
-        let mut n = 0;
-        for e in std::fs::read_dir(films).unwrap() {
-            let Ok(c0) = std::fs::read(e.unwrap().path().join("filmChunk0_dec")) else { continue };
-            assert_eq!(Schema::read(&c0), Schema::DEFAULT);
-            n += 1;
+        for dir in crate::testing::film_dirs() {
+            let c0 = crate::testing::chunk(&dir, 0).unwrap();
+            assert_eq!(Schema::read(&c0), Schema::DEFAULT, "{}", dir.display());
         }
-        assert!(n >= 50);
     }
 }

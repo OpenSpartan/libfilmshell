@@ -41,9 +41,33 @@ pub fn hitches(game_ticks: &[u32]) -> Vec<(u32, u32)> {
     out
 }
 
-/// `game_ticks` without the ticks hitches skipped: the clock HighlightEvents
-/// time runs on.
-pub fn highlight_ticks(game_ticks: &[u32]) -> Vec<u32> {
+/// The clock HighlightEvents time runs on, in ticks for each frame. Its
+/// times are the server's milliseconds, which the packets' timestamps keep
+/// (a death's record falls within a tick of its kill's packet on every
+/// reference film), so with `times_us`, each frame's timestamp, it is the
+/// first frame's tick plus the time since, in ticks. A server that falls
+/// behind runs fewer ticks than time: a 34-minute minigame ran 29 minutes of
+/// ticks. Without timestamps it is `game_ticks` without the ticks recorder
+/// hitches skipped.
+pub fn highlight_ticks(game_ticks: &[u32], times_us: Option<&[u64]>) -> Vec<u32> {
+    match times_us {
+        Some(us) if us.len() == game_ticks.len() && !us.is_empty() => {
+            let (t0, us0) = (game_ticks[0] as f64, us[0]);
+            let mut last = 0u32;
+            us.iter()
+                .map(|&u| {
+                    let t = (t0 + u.saturating_sub(us0) as f64 / 1000.0 * TICKS_PER_MS).round() as u32;
+                    last = last.max(t);
+                    last
+                })
+                .collect()
+        }
+        _ => tick_clock(game_ticks),
+    }
+}
+
+/// `game_ticks` without the ticks hitches skipped.
+fn tick_clock(game_ticks: &[u32]) -> Vec<u32> {
     let steps = hitches(game_ticks);
     let mut at = 0;
     let mut skipped = 0;
@@ -63,6 +87,9 @@ pub fn highlight_ticks(game_ticks: &[u32]) -> Vec<u32> {
 pub struct LifeSlot {
     pub slot_id: i32,
     pub is_bot: bool,
+    /// The roster index of the player the film names as the life's owner,
+    /// when it does: the life can only be theirs.
+    pub player: Option<usize>,
     pub start: f64,
     pub end: f64,
     pub x: Option<f64>,
@@ -387,9 +414,15 @@ pub fn assign_lives(slots: &[LifeSlot], players: &[LifePlayer]) -> Option<LifeAs
         if s.is_bot != by_index.get(&q.player).map(|p| p.is_bot).unwrap_or(false) {
             return FORBIDDEN;
         }
+        if s.player.is_some_and(|p| p != q.player) {
+            return FORBIDDEN;
+        }
+        // A slot whose player the film names needs no prior on who it is:
+        // only which of their lives.
+        let named = s.player.is_some();
         let team = team_of(q.player);
         let wrong_side = match (side, team) {
-            (Some(sd), Some(tm)) => sd.of(s) != team_bit(tm),
+            (Some(sd), Some(tm)) => !named && sd.of(s) != team_bit(tm),
             _ => false,
         };
         let mut c = 0.0f64;
@@ -400,10 +433,12 @@ pub fn assign_lives(slots: &[LifeSlot], players: &[LifePlayer]) -> Option<LifeAs
                         return FORBIDDEN;
                     }
                 }
-                if s.slot_id as i64 != q.player as i64 {
-                    c += t.id_prior;
+                if !named {
+                    if s.slot_id as i64 != q.player as i64 {
+                        c += t.id_prior;
+                    }
+                    c += f64::min(t.late_cap, 0.5 * f64::max(0.0, s.start - t0 - t.initial_window));
                 }
-                c += f64::min(t.late_cap, 0.5 * f64::max(0.0, s.start - t0 - t.initial_window));
                 if wrong_side && s.start <= t0 + t.initial_window {
                     c += t.side_cost;
                 }
@@ -547,7 +582,7 @@ pub fn assign_lives(slots: &[LifeSlot], players: &[LifePlayer]) -> Option<LifeAs
         let mut best: Option<usize> = None;
         let mut best_c = f64::INFINITY;
         for p in &untimed {
-            if p.is_bot != s.is_bot {
+            if p.is_bot != s.is_bot || s.player.is_some_and(|o| o != p.index) {
                 continue;
             }
             let chain = &chains[&p.index];

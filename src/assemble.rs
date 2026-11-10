@@ -325,20 +325,45 @@ fn pair_grenades(
 /// nothing caps its lives (one fewer deaths, so its last life can survive).
 const UNCOUNTED: f64 = 1e9;
 
+/// The frames a new round clears the scoreboard at, in order. A round
+/// clears every player's row in one frame, where a player who leaves has
+/// only their own cleared: a frame where the spawns of two rows or more
+/// drop to 0, half or more of the rows that had spawned. (Measured on the
+/// multi-round films, Oddball and the minigames: the clear comes with the
+/// round's start, up to 3 s before its clock restarts.)
+fn round_resets(log: &crate::statlog::Log) -> Vec<i64> {
+    let mut spawns: BTreeMap<u32, i32> = BTreeMap::new();
+    let mut out = Vec::new();
+    let changes: Vec<_> = log.changes.iter().filter(|c| c.kind == 0 && c.slot == SPAWNS_SLOT).collect();
+    for same in changes.chunk_by(|a, b| a.frame == b.frame) {
+        let had = spawns.values().filter(|&&v| v > 0).count();
+        let cleared = same.iter().filter(|c| c.value == 0 && spawns.get(&c.id).is_some_and(|&v| v > 0)).count();
+        if cleared >= 2 && 2 * cleared >= had {
+            out.push(same[0].frame);
+        }
+        for c in same {
+            spawns.insert(c.id, c.value);
+        }
+    }
+    out
+}
+
 /// What life assignment needs of each player, from the film: the roster, and
 /// each player's deaths and spawns on the scoreboard. A player who leaves
-/// has their row cleared, so a count is its highest value. A bot that took
-/// a leaver's place can have no row at all; its lives are chained by time
-/// without a count.
+/// has their row cleared, so a count is its highest value in each round,
+/// summed over the rounds. A bot that took a leaver's place can have no row
+/// at all; its lives are chained by time without a count.
 fn roster_entries(roster: &Roster, log: &crate::statlog::Log, hl_ticks: &[u32]) -> Vec<RosterEntry> {
     let at = |f: i64| usize::try_from(f).ok().and_then(|f| hl_ticks.get(f)).map_or(0.0, |&t| t as f64);
+    let resets = round_resets(log);
     let most = |id: usize, slot: u32| {
-        log.changes
-            .iter()
-            .filter(|c| c.kind == 0 && c.id as usize == id && c.slot == slot)
-            .map(|c| c.value)
-            .max()
-            .map(|v| v as f64)
+        let mut rounds: BTreeMap<usize, i32> = BTreeMap::new();
+        for c in log.changes.iter().filter(|c| c.kind == 0 && c.id as usize == id && c.slot == slot) {
+            let round = resets.partition_point(|&r| r <= c.frame);
+            let m = rounds.entry(round).or_insert(c.value);
+            *m = (*m).max(c.value);
+        }
+        (!rounds.is_empty()).then(|| rounds.values().map(|&v| v as f64).sum())
     };
     let known = !log.changes.is_empty();
     roster
@@ -364,9 +389,10 @@ fn roster_entries(roster: &Roster, log: &crate::statlog::Log, hl_ticks: &[u32]) 
 
 /// The film's game events (PlayerGameEventSmall), positions in world units
 /// when the calibration is known.
-fn game_events(film: &Container, w: [u32; 3], c: Option<&Calibration>, holders: &Holders) -> Vec<(i64, GameEvent)> {
+fn game_events(film: &Container, p: &Params, c: Option<&Calibration>, holders: &Holders) -> Vec<(i64, GameEvent)> {
+    let w = p.widths;
     let mut out = Vec::new();
-    for_each_event_view(film, w, |frame, evs| {
+    for_each_event_view(film, p, |frame, evs| {
         for e in evs {
             let Body::Game(g) = &e.body else { continue };
             let values = g
@@ -564,6 +590,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let mut thrown = grenades::Flights::default();
     let mut deploys_seen = crate::deploys::Seen::default();
     let mut attach_seen = crate::attach::Seen::default();
+    let mut controls = crate::owners::Controls::new();
     if let Some(p) = walk {
         let actor_control = crate::registry::Schema::read(&film.chunks[0]).biped.actor_control;
         vitals_marks = Vitals::start(&film, &p, level);
@@ -580,6 +607,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 &mut grenades::reader(&mut thrown),
                 &mut crate::deploys::reader(&mut deploys_seen),
                 &mut crate::attach::reader(actor_control, &mut attach_seen),
+                &mut crate::owners::reader(&mut controls),
             ],
         );
         crate::statlog::finish(&mut stat_log);
@@ -589,8 +617,9 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let splashes = walk.map(|_| crate::splash::finish(splash_seen)).unwrap_or_default();
     let deploys = walk.map(|_| crate::deploys::finish(deploys_seen)).unwrap_or_default();
     let attachments = walk.map(|_| crate::attach::finish(attach_seen));
-    let entries = roster_entries(&roster, &stat_log, &crate::lives::highlight_ticks(film.frame_ticks()));
+    let entries = roster_entries(&roster, &stat_log, &film.highlight_ticks());
     let xuids: Vec<String> = roster.players.iter().map(|p| p.xuid.map(|x| x.to_string()).unwrap_or_default()).collect();
+    let owners = crate::owners::owners(&controls, &holders);
     let ex = extract_all_player_positions(
         &film,
         layout,
@@ -600,6 +629,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         level,
         walk.map(|_| vehicle_ident),
         attachments,
+        &owners,
     );
     let paths = &ex.paths;
 
@@ -637,15 +667,15 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         .map(|((p, positions), states)| WorldPath { player: p.player_index, positions, states })
         .collect();
     let extra: Vec<u32> = inv.pickups.iter().map(|p| p.tag).chain(inv.ground.iter().map(|g| g.tag)).collect();
-    let fired: Option<FilmFire> = widths.map(|w| fire::read(&film, w, paths, &extra));
+    let fired: Option<FilmFire> = params.map(|p| fire::read(&film, (&p).into(), paths, &extra));
     let scripts = crate::scripts::script_names(&film.chunks[0]);
     let mode = GameMode::from_scripts(&scripts);
 
     // What zone modes read of their zones' objects, by the zones' entities.
     let team_of = |pi: i32| roster.players.get(pi as usize).and_then(|p| p.team).map(|t| t as i32);
-    let zone_input = match (zones::mode(&scripts), walk, &calib, widths) {
-        (Some(m), Some(_), Some(_), Some(w)) => {
-            let evs = zones::read(&film, w, m, team_of);
+    let zone_input = match (zones::mode(&scripts), walk, &calib) {
+        (Some(m), Some(p), Some(_)) => {
+            let evs = zones::read(&film, (&p).into(), m, team_of);
             let places = zones::event_places(&evs);
             let crates = zones::crates(&film);
             let mut ids: Vec<u32> = places.keys().copied().collect();
@@ -684,7 +714,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let acts = walk.map(|_| acts_out);
 
     // The highlight clock: the kill events fix it to the tick.
-    let hl_ticks = crate::lives::highlight_ticks(&ex.frame_ticks);
+    let hl_ticks = film.highlight_ticks();
     let pi_of: HashMap<&str, i32> = roster
         .players
         .iter()
@@ -705,8 +735,8 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     };
     // The mode scripts' events, which also fix the highlight clock when the
     // kills don't.
-    let script_events = match walk.map(|p| p.widths) {
-        Some(w) => game_events(&film, w, calib.as_ref(), &holders),
+    let script_events = match &walk {
+        Some(p) => game_events(&film, p, calib.as_ref(), &holders),
         None => Vec::new(),
     };
     let hl_zero_tick = hl_zero_tick.or_else(|| {
@@ -924,8 +954,8 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         }
         // Flags, placed where the event says, else at the player's latest
         // sample in the two seconds before.
-        if walk.is_some() {
-            for o in objectives::read(&film, w, mode == GameMode::CaptureTheFlag) {
+        if let Some(p) = &walk {
+            for o in objectives::read(&film, p.into(), mode == GameMode::CaptureTheFlag) {
                 let position = match o.at {
                     Some(q) => {
                         let (x, y) = window_to_world(q, w, c);
@@ -1053,9 +1083,11 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         }
         // Vehicles and the rides in them: the runs of a path's samples
         // spliced from one vehicle. With the parent state read a run is cut
-        // where the life changes seat or moves into a part, and its seat is
-        // the one the parent state names; otherwise the seat is that of the
-        // exit that ends the run.
+        // where the life changes seat or moves into a part, its seat is the
+        // one the parent state names, and the run that ends its attachment
+        // lasts as long as the attachment: a vehicle can stop sending its
+        // position with the rider still seated. Otherwise the seat is that of
+        // the exit that ends the run.
         let tracks = vehicle_tracks(&ex, c);
         for (k, wp) in world.iter().enumerate() {
             let Some(player) = pid(wp.player) else { continue };
@@ -1080,7 +1112,12 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 {
                     j += 1;
                 }
-                let (from, to) = (pos[i].frame, pos[j].frame);
+                let last_of_span = at.is_some() && (j + 1 == pos.len() || span_at(pos[j + 1].frame) != at);
+                let to = match at {
+                    Some(at) if last_of_span => spans[at].to.max(pos[j].frame),
+                    _ => pos[j].frame,
+                };
+                let from = pos[i].frame;
                 let track =
                     tracks.iter().position(|t| t.0 == v && t.2[0].frame <= from && from <= t.2[t.2.len() - 1].frame);
                 let seat = match at {

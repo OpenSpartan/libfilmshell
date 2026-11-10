@@ -736,6 +736,9 @@ pub struct Fields {
     /// sprint (on-foot speed at the sprint ceiling), 3 a grapple with its
     /// target.
     pub ability: Option<u32>,
+    /// unit-control: Some(Some(id)) a player controls the unit, the engine
+    /// player id of the events and the scoreboard; Some(None) no player does.
+    pub controller: Option<Option<u32>>,
     /// Object parent state: Some(Some(parent)) attached to `parent`,
     /// Some(None) detached (a dropped or placed item).
     pub parent: Option<Option<Parent>>,
@@ -2350,12 +2353,16 @@ impl Reader<'_> {
                 self.skip(4);
                 f.shield = Some((s, t));
             }
+            // The controlling player, when there is one, then two fields not
+            // read.
             UnitControl => {
+                let mut player = None;
                 if self.flag() {
-                    self.skip(5);
+                    player = Some(self.bits(5));
                     self.opt(6);
                 }
                 self.opt(32);
+                f.controller = Some(player);
             }
             // Mode 1 is the whole block. The others: an optional 32-bit
             // value, two small fields, a movement vector, a direction index,

@@ -444,9 +444,9 @@ struct Exit {
     tick: i64,
 }
 
-fn read_exits(film: &Film, widths: [u32; 3]) -> Vec<Exit> {
+fn read_exits(film: &Film, layout: crate::events::Layout) -> Vec<Exit> {
     let mut out = Vec::new();
-    for_each_event_view(film, widths, |frame, evs| {
+    for_each_event_view(film, layout, |frame, evs| {
         for e in evs {
             if let (Body::Exit { .. }, Some(life), Some(vehicle)) =
                 (&e.body, e.handles[0].and_then(|h| h.biped_slot()), e.handles[1].and_then(|h| h.vehicle_slot()))
@@ -1075,11 +1075,49 @@ fn life_players_of(roster: &[RosterEntry], highlights: &[HighlightEvent], xuids:
     Some(out)
 }
 
+/// Lives a player controlled that sent no position the scan found (a player
+/// who stood where they spawned until killed sends nothing): one sample
+/// where the biped was created, when it was created in the play space.
+/// Returns their slots.
+fn add_recordless_lives(
+    film: &Film,
+    slots: &mut Slots,
+    owners: &HashMap<i32, crate::owners::Owner>,
+    widths: Option<[u32; 3]>,
+    level: Option<&crate::levels::LevelBox>,
+) -> HashSet<i32> {
+    let mut out = HashSet::new();
+    let Some(w) = widths else { return out };
+    let play = level.map_or(0, |l| l.box_index);
+    let mut owned: Vec<(&i32, &crate::owners::Owner)> = owners.iter().collect();
+    owned.sort_by_key(|o| o.0);
+    for (&slot, o) in owned {
+        let Some((frame, _, q)) = o.spawn.filter(|s| s.1 == play) else { continue };
+        if slots.contains_key(&slot) || frame as usize >= film.frame_ticks().len() {
+            continue;
+        }
+        let window = |k: usize| q[k] as f64 * 2f64.powi(15 - w[k] as i32);
+        slots.insert(slot, vec![RawSample::new(film.frame(frame as usize).gp, frame, window(0), window(1))]);
+        out.insert(slot);
+    }
+    out
+}
+
 /// One life slot per biped slot, timed by its on-foot records. With
 /// `rides_recorded` (the parent state was read) a life's rides count as its
 /// records: it is alive and seated through them, and a life killed in a
-/// vehicle ends there. Inferred rides don't.
-fn life_slots_of(slots: &Slots, game_ticks: &[u32], rides_recorded: bool) -> Vec<LifeSlot> {
+/// vehicle ends there. Inferred rides don't. `owners` are the slots whose
+/// player the film names (`owners.rs`): a bot's life is AI, a human's
+/// isn't, whatever its updates list. A `recordless` life ends where its
+/// player lost control of it.
+fn life_slots_of(
+    slots: &Slots,
+    game_ticks: &[u32],
+    rides_recorded: bool,
+    owners: &HashMap<i32, crate::owners::Owner>,
+    recordless: &HashSet<i32>,
+    roster: &[RosterEntry],
+) -> Vec<LifeSlot> {
     let mut out = Vec::new();
     for (&slot_id, frames) in slots {
         let foot: Vec<&RawSample> = frames.iter().filter(|f| rides_recorded || !f.in_vehicle).collect();
@@ -1096,11 +1134,18 @@ fn life_slots_of(slots: &Slots, game_ticks: &[u32], rides_recorded: bool) -> Vec
                 last = f;
             }
         }
+        let owner = owners.get(&slot_id);
+        let player = owner.map(|o| o.player as usize).filter(|&p| p < roster.len());
+        let end = match owner.and_then(|o| o.end).filter(|_| recordless.contains(&slot_id)) {
+            Some(e) => game_ticks.get(e as usize).copied().unwrap_or(game_ticks[last.tick as usize]),
+            None => game_ticks[last.tick as usize],
+        };
         out.push(LifeSlot {
             slot_id,
-            is_bot: is_ai_slot(frames),
+            is_bot: player.map_or_else(|| is_ai_slot(frames), |p| roster[p].is_bot()),
+            player,
             start: game_ticks[first.tick as usize] as f64,
-            end: game_ticks[last.tick as usize] as f64,
+            end: end as f64,
             x: Some(first.c1),
             y: Some(first.c2),
         });
@@ -1249,6 +1294,7 @@ pub fn extract_all_player_positions(
     level: Option<&crate::levels::LevelBox>,
     vehicle_ident: Option<crate::vehicles::Vehicles>,
     attachments: Option<crate::attach::Attachments>,
+    owners: &HashMap<i32, crate::owners::Owner>,
 ) -> ExtractionResult {
     let c1_at = crate::levels::c1_at(level);
     let n_players = roster.map(|r| r.len());
@@ -1257,16 +1303,19 @@ pub fn extract_all_player_positions(
         let ex = extract_multiplayer_composite(film, c1_at, coord_layout, c2_width);
         let mut slots = ex.slots;
         let widths = crate::assemble::position_widths(film, true, coord_layout as i64, Some(c2_width), level);
-        let exits = widths.map_or(Vec::new(), |w| read_exits(film, w));
+        let params = widths.map(|w| {
+            let mut p = crate::components::Params::new(w);
+            p.set_level(level);
+            p
+        });
+        let exits = params.map_or(Vec::new(), |p| read_exits(film, (&p).into()));
         let mut vehicles = ex.vehicles.clone();
         for (id, v) in vehicles.iter_mut() {
             v.iter_mut().for_each(|s| s.vehicle = *id);
         }
-        let ident = vehicle_ident.unwrap_or_else(|| {
-            let Some(w) = widths else { return crate::vehicles::Vehicles::default() };
-            let mut params = crate::components::Params::new(w);
-            params.set_level(level);
-            crate::vehicles::Vehicles::read(film, params)
+        let ident = vehicle_ident.unwrap_or_else(|| match params {
+            Some(p) => crate::vehicles::Vehicles::read(film, p),
+            None => crate::vehicles::Vehicles::default(),
         });
         let attachments = attachments.unwrap_or_default();
         if attachments.read {
@@ -1278,14 +1327,17 @@ pub fn extract_all_player_positions(
             splice_vehicle_rides(&mut slots, &open_stubs, &vehicles);
         }
         hold_through_stubs(&mut slots, &ex.stubs, &ex.tick_gp);
+        let recordless = add_recordless_lives(film, &mut slots, owners, widths, level);
 
         let life_players = match roster {
             Some(r) if !r.is_empty() && !highlights.is_empty() => life_players_of(r, highlights, xuids),
             _ => None,
         };
-        let hl_ticks = crate::lives::highlight_ticks(&ex.game_ticks);
+        let hl_ticks = film.highlight_ticks();
         let assignment =
-            life_players.and_then(|lp| assign_lives(&life_slots_of(&slots, &hl_ticks, attachments.read), &lp));
+            life_players.zip(roster).and_then(|(lp, r)| {
+                assign_lives(&life_slots_of(&slots, &hl_ticks, attachments.read, owners, &recordless, r), &lp)
+            });
 
         let (paths, unlinked, deaths);
         match (&assignment, roster) {

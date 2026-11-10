@@ -1,28 +1,28 @@
-//! The model against the local reference films. `films/` is local only:
-//! without it these tests pass without checking anything.
+//! The model against the reference films (see `common` for where they come
+//! from). Without films these tests check nothing.
 
 mod common;
 
 use filmshell::*;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::Path;
 
-/// Every reference film, read.
+/// Every reference film, read from its chunks as downloaded.
 fn films() -> Vec<(String, Film)> {
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("films");
-    let Ok(entries) = std::fs::read_dir(&dir) else { return Vec::new() };
-    let mut dirs: Vec<PathBuf> =
-        entries.flatten().map(|e| e.path()).filter(|p| p.join("filmChunk0_dec").exists()).collect();
-    dirs.sort();
-    // Read in parallel: a film takes a second or more.
+    read_all(|d| Film::from_chunks(common::load(d)))
+}
+
+/// `read` over every film in parallel: a film takes a second or more.
+fn read_all(read: impl Fn(&Path) -> Result<Film, Error> + Sync) -> Vec<(String, Film)> {
+    let dirs = common::film_dirs();
+    let read = &read;
     std::thread::scope(|s| {
         let jobs: Vec<_> = dirs
             .iter()
             .map(|d| {
                 s.spawn(move || {
                     let name = d.file_name().unwrap().to_string_lossy()[..8].to_string();
-                    let film =
-                        Film::from_chunks(common::load_folder(d).unwrap()).unwrap_or_else(|e| panic!("{name}: {e}"));
+                    let film = read(d).unwrap_or_else(|e| panic!("{name}: {e}"));
                     (name, film)
                 })
             })
@@ -182,12 +182,30 @@ fn snapshots_list_entities_in_index_order() {
     assert!(weapons.iter().all(|e| e.tag.and_then(game::tag_info).is_some()));
 }
 
+/// A downloaded film reads the same from its chunks as served and from the
+/// same chunks inflated first.
 #[test]
-fn compressed_chunks_read_the_same() {
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("films/dc2ce439-0b30-445c-8185-19cb7a0a075b");
-    if !dir.exists() {
-        return;
+fn downloaded_and_inflated_chunks_read_the_same() {
+    for d in common::film_dirs() {
+        if d.join("filmChunk0").exists() {
+            let name = d.file_name().unwrap().to_string_lossy();
+            assert!(common::load(&d).iter().all(Chunk::is_compressed), "{name}: chunks as downloaded");
+        }
     }
+    let inflated = read_all(|d| Film::from_chunks(common::load_folder(d).unwrap()));
+    assert_eq!(inflated.len(), corpus().len());
+    for ((name, a), (_, b)) in corpus().iter().zip(&inflated) {
+        assert_eq!(a.lives(), b.lives(), "{name}");
+        assert_eq!(a.events(), b.events(), "{name}");
+        assert_eq!(a.players(), b.players(), "{name}");
+        assert_eq!(a.rides(), b.rides(), "{name}");
+    }
+}
+
+/// Chunks compressed with stored blocks, in any order, read the same.
+#[test]
+fn stored_block_chunks_read_the_same() {
+    let Some(dir) = common::film("dc2ce439") else { return };
     let plain = common::load_folder(&dir).unwrap();
     let packed: Vec<Chunk> = plain.iter().map(|c| Chunk::new(c.index, c.kind, common::zlib_stored(&c.data))).collect();
     assert!(packed.iter().all(Chunk::is_compressed));
@@ -259,11 +277,9 @@ fn headshots_mark_their_kills() {
 /// A real header with replay chunks that aren't a film's is refused.
 #[test]
 fn garbage_replay_chunks_are_refused() {
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("films/dc2ce439-0b30-445c-8185-19cb7a0a075b");
-    if !dir.exists() {
-        return;
-    }
-    let header = std::fs::read(dir.join("filmChunk0_dec")).unwrap();
+    let Some(dir) = common::film("dc2ce439") else { return };
+    let header = common::load(&dir).swap_remove(0);
+    assert_eq!(header.kind, ChunkKind::Header);
     let mut x = 0x2545_f491u32;
     let noise: Vec<u8> = (0..200_000)
         .map(|_| {
@@ -274,7 +290,7 @@ fn garbage_replay_chunks_are_refused() {
         })
         .collect();
     for replay in [noise, vec![0u8; 4096]] {
-        let chunks = vec![Chunk::new(0, ChunkKind::Header, &header[..]), Chunk::new(1, ChunkKind::Replay, replay)];
+        let chunks = vec![header.clone(), Chunk::new(1, ChunkKind::Replay, replay)];
         assert_eq!(Film::from_chunks(chunks).unwrap_err(), Error::NoTicks);
     }
 }
@@ -283,10 +299,7 @@ fn garbage_replay_chunks_are_refused() {
 /// last, and a folder without it reads as a film with no highlights.
 #[test]
 fn chunk_files_name_their_kinds() {
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("films/1a743b49-a67b-4c2b-99e5-fb79e82d3522");
-    if !dir.exists() {
-        return;
-    }
+    let Some(dir) = common::film("1a743b49") else { return };
     let mut chunks = common::load_folder(&dir).unwrap();
     chunks.sort_by_key(|c| c.index);
     let last = chunks.len() - 1;

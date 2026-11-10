@@ -31,8 +31,8 @@ impl fmt::Display for Tick {
 #[derive(Clone, Debug, Default)]
 pub struct Clock {
     pub(crate) frame_ticks: Vec<u32>,
-    /// Each frame's tick without the ticks hitches skipped: the clock
-    /// HighlightEvents times run on.
+    /// Each frame's tick on the clock HighlightEvents times run on: the
+    /// time since the first frame by the packets' timestamps, in ticks.
     pub(crate) highlight_ticks: Vec<u32>,
     /// The highlight tick of HighlightEvents time 0.
     pub(crate) highlight_zero: Option<f64>,
@@ -79,9 +79,11 @@ impl Clock {
     }
 
     /// The highlight clock's tick of HighlightEvents time 0, when the film's
-    /// kills, or its medals, fix it. The highlight clock runs on game ticks
-    /// without the ticks recorder hitches skipped ([`Clock::hitches`]): time
-    /// `ms` is highlight tick `zero + ms * 0.05994`.
+    /// kills, or its medals, fix it. The highlight clock is the time since
+    /// the first frame by the packets' timestamps, in ticks of 1/59.94 s: a
+    /// recorder hitch skips ticks but no time ([`Clock::hitches`]), and a
+    /// server that falls behind runs fewer ticks than time. Time `ms` is
+    /// highlight tick `zero + ms * 0.05994`.
     pub fn highlight_zero(&self) -> Option<f64> {
         self.highlight_zero
     }

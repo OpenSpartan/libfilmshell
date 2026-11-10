@@ -159,6 +159,18 @@ impl Film {
         &self.ticks
     }
 
+    /// Each frame's packet timestamp, microseconds; None unless every frame
+    /// has one (packet framing).
+    pub fn frame_times_us(&self) -> Option<Vec<u64>> {
+        self.frames.iter().map(|f| f.ts_us).collect()
+    }
+
+    /// Each frame's tick on the HighlightEvents clock
+    /// (`lives::highlight_ticks`).
+    pub fn highlight_ticks(&self) -> Vec<u32> {
+        crate::lives::highlight_ticks(&self.ticks, self.frame_times_us().as_deref())
+    }
+
     fn marker_frames(&self) -> Vec<FrameSpan> {
         let mut out = Vec::new();
         let mut global = 0i64;

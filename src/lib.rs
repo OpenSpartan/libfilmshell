@@ -134,6 +134,7 @@ internal!(
     lives,
     motion,
     objectives,
+    owners,
     payload,
     registry,
     replication,

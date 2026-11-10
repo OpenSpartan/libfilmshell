@@ -19,7 +19,7 @@
 //! attacker's player index too.
 
 use crate::container::Film;
-use crate::events::{Body, PLAYER_KILLED, WEAPON_FIRE};
+use crate::events::{Body, Layout, PLAYER_KILLED, WEAPON_FIRE};
 use crate::lives::TICKS_PER_MS;
 use crate::payload::for_each_event_view;
 use crate::types::PlayerPath;
@@ -79,11 +79,11 @@ pub struct FilmFire {
     pub chatter: Vec<(i64, i32, u32, u32, Option<u32>)>,
 }
 
-/// The shots and kills of `film`, attributed to `paths`. `widths` are the
-/// position fields' widths, which some event bodies read; `extra` are
+/// The shots and kills of `film`, attributed to `paths`. `layout` is how
+/// the level lays out a position, which some event bodies read; `extra` are
 /// other weapons' tag ids the weapon list must hold (picked up, on the
 /// ground: `inventory.rs`).
-pub fn read(film: &Film, widths: [u32; 3], paths: &[PlayerPath], extra: &[u32]) -> FilmFire {
+pub fn read(film: &Film, layout: Layout, paths: &[PlayerPath], extra: &[u32]) -> FilmFire {
     let mut slot_owner: HashMap<i32, usize> = HashMap::new();
     let mut by_index: HashMap<i32, usize> = HashMap::new();
     for (k, p) in paths.iter().enumerate() {
@@ -102,7 +102,7 @@ pub fn read(film: &Film, widths: [u32; 3], paths: &[PlayerPath], extra: &[u32]) 
     let mut exits = vec![Vec::new(); paths.len()];
     let mut voice = Vec::new();
     let mut chatter = Vec::new();
-    for_each_event_view(film, widths, |frame, evs| {
+    for_each_event_view(film, layout, |frame, evs| {
         for e in evs {
             match e.body {
                 Body::Fire(f) if e.kind == WEAPON_FIRE => {

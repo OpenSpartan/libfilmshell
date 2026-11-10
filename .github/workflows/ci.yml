@@ -27,3 +27,39 @@ jobs:
           RUSTDOCFLAGS: -D warnings
       - name: Build for wasm32
         run: cargo build --lib --target wasm32-unknown-unknown
+      - name: Package contents
+        run: |
+          extra=$(cargo package --list | grep -vxE 'src/.*\.rs|examples/.*\.rs|README\.md|LICENSE|Cargo\.toml(\.orig)?|Cargo\.lock|\.cargo_vcs_info\.json' || true)
+          if [ -n "$extra" ]; then
+            echo "::error::Files the package must not contain:"
+            echo "$extra"
+            exit 1
+          fi
+          cargo package --no-verify
+          size=$(stat -c %s target/package/filmshell-*.crate)
+          echo "Package: $size bytes"
+          if [ "$size" -gt 1000000 ]; then
+            echo "::error::The package is $size bytes, over 1 MB."
+            exit 1
+          fi
+
+  # The tests against the reference films, in a private repository. A pull
+  # request from a fork gets no secrets, so it runs the check job only.
+  films:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test films
+        uses: actions/checkout@v4
+        with:
+          repository: OpenSpartan/libfilmshell-test-films
+          ssh-key: ${{ secrets.TEST_FILMS_KEY }}
+          persist-credentials: false
+          path: test-films
+      - name: Toolchain
+        run: rustup show
+      - name: Test
+        run: cargo test --release --all-features
+        env:
+          FILMSHELL_TEST_FILMS: ${{ github.workspace }}/test-films/films
