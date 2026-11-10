@@ -109,14 +109,47 @@ pub struct StatDefinition {
     pub id: u32,
     /// The base entry type (2 a best-of, 3 computed).
     pub base: i64,
-    /// How a match's value comes from its rounds.
+    /// How a match's value comes from its rounds, the game's number.
     pub aggregation: i64,
-    /// -1 when lower is better.
-    pub sort: i64,
-    /// 0 a number, 1 a time, 2 a percentage.
-    pub display: i64,
+    /// Whether a lower value ranks higher.
+    pub lower_is_better: bool,
+    /// How the scoreboard shows the value.
+    pub display: StatDisplay,
     /// The stored value is 10^precision times the shown one.
     pub precision: i64,
+}
+
+impl StatDefinition {
+    /// A stored value as shown, its precision taken out.
+    pub fn shown(&self, stored: i32) -> f64 {
+        stored as f64 / 10f64.powi(self.precision.clamp(0, 18) as i32)
+    }
+}
+
+/// How the scoreboard shows a statistic.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[non_exhaustive]
+pub enum StatDisplay {
+    /// A number.
+    Number,
+    /// A time.
+    Time,
+    /// A percentage.
+    Percentage,
+    /// A display type the library doesn't know, as the game numbers it.
+    Other(i64),
+}
+
+impl StatDisplay {
+    pub(crate) fn from_game(v: i64) -> StatDisplay {
+        match v {
+            0 => StatDisplay::Number,
+            1 => StatDisplay::Time,
+            2 => StatDisplay::Percentage,
+            v => StatDisplay::Other(v),
+        }
+    }
 }
 
 /// The variant's stat definitions and engine settings.

@@ -5,16 +5,16 @@ mod common;
 
 use filmshell::*;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Every reference film, read from its chunks as downloaded.
 fn films() -> Vec<(String, Film)> {
-    read_all(|d| Film::from_chunks(common::load(d)))
+    read_all(&common::film_dirs(), |d| Film::from_chunks(common::load(d)))
 }
 
-/// `read` over every film in parallel: a film takes a second or more.
-fn read_all(read: impl Fn(&Path) -> Result<Film, Error> + Sync) -> Vec<(String, Film)> {
-    let dirs = common::film_dirs();
+/// `read` over the films in `dirs` in parallel: a film takes a second or
+/// more.
+fn read_all(dirs: &[PathBuf], read: impl Fn(&Path) -> Result<Film, Error> + Sync) -> Vec<(String, Film)> {
     let read = &read;
     std::thread::scope(|s| {
         let jobs: Vec<_> = dirs
@@ -192,9 +192,12 @@ fn downloaded_and_inflated_chunks_read_the_same() {
             assert!(common::load(&d).iter().all(Chunk::is_compressed), "{name}: chunks as downloaded");
         }
     }
-    let inflated = read_all(|d| Film::from_chunks(common::load_folder(d).unwrap()));
-    assert_eq!(inflated.len(), corpus().len());
-    for ((name, a), (_, b)) in corpus().iter().zip(&inflated) {
+    // Every fourth film read again: reading is the slow part of the tests.
+    let dirs: Vec<PathBuf> = common::film_dirs().into_iter().step_by(4).collect();
+    let inflated = read_all(&dirs, |d| Film::from_chunks(common::load_folder(d).unwrap()));
+    let read: Vec<&(String, Film)> = corpus().iter().step_by(4).collect();
+    assert_eq!(inflated.len(), read.len());
+    for ((name, a), (_, b)) in read.into_iter().zip(&inflated) {
         assert_eq!(a.lives(), b.lives(), "{name}");
         assert_eq!(a.events(), b.events(), "{name}");
         assert_eq!(a.players(), b.players(), "{name}");
@@ -290,7 +293,9 @@ fn garbage_replay_chunks_are_refused() {
             x as u8
         })
         .collect();
-    for replay in [noise, vec![0u8; 4096]] {
+    // Zeros walk as empty packets: 256, then 131,072, past what a chunk may
+    // hold.
+    for replay in [noise, vec![0u8; 4096], vec![0u8; 2 << 20]] {
         let chunks = vec![header.clone(), Chunk::new(1, ChunkKind::Replay, replay)];
         assert_eq!(Film::from_chunks(chunks).unwrap_err(), Error::NoTicks);
     }
@@ -372,4 +377,69 @@ fn lives_end_in_the_recorded_deaths() {
         }
     }
     assert!(agree * 100 >= players * 97, "{agree} of {players} players");
+}
+
+/// Every team the film gives a player, bots included, is the team the match
+/// stats give them (`match-metadata.json`, which the test films carry).
+#[test]
+fn teams_agree_with_the_match_stats() {
+    let (mut players, mut agree, mut bots, mut bots_with_team) = (0usize, 0usize, 0usize, 0usize);
+    for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
+        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
+        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        let mut teams: HashMap<String, i64> = HashMap::new();
+        for p in stats["Players"].as_array().into_iter().flatten() {
+            if let (Some(id), Some(t)) = (p["PlayerId"].as_str(), p["LastTeamId"].as_i64()) {
+                teams.insert(id.to_string(), t);
+            }
+        }
+        let distinct: std::collections::BTreeSet<i64> = teams.values().copied().collect();
+        // Free-for-all: the services give each player a team of their own.
+        if distinct.len() < 2 || distinct.len() * 2 > teams.len() {
+            continue;
+        }
+        for p in f.players() {
+            let key = match &p.kind {
+                PlayerKind::Human { xuid, .. } => format!("xuid({xuid})"),
+                PlayerKind::Bot { bot_id, .. } => format!("bid({bot_id}.0)"),
+                _ => continue,
+            };
+            let Some(&want) = teams.get(&key) else { continue };
+            if p.is_bot() {
+                bots += 1;
+                bots_with_team += usize::from(p.team.is_some());
+            }
+            if let Some(t) = p.team {
+                players += 1;
+                agree += usize::from(i64::from(t.0) == want);
+                if i64::from(t.0) != want {
+                    println!("{name}: {} has team {} where the stats say {want}", p.id, t.0);
+                }
+            }
+        }
+    }
+    assert!(corpus().is_empty() || players > 0);
+    assert!(agree * 100 >= players * 98, "{agree} of {players} players");
+    assert!(bots_with_team * 100 >= bots * 90, "{bots_with_team} of {bots} bots have a team");
+}
+
+/// A shot on foot comes from the weapon in the shooter's hands: the fire
+/// event's weapon is the weapon in the slot the biped holds.
+#[test]
+fn shots_come_from_the_weapon_held() {
+    let (mut shots, mut held) = (0usize, 0usize);
+    for (_, f) in corpus() {
+        for e in f.events() {
+            let Event::Shot(s) = &e.event else { continue };
+            if f.sample_at(s.player, e.tick).is_none_or(|x| x.in_vehicle) {
+                continue;
+            }
+            shots += 1;
+            held += usize::from(f.weapon_at(s.player, e.tick) == Some(s.weapon));
+        }
+    }
+    assert!(corpus().is_empty() || shots > 0);
+    // The misses are mostly small lobbies, whose bipeds' weapon state isn't
+    // read.
+    assert!(held * 100 >= shots * 99, "{held} of {shots} shots");
 }

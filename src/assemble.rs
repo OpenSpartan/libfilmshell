@@ -89,6 +89,16 @@ fn place(bx: u32, q: [u32; 3], w: [u32; 3], c: &Calibration, level: Option<&Leve
     Some((-c.scale_x * raw2 + c.offset_x, c.scale_y * raw1 + c.offset_y))
 }
 
+/// A mask of engine player ids (bit 31 - id) as a mask of the player indices
+/// that held them at `frame`.
+fn players_mask(holders: &Holders, mask: u32, frame: i64) -> u32 {
+    (0..32u32)
+        .filter(|p| mask & (0x8000_0000 >> p) != 0)
+        .map(|p| holders.api(p, frame))
+        .filter(|&i| i < 32)
+        .fold(0, |m, i| m | 0x8000_0000 >> i)
+}
+
 fn window_to_world(q: [u32; 3], w: [u32; 3], c: &Calibration) -> (f64, f64) {
     let raw1 = q[0] as f64 * 2f64.powi(15 - w[0] as i32);
     let raw2 = q[1] as f64 * 2f64.powi(15 - w[1] as i32);
@@ -413,9 +423,7 @@ fn game_events(film: &Container, p: &Params, c: Option<&Calibration>, holders: &
                     (k, v)
                 })
                 .collect();
-            let players = (0..32)
-                .filter(|p| g.last & (0x8000_0000u32 >> p) != 0)
-                .fold(0u32, |m, p| m | 0x8000_0000u32 >> (holders.api(p, frame as i64) & 31));
+            let players = players_mask(holders, g.last, frame as i64);
             let arguments = g
                 .extra
                 .iter()
@@ -591,6 +599,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let mut deploys_seen = crate::deploys::Seen::default();
     let mut attach_seen = crate::attach::Seen::default();
     let mut controls = crate::owners::Controls::new();
+    let mut designators = crate::teams::Designators::default();
     if let Some(p) = walk {
         let actor_control = crate::registry::Schema::read(&film.chunks[0]).biped.actor_control;
         vitals_marks = Vitals::start(&film, &p, level);
@@ -608,10 +617,14 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 &mut crate::deploys::reader(&mut deploys_seen),
                 &mut crate::attach::reader(actor_control, &mut attach_seen),
                 &mut crate::owners::reader(&mut controls),
+                &mut crate::teams::reader(&mut designators),
             ],
         );
         crate::statlog::finish(&mut stat_log);
         vehicle_ident.finish(&film, p);
+        // Teams for the players HighlightEvents doesn't give one: bots, and
+        // people without records.
+        crate::teams::assign(&mut roster, &crate::teams::finish(&film, designators));
     }
     let vitals = walk.map(|_| Vitals::finish(vitals_marks));
     let splashes = walk.map(|_| crate::splash::finish(splash_seen)).unwrap_or_default();
@@ -806,9 +819,9 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             let kill = Kill {
                 victim,
                 killer: killer.and_then(|k| pid(k as i32)),
-                killer_damage_percent: d.killer_percent,
+                killer_damage_percent: killer.map(|_| d.killer_percent),
                 assistant: assistant.and_then(|a| pid(a as i32)),
-                assistant_damage_percent: d.assistant_percent,
+                assistant_damage_percent: assistant.map(|_| d.assistant_percent),
                 suicide: d.suicide,
                 headshot: None,
                 scored: scored(victim, frame),
@@ -853,7 +866,8 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             }
         }
         for &(frame, sound, mask) in &ff.voice {
-            events.push((frame, Event::VoiceLine(VoiceLine { sound: TagId(sound), recipients: PlayerMask(mask) })));
+            let recipients = PlayerMask(players_mask(&holders, mask, frame));
+            events.push((frame, Event::VoiceLine(VoiceLine { sound: TagId(sound), recipients })));
         }
         for &(frame, k, sound, priority, line) in &ff.chatter {
             let speaker = usize::try_from(k).ok().and_then(|k| pid(paths[k].player_index));
@@ -1038,7 +1052,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                         capturing: team(s.capturing),
                         progress: s.progress,
                         contested: s.contested,
-                        inside: PlayerMask(s.inside & on_roster),
+                        inside: PlayerMask(players_mask(&holders, s.inside, s.frame) & on_roster),
                     })
                     .collect();
                 states.dedup_by(|b, a| {
@@ -1315,6 +1329,12 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             .iter()
             .map(|&(f, percent, recharge_delay)| EquipmentCharge { tick: tick(f), percent, recharge_delay })
             .collect();
+        s.weapons = a
+            .weapons
+            .iter()
+            .map(|&(f, slot, w)| WeaponSlot { tick: tick(f), slot, weapon: w.map(TagId) })
+            .collect();
+        s.held = a.held.iter().map(|&(f, slot)| HeldSlot { tick: tick(f), slot }).collect();
     }
 
     let scoreboard = Scoreboard {
@@ -1410,8 +1430,8 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                     id: s.id,
                     base: s.base,
                     aggregation: s.aggregation,
-                    sort: s.sort,
-                    display: s.display,
+                    lower_is_better: s.sort == -1,
+                    display: StatDisplay::from_game(s.display),
                     precision: s.precision,
                 })
                 .collect(),
@@ -1451,8 +1471,9 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                     rounds_per_second: s.rounds_per_second,
                     burst: s.burst,
                     magazine: s.magazine,
-                    velocity: s.velocity,
-                    range: s.range,
+                    // Engine units to world units, as positions are.
+                    velocity: s.velocity.map(|v| v * 10.0),
+                    range: s.range.map(|r| r * 10.0),
                     damage: s.damage,
                     hits_to_kill: s.hits_to_kill,
                 })
@@ -1561,9 +1582,9 @@ mod tests {
             Event::Kill(Kill {
                 victim: PlayerId(9),
                 killer: Some(PlayerId(killer)),
-                killer_damage_percent: 100,
+                killer_damage_percent: Some(100),
                 assistant: None,
-                assistant_damage_percent: 0,
+                assistant_damage_percent: None,
                 suicide: false,
                 headshot: None,
                 scored: None,

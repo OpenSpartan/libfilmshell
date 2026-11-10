@@ -123,6 +123,15 @@ pub fn property_bits(kind: u32) -> u32 {
     }
 }
 
+/// The participant (engine player id) a managed player's creation data at
+/// `at` names: `[version][participant:6][6][1]`, the participant below 32
+/// (reader `1410d7540`).
+pub fn managed_player_participant(data: &[u8], at: i64) -> Option<u32> {
+    let mut r = Bits { c: data, at };
+    version(&mut r, 0);
+    Some(r.bits(6)).filter(|&p| p < 32)
+}
+
 /// The bit after a non-object entity's creation data; None for an object
 /// type, or one not read yet.
 pub fn manager_end(data: &[u8], at: i64, entity_type: u32) -> Option<i64> {

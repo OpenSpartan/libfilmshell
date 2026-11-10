@@ -10,7 +10,7 @@ readme = "README.md"
 keywords = ["halo", "halo-infinite", "theater", "replay", "parser"]
 categories = ["parser-implementations", "game-development"]
 # Only these are packaged: never films, test data or images.
-include = ["src/**/*.rs", "examples/**/*.rs", "README.md", "LICENSE"]
+include = ["src/**/*.rs", "examples/**/*.rs", "README.md", "CHANGELOG.md", "LICENSE"]
 
 [features]
 ## Derive `serde::Serialize` on the model types.

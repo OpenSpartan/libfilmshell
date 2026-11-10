@@ -28,6 +28,23 @@ pub enum DamageCause {
     Unknown,
 }
 
+impl std::fmt::Display for DamageCause {
+    /// A short lowercase description: "a grenade", "the environment".
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            DamageCause::Weapon => "a weapon",
+            DamageCause::Melee => "melee",
+            DamageCause::Grenade => "a grenade",
+            DamageCause::Equipment => "equipment",
+            DamageCause::Vehicle => "a vehicle",
+            DamageCause::Collision => "a collision",
+            DamageCause::World => "the environment",
+            DamageCause::Explosion => "an explosion",
+            DamageCause::Unknown => "an unknown cause",
+        })
+    }
+}
+
 /// A damage effect's numbers, from its tag and from what the multiplayer
 /// Spartan's shield and body armor multiply it by.
 #[derive(Clone, Copy, Debug, PartialEq)]

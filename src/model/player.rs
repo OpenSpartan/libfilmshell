@@ -15,7 +15,8 @@ pub enum PlayerKind {
     },
     /// A bot.
     Bot {
-        /// The bot's id in the match.
+        /// The bot's profile, which picks its appearance: the bot id the
+        /// Halo services list it under (`bid(N)`).
         bot_id: u32,
         /// The bot's name ("343 Cliffton").
         name: String,
@@ -31,8 +32,9 @@ pub struct Player {
     pub id: PlayerId,
     /// Person or bot.
     pub kind: PlayerKind,
-    /// The player's team. Known for people who appear in the HighlightEvents
-    /// chunk; bots' teams aren't read.
+    /// The player's team: from their HighlightEvents records, else from the
+    /// team their engine player id carries while they hold it, which a
+    /// free-for-all game leaves out.
     pub team: Option<TeamId>,
     /// In the match from its start.
     pub present_at_start: bool,

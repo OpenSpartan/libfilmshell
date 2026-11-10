@@ -1,8 +1,11 @@
 use std::fmt;
 
-/// A player's index in the film: the engine's player id for everyone
-/// present at the start and for bots. Events, the scoreboard and recipient
-/// masks name players by it.
+/// A player's index in [`Film::players`](crate::Film::players): everyone
+/// present at the start in the roster's order, then joiners and bots as they
+/// appear. Every player the model names is named by it. The film itself
+/// names players by engine player id, which a joiner can take over from
+/// someone who left; the library maps those to the player who held the id
+/// at the time.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct PlayerId(pub u8);
@@ -56,8 +59,9 @@ impl fmt::Display for TeamId {
     }
 }
 
-/// A set of players as the game packs it: bit `31 - index` for each player.
-/// Voice lines, HUD messages and game events name their recipients this way.
+/// A set of players as the game packs it: bit `31 - index` for each player,
+/// the index a [`PlayerId`]'s. Voice lines, game events and zones name their
+/// players this way.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct PlayerMask(pub u32);

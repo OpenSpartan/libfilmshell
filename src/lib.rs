@@ -28,14 +28,25 @@
 //! });
 //! let film = Film::from_chunks(chunks)?;
 //!
-//! for p in film.players() {
-//!     println!("{} {}", p.id, p.name().unwrap_or("?"));
-//! }
-//! for (tick, kill) in film.kills() {
-//!     println!("{tick} {:?} killed {}", kill.killer, kill.victim);
+//! let name = |id| film.player(id).and_then(|p| p.name()).unwrap_or("someone");
+//! for e in film.events() {
+//!     if let Event::Kill(kill) = &e.event {
+//!         let killer = kill.killer.map_or("the environment", name);
+//!         println!("{} {killer} killed {}", e.tick, name(kill.victim));
+//!     }
 //! }
 //! # Ok::<(), filmshell::Error>(())
 //! ```
+//!
+//! # Playback
+//!
+//! Everything is read up front, so a player can scrub freely: at any
+//! [`Tick`], [`Film::samples_at`] gives every living player's sample (where
+//! they were, their aim, health and shield, the vehicle they rode),
+//! [`Film::weapon_at`] what they held, [`Film::vehicle_at`] the track of the
+//! vehicle a sample or an exit names, and [`Film::events_between`] what
+//! happened in a stretch of time.
+//! [`Clock`] maps the film's frames to ticks.
 //!
 //! # Layout
 //!
@@ -76,12 +87,17 @@ mod hints;
 mod model;
 mod tag;
 
-pub use chunk::{Chunk, ChunkKind, MAX_CHUNK_BYTES};
+pub use chunk::{Chunk, ChunkKind, MAX_CHUNK_BYTES, MAX_FILM_BYTES};
 pub use error::Error;
 pub use film::Film;
 pub use hints::{Hints, LevelBounds, SpawnPad};
 pub use model::*;
 pub use tag::TagId;
+
+// The README's code compiles as a doc test.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
 
 // The internal readers: private, or public and hidden from the docs with the
 // `research` feature.
@@ -145,6 +161,7 @@ internal!(
     spawns,
     splash,
     statlog,
+    teams,
     types,
     variant,
     variant_stats,

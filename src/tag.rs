@@ -12,6 +12,19 @@ impl TagId {
     pub const fn get(self) -> u32 {
         self.0
     }
+
+    /// What the game's files say about the tag, when the catalogue lists it:
+    /// [`game::tag_info`](crate::game::tag_info).
+    pub fn info(self) -> Option<&'static crate::game::TagInfo> {
+        crate::game::tag_info(self)
+    }
+
+    /// The tag's English name, when the catalogue has one ("BR75 Battle
+    /// Rifle"). A weapon variant without a name of its own takes its base
+    /// weapon's.
+    pub fn name(self) -> Option<&'static str> {
+        self.info()?.name
+    }
 }
 
 impl fmt::Debug for TagId {

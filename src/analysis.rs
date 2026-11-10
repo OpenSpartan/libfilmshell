@@ -39,9 +39,9 @@ pub struct WeaponProfile {
     pub burst: i32,
     /// Rounds loaded, carried at the start, carried at most.
     pub magazine: Option<[i32; 3]>,
-    /// The projectile's initial velocity, engine units a second.
+    /// The projectile's initial velocity, world units a second.
     pub velocity: Option<f64>,
-    /// The projectile's range, engine units.
+    /// The projectile's range, world units.
     pub range: Option<f64>,
     /// A hit's damage on a shield and on a body, when it is one amount.
     pub damage: Option<[f64; 2]>,

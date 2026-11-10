@@ -1,4 +1,5 @@
 use super::Tick;
+use crate::TagId;
 
 /// A player's movement input from `tick` on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -82,8 +83,41 @@ pub struct EquipmentCharge {
     pub recharge_delay: i32,
 }
 
+/// The weapon in one of a player's weapon slots from `tick` on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[non_exhaustive]
+pub struct WeaponSlot {
+    /// From when.
+    pub tick: Tick,
+    /// The weapon slot, 0 to 3.
+    pub slot: u32,
+    /// The weapon; None when the slot is empty.
+    pub weapon: Option<TagId>,
+}
+
+/// The weapon slot a player holds from `tick` on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[non_exhaustive]
+pub struct HeldSlot {
+    /// From when.
+    pub tick: Tick,
+    /// The weapon slot, 0 to 3.
+    pub slot: u32,
+}
+
+/// The last entry of a series at or before `tick`.
+fn latest<T>(series: &[T], tick: Tick, at: impl Fn(&T) -> Tick) -> Option<&T> {
+    series.partition_point(|x| at(x) <= tick).checked_sub(1).map(|i| &series[i])
+}
+
 /// What a player carried and pressed over the match, each series at its
 /// changes.
+///
+/// The series run across lives and say nothing about whether the player is
+/// alive: [`Film::weapon_at`](crate::Film::weapon_at) combines them with the
+/// player's lives.
 #[derive(Clone, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
@@ -100,4 +134,40 @@ pub struct PlayerState {
     pub grenades: Vec<GrenadeCount>,
     /// Equipment charge.
     pub equipment: Vec<EquipmentCharge>,
+    /// The weapons in the weapon slots.
+    pub weapons: Vec<WeaponSlot>,
+    /// The weapon slot held.
+    pub held: Vec<HeldSlot>,
+}
+
+impl PlayerState {
+    /// The weapon in `slot` at `tick`.
+    pub fn weapon_in(&self, slot: u32, tick: Tick) -> Option<TagId> {
+        self.weapons.iter().take_while(|w| w.tick <= tick).filter(|w| w.slot == slot).last()?.weapon
+    }
+
+    /// The weapon slot held at `tick`.
+    pub fn held_slot(&self, tick: Tick) -> Option<u32> {
+        latest(&self.held, tick, |h| h.tick).map(|h| h.slot)
+    }
+
+    /// The weapon in the held slot at `tick`.
+    pub fn weapon_at(&self, tick: Tick) -> Option<TagId> {
+        self.weapon_in(self.held_slot(tick)?, tick)
+    }
+
+    /// The magazine and reserve of `slot` at `tick`.
+    pub fn ammo_in(&self, slot: u32, tick: Tick) -> Option<&Ammo> {
+        self.ammo.iter().take_while(|a| a.tick <= tick).filter(|a| a.slot == slot).last()
+    }
+
+    /// The grenades carried at `tick`.
+    pub fn grenades_at(&self, tick: Tick) -> Option<&GrenadeCount> {
+        latest(&self.grenades, tick, |g| g.tick)
+    }
+
+    /// The movement input at `tick`.
+    pub fn input_at(&self, tick: Tick) -> Option<&Input> {
+        latest(&self.inputs, tick, |i| i.tick)
+    }
 }

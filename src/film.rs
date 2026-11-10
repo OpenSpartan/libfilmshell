@@ -2,7 +2,7 @@ use crate::analysis::AnalysisData;
 use crate::chunk::is_zlib;
 use crate::game::Level;
 use crate::model::*;
-use crate::{Chunk, ChunkKind, Error, Hints};
+use crate::{Chunk, ChunkKind, Error, Hints, TagId};
 
 /// A theater film, read whole.
 ///
@@ -34,6 +34,9 @@ pub struct Film {
     pub(crate) analysis: AnalysisData,
 }
 
+/// The most missing chunk indices [`Error::MissingChunks`] lists.
+const MISSING_LISTED: usize = 16;
+
 impl std::fmt::Debug for Film {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Film")
@@ -51,7 +54,8 @@ impl Film {
     ///
     /// The chunks must be numbered 0 to n without gaps: chunk 0 the header,
     /// the rest replay chunks, the last of them optionally the highlights.
-    /// Reading takes about a second for a 10-minute match.
+    /// In a release build reading takes a second or two for a 10-minute
+    /// match, a few seconds for a long one.
     ///
     /// # Errors
     ///
@@ -79,8 +83,20 @@ impl Film {
             return Err(Error::DuplicateChunk(w[0].index));
         }
         let last = chunks[chunks.len() - 1].index;
-        let missing: Vec<u32> = (0..=last).filter(|i| chunks.binary_search_by_key(i, |c| c.index).is_err()).collect();
-        if !missing.is_empty() {
+        if last as usize + 1 != chunks.len() {
+            // The first gaps only: an index near u32::MAX would list billions.
+            let mut missing = Vec::new();
+            let mut next = 0;
+            'gaps: for c in &chunks {
+                while next < c.index {
+                    if missing.len() == MISSING_LISTED {
+                        break 'gaps;
+                    }
+                    missing.push(next);
+                    next += 1;
+                }
+                next = c.index + 1;
+            }
             return Err(Error::MissingChunks(missing));
         }
         for c in &chunks {
@@ -98,15 +114,21 @@ impl Film {
         }
         let has_highlights = chunks[chunks.len() - 1].kind == ChunkKind::Highlights;
         let mut data = Vec::with_capacity(chunks.len());
+        let mut total = 0usize;
         for c in chunks {
-            data.push(if is_zlib(&c.data) {
-                crate::inflate::zlib(&c.data, crate::MAX_CHUNK_BYTES).map_err(|f| match f {
+            let limit = crate::MAX_CHUNK_BYTES.min(crate::MAX_FILM_BYTES - total);
+            let bytes = if is_zlib(&c.data) {
+                crate::inflate::zlib(&c.data, limit).map_err(|f| match f {
                     crate::inflate::Fault::Malformed => Error::Inflate { index: c.index },
                     crate::inflate::Fault::TooLong => Error::TooLarge { index: c.index },
                 })?
+            } else if c.data.len() > limit {
+                return Err(Error::TooLarge { index: c.index });
             } else {
                 c.data.into_owned()
-            });
+            };
+            total += bytes.len();
+            data.push(bytes);
         }
         if crate::header::read(&data[0]).build.is_none() {
             return Err(Error::UnknownHeader);
@@ -317,6 +339,18 @@ impl Film {
     /// What `player` pressed and carried over the match.
     pub fn state(&self, player: PlayerId) -> Option<&PlayerState> {
         self.states.iter().find(|s| s.0 == player).map(|s| &s.1)
+    }
+
+    /// The weapon in `player`'s hands at `tick`: the weapon in the slot they
+    /// hold. None while they aren't alive ([`Film::sample_at`]), in a
+    /// vehicle, where they fire the vehicle's weapons, and in small lobbies,
+    /// whose weapon state isn't read. On the reference films 99.6% of shots
+    /// on foot come from this weapon.
+    pub fn weapon_at(&self, player: PlayerId, tick: Tick) -> Option<TagId> {
+        if self.sample_at(player, tick)?.in_vehicle {
+            return None;
+        }
+        self.state(player)?.weapon_at(tick)
     }
 
     /// The film's raw layers: chunks, packets, frames.

@@ -2212,17 +2212,18 @@ impl Reader<'_> {
             // 0, a Bond CompactBinary v2 struct, which opens with its length.
             MultiplayerProperties => {
                 if !self.flag() && self.bits(5) != 0 {
-                    let mut len = 0u32;
+                    // A varint of at most five bytes: 35 bits.
+                    let mut len = 0u64;
                     let mut shift = 0;
                     loop {
                         let b = self.bits(8);
-                        len |= (b & 0x7f) << shift;
+                        len |= u64::from(b & 0x7f) << shift;
                         shift += 7;
                         if b & 0x80 == 0 || shift > 28 {
                             break;
                         }
                     }
-                    self.skip(8 * len);
+                    self.at += 8 * len as i64;
                 }
             }
             ParentState => {

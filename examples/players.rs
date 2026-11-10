@@ -23,9 +23,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for p in film.players() {
         let row = StatOwner::Player(p.id);
         println!(
-            "{:>3}  {:<16} {:<8} kills {:>3}  deaths {:>3}",
+            "{:>3}  {:<16} {:<4} {:<7} kills {:>3}  deaths {:>3}",
             p.id.0,
-            p.name().unwrap_or("?"),
+            p.name().unwrap_or("unnamed"),
+            if p.is_bot() { "bot" } else { "" },
             p.team.map_or(String::new(), |t| t.to_string()),
             board.final_stat(row, Stat::Kills),
             board.final_stat(row, Stat::Deaths),

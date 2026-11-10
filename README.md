@@ -57,11 +57,13 @@ fn print_match(chunks: &[(u32, u32, Vec<u8>)]) -> Result<(), filmshell::Error> {
         Chunk::new(*index, kind, bytes.as_slice())
     }))?;
 
+    let name = |id| film.player(id).and_then(|p| p.name()).unwrap_or("unknown");
     for player in film.players() {
-        println!("{}", player.name().unwrap_or("unknown"));
+        println!("{}", name(player.id));
     }
     for (tick, kill) in film.kills() {
-        println!("{tick}: {:?} killed {}", kill.killer, kill.victim);
+        let killer = kill.killer.map_or("the environment", name);
+        println!("{tick}: {killer} killed {}", name(kill.victim));
     }
     Ok(())
 }
@@ -73,9 +75,12 @@ bytes. The [`examples` folder](examples) has a few small sample programs that ca
 as a folder of chunk files and then interpret their contents:
 
 ```sh
-cargo run --release --example players -- path/to/film
-cargo run --release --example kills -- path/to/film
-cargo run --release --example timeline -- path/to/film 3
+cargo run --release --example players -- path/to/film            # the match, its players and the score
+cargo run --release --example kills -- path/to/film              # every kill with its weapon
+cargo run --release --example timeline -- path/to/film 3         # one player's match, event by event
+cargo run --release --example playback -- path/to/film 90        # everyone's state 90 seconds in
+cargo run --release --example trails -- path/to/film > map.svg   # every path and kill, drawn as a map
+cargo run --release --example raw -- path/to/film                # the packets and events underneath
 ```
 
 >[!NOTE]

@@ -55,14 +55,29 @@ impl ChunkKind {
     }
 }
 
+impl std::fmt::Display for ChunkKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ChunkKind::Header => "header",
+            ChunkKind::Replay => "replay",
+            ChunkKind::Highlights => "highlights",
+        })
+    }
+}
+
 /// The type of a replay chunk's first packet.
 const REPLAY_FIRST: u16 = 1;
 /// The type of the highlights chunk's first packet.
 const HIGHLIGHTS_FIRST: u16 = 9;
 
-/// The most bytes a compressed chunk may inflate to: 256 MiB, about a
-/// hundred times the largest real chunk.
+/// The most bytes one chunk may hold once inflated: 256 MiB, about a hundred
+/// times the largest real chunk.
 pub const MAX_CHUNK_BYTES: usize = 256 << 20;
+
+/// The most bytes a film's chunks may hold together once inflated: 1 GiB,
+/// about ten times the largest real film. Reading a film takes several
+/// times its inflated size in memory.
+pub const MAX_FILM_BYTES: usize = 1 << 30;
 
 /// One chunk of a film: its index in the manifest, its kind, and its bytes,
 /// either as downloaded (zlib) or already inflated.

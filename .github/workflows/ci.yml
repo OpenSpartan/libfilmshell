@@ -8,9 +8,13 @@ env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
 
+# Jobs run on the runner the repository variable RUNNER names (for example
+# `self-hosted`), else on GitHub's. Pull requests from forks always run on
+# GitHub's.
+
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || vars.RUNNER == '') && 'ubuntu-latest' || vars.RUNNER }}
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain
@@ -29,7 +33,7 @@ jobs:
         run: cargo build --lib --target wasm32-unknown-unknown
       - name: Package contents
         run: |
-          extra=$(cargo package --list | grep -vxE 'src/.*\.rs|examples/.*\.rs|README\.md|LICENSE|Cargo\.toml(\.orig)?|Cargo\.lock|\.cargo_vcs_info\.json' || true)
+          extra=$(cargo package --list | grep -vxE 'src/.*\.rs|examples/.*\.rs|README\.md|CHANGELOG\.md|LICENSE|Cargo\.toml(\.orig)?|Cargo\.lock|\.cargo_vcs_info\.json' || true)
           if [ -n "$extra" ]; then
             echo "::error::Files the package must not contain:"
             echo "$extra"
@@ -43,11 +47,24 @@ jobs:
             exit 1
           fi
 
+  # The oldest Rust the crate supports, Cargo.toml's rust-version.
+  msrv:
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || vars.RUNNER == '') && 'ubuntu-latest' || vars.RUNNER }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          version=$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)
+          rustup toolchain install "$version" --profile minimal
+          echo "MSRV=$version" >> "$GITHUB_ENV"
+      - name: Check
+        run: cargo "+$MSRV" check --all-targets --all-features --locked
+
   # The tests against the reference films, in a private repository. A pull
-  # request from a fork gets no secrets, so it runs the check job only.
+  # request from a fork gets no secrets, so it runs the jobs above only.
   films:
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - name: Test films

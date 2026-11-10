@@ -37,6 +37,7 @@ use std::collections::HashMap;
 
 /// Entity types (registry blocks) the walker names.
 pub const HIGH_FREQUENCY: u32 = 4;
+pub const MANAGED_PLAYER: u32 = 9;
 pub const BIPED: u32 = 35;
 pub const VEHICLE: u32 = 40;
 /// First and last registry block of an object type.
@@ -109,6 +110,8 @@ pub struct EntityOp {
     /// A projectile create's player index and shooter's unit, when it names
     /// them.
     pub shooter: (Option<u32>, Option<Handle>),
+    /// A managed player's create: the participant it stands for.
+    pub participant: Option<u32>,
 }
 
 /// One payload as far as it could be read.
@@ -291,6 +294,7 @@ impl Walker {
         let index = r.bits(INDEX_BITS);
         let generation = r.bits(2);
         let shooter = std::cell::Cell::new((None, None));
+        let participant = std::cell::Cell::new(None);
         let mut push = |entity_type, kind| {
             ops.push(EntityOp {
                 at: index_at,
@@ -300,6 +304,7 @@ impl Walker {
                 kind,
                 init: None,
                 shooter: shooter.get(),
+                participant: participant.get(),
             })
         };
         match op {
@@ -315,6 +320,9 @@ impl Walker {
                 }
                 self.types.insert(index, t);
                 if !(FIRST_OBJECT..=LAST_OBJECT).contains(&t) {
+                    if t == MANAGED_PLAYER {
+                        participant.set(creation::managed_player_participant(c, r.at));
+                    }
                     push(Some(t), OpKind::Create { tag: None });
                     let Some(end) = creation::manager_end(c, r.at, t) else {
                         return Err(Stop::CreateTail(t));

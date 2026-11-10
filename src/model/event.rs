@@ -186,12 +186,16 @@ pub struct Kill {
     pub victim: PlayerId,
     /// Who killed them.
     pub killer: Option<PlayerId>,
-    /// The killer's share of the victim's damage, whole percent.
-    pub killer_damage_percent: u32,
+    /// The killer's damage percentage as the kill event carries it, whole
+    /// percent. Mostly 0 to 100, but up to 239 on the reference films, so it
+    /// isn't a share of the damage the victim took. None without a killer:
+    /// the game then sends whatever the field held.
+    pub killer_damage_percent: Option<u32>,
     /// Who assisted.
     pub assistant: Option<PlayerId>,
-    /// The assistant's share, whole percent.
-    pub assistant_damage_percent: u32,
+    /// The assistant's damage percentage, as `killer_damage_percent`. None
+    /// without an assistant.
+    pub assistant_damage_percent: Option<u32>,
     /// The death was the victim's own doing.
     pub suicide: bool,
     /// Whether the game counted the kill as a headshot: a headshot event for
