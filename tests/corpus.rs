@@ -423,6 +423,41 @@ fn teams_agree_with_the_match_stats() {
     assert!(bots_with_team * 100 >= bots * 90, "{bots_with_team} of {bots} bots have a team");
 }
 
+/// A player's kills and deaths over the match, rounds and leaving included,
+/// are the ones the match stats give.
+#[test]
+fn scoreboard_totals_agree_with_the_match_stats() {
+    let (mut rows, mut agree) = (0usize, 0usize);
+    for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
+        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
+        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        if f.scoreboard().changes.is_empty() {
+            continue;
+        }
+        for p in f.players() {
+            let Some(xuid) = p.xuid() else { continue };
+            let Some(s) =
+                stats["Players"].as_array().into_iter().flatten().find(|q| q["PlayerId"] == format!("xuid({xuid})"))
+            else {
+                continue;
+            };
+            let core = &s["PlayerTeamStats"][0]["Stats"]["CoreStats"];
+            let row = StatOwner::Player(p.id);
+            for (stat, key) in [(Stat::Kills, "Kills"), (Stat::Deaths, "Deaths")] {
+                let Some(want) = core[key].as_i64() else { continue };
+                rows += 1;
+                let got = f.scoreboard().total_stat(row, stat) as i64;
+                agree += usize::from(got == want);
+                if got != want {
+                    println!("{name}: {} {key} {got}, the stats say {want}", p.id);
+                }
+            }
+        }
+    }
+    assert!(corpus().is_empty() || rows > 0);
+    assert!(agree * 100 >= rows * 95, "{agree} of {rows}");
+}
+
 /// The film's level is the one the match stats name by the services' id.
 #[test]
 fn levels_match_the_match_stats() {

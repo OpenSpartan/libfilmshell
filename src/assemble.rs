@@ -53,6 +53,9 @@ const SAMPLE_TICKS: u32 = 120;
 /// Without the parent state, a ride's exit comes this many frames after its
 /// last sample at most.
 const EXIT_SLACK: i64 = 90;
+/// Two rides in the same seat at most this many ticks apart are one: the
+/// game renews an attachment within a tick or two.
+const RIDE_GAP_TICKS: i64 = 3;
 /// Statborg slots of deaths and spawns.
 const DEATHS_SLOT: u32 = 5;
 const SPAWNS_SLOT: u32 = 21;
@@ -923,7 +926,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let mut zones_out = Vec::new();
     let mut hill_score = None;
     let mut vehicles = Vec::new();
-    let mut rides = Vec::new();
+    let mut rides: Vec<Ride> = Vec::new();
     if let (Some(c), Some(w)) = (&calib, widths) {
         let flights =
             walk.map(|_| pair_grenades(&thrown, paths, &world, w, c, level, &ex.frame_ticks)).unwrap_or_default();
@@ -1148,7 +1151,25 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                             .map(|x| x.2)
                     }),
                 };
-                rides.push(Ride { player, vehicle: track, seat, from: tick(from), to: tick(to) });
+                // A seat of a part (a turret, a side gun): the part the life
+                // hangs from isn't the vehicle that moves.
+                let part = at
+                    .map(|at| spans[at].vehicle)
+                    .filter(|&direct| direct >= 0 && direct != v)
+                    .and_then(|direct| ex.vehicle_ident.tag(direct, from))
+                    .map(TagId);
+                let ride = Ride { player, vehicle: track, seat, part, from: tick(from), to: tick(to) };
+                // An attachment the game renews a tick or two later is the
+                // same ride.
+                match rides.last_mut() {
+                    Some(r)
+                        if (r.player, r.vehicle, r.seat, r.part) == (ride.player, ride.vehicle, ride.seat, ride.part)
+                            && ride.from - r.to <= RIDE_GAP_TICKS =>
+                    {
+                        r.to = r.to.max(ride.to)
+                    }
+                    _ => rides.push(ride),
+                }
                 i = j + 1;
             }
         }

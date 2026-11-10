@@ -421,16 +421,17 @@ impl Walker {
         let mut r = Bits { c, at: x };
         let op = if r.flag() { 3 } else { r.bits(2) };
         let index = r.bits(INDEX_BITS);
-        let generation = r.bits(2);
+        // The generation: any of the four can be real (generation_fits).
+        r.bits(2);
         match op {
             0 => true,
-            1 => generation != 0 && create_fits(index, r.bits(6)),
-            2 => generation != 0,
+            1 => create_fits(index, r.bits(6)),
+            2 => true,
             _ => {
                 // A misread that lands on the mask form reads 64 chance bits
                 // as an always valid list, so a mask is no evidence here.
                 let Ok(list) = component_list(&mut r) else { return false };
-                if generation == 0 || list.len() > 7 {
+                if list.len() > 7 {
                     return false;
                 }
                 match self.entity_type(index) {

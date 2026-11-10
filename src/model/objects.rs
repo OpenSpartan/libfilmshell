@@ -60,14 +60,32 @@ pub struct Ride {
     /// Scorpion's turret) rides the vehicle that carries the part.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub vehicle: Option<usize>,
-    /// The seat, 0 the driver's: the parent state's, else on a film without
-    /// it that of the exit that ends the ride. None when neither names one.
+    /// The seat: the parent state's, else on a film without it that of the
+    /// exit that ends the ride. None when neither names one. It counts the
+    /// seats of [`part`](Ride::part) when that is set, else the vehicle's,
+    /// whose seat 0 is the driver's.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub seat: Option<u32>,
+    /// The part the rider sits in, when the seat is a part's: a turret or a
+    /// side gun the vehicle carries, by its tag.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub part: Option<TagId>,
     /// The first tick in the vehicle.
     pub from: Tick,
     /// The last.
     pub to: Tick,
+}
+
+impl Ride {
+    /// Whether the rider drives: seat 0 of the vehicle itself.
+    pub fn is_driver(&self) -> bool {
+        self.part.is_none() && self.seat == Some(0)
+    }
+
+    /// How long the ride lasted.
+    pub fn duration(&self) -> std::time::Duration {
+        Tick((self.to - self.from).max(0) as u32).duration()
+    }
 }
 
 /// An object standing on the map, from the seek snapshots: vehicles, weapons

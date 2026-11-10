@@ -25,7 +25,7 @@ impl PlayerId {
 
 impl fmt::Display for PlayerId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "player {}", self.0)
+        write!(f, "{}", self.0)
     }
 }
 
@@ -78,7 +78,7 @@ pub struct TeamId(pub u8);
 
 impl fmt::Display for TeamId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "team {}", self.0)
+        write!(f, "{}", self.0)
     }
 }
 
