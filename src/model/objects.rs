@@ -24,17 +24,27 @@ impl Vehicle {
     }
 }
 
-/// A stretch of a player's life spent in a vehicle.
+/// A stretch of a player's life spent in one seat of a vehicle.
+///
+/// A biped's parent-state component names the vehicle it is attached to and
+/// its seat, so a ride runs from the update that seats the biped to the one
+/// that unseats it, moves it to another seat or deletes it; the rider's
+/// samples over it are the vehicle's positions. On a film whose biped
+/// updates can't be read, rides are inferred from the exits and from where
+/// the vehicles went.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub struct Ride {
     /// The rider.
     pub player: PlayerId,
-    /// The vehicle, an index into `Film::vehicles`, when it has a track.
+    /// The vehicle, an index into `Film::vehicles`, when it has a track. A
+    /// rider in a part (a Falcon's side gun, a Scorpion's turret) rides the
+    /// vehicle that carries the part.
     pub vehicle: Option<usize>,
-    /// The seat the exit names, counted from the driver's; None when the
-    /// ride ended without an exit (in a death, or at the film's end).
+    /// The seat, counted from the driver's: the parent state's, else on a
+    /// film without it that of the exit that ends the ride. None when
+    /// neither names one.
     pub seat: Option<u32>,
     /// The first tick in the vehicle.
     pub from: Tick,

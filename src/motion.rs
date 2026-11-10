@@ -458,6 +458,61 @@ fn read_exits(film: &Film, widths: [u32; 3]) -> Vec<Exit> {
     out
 }
 
+/// Splice in every ride the parent state records (`attach.rs`): while a
+/// life is attached to a vehicle it is in that vehicle's seat, so its samples
+/// are the vehicle's positions (the vehicle that carries it, for a part),
+/// from the frame it was attached to the frame it left. On-foot samples
+/// inside a ride are dropped (an attached biped sends its position relative
+/// to the vehicle, which the scanner doesn't take, so there are almost none).
+/// A life that only ever rode (it spawned and boarded before sending a
+/// position) gets a slot from its rides alone, unless the biped is AI: a
+/// dropship's pilot is an AI biped in a seat that no player owns.
+fn splice_attachments(slots: &mut Slots, vehicles: &IndexMap<i32, Vec<RawSample>>, at: &crate::attach::Attachments) {
+    let sorted: IndexMap<i32, Vec<RawSample>> = vehicles
+        .iter()
+        .map(|(&id, v)| {
+            let mut v = v.clone();
+            v.sort_by_key(|s| s.tick);
+            (id, v)
+        })
+        .collect();
+    for s in at.bipeds.iter() {
+        if !slots.contains_key(&s.id) && s.ai {
+            continue;
+        }
+        let mut ride: Vec<RawSample> = Vec::new();
+        // The carrying vehicle can change within a span only when a part or
+        // a carried vehicle is set down; take it per sample.
+        let mut ids: Vec<i32> = vec![s.vehicle];
+        for f in [s.from, s.to] {
+            let r = at.root(s.vehicle, f);
+            if !ids.contains(&r) {
+                ids.push(r);
+            }
+        }
+        for id in ids {
+            let Some(v) = sorted.get(&id) else { continue };
+            let lo = v.partition_point(|x| x.tick < s.from);
+            for x in v[lo..].iter().take_while(|x| x.tick <= s.to) {
+                if at.root(s.vehicle, x.tick) != id {
+                    continue;
+                }
+                let mut r = RawSample::new(x.gp, x.tick, x.c1, x.c2);
+                r.in_vehicle = true;
+                r.vehicle = id;
+                ride.push(r);
+            }
+        }
+        if ride.is_empty() {
+            continue;
+        }
+        let foot = slots.entry(s.id).or_default();
+        foot.retain(|x| x.in_vehicle || x.tick < s.from || x.tick > s.to);
+        foot.extend(ride);
+        foot.sort_by_key(|x| x.tick);
+    }
+}
+
 /// Splice in the rides the game recorded. The exit gives the life, the vehicle
 /// and the end; nothing records boarding, so a ride starts where that vehicle
 /// comes closest to the life's last sample before the exit. Returns the stubs
@@ -1014,11 +1069,14 @@ fn life_players_of(roster: &[RosterEntry], highlights: &[HighlightEvent], xuids:
     Some(out)
 }
 
-/// One life slot per biped slot, timed by its on-foot records.
-fn life_slots_of(slots: &Slots, game_ticks: &[u32]) -> Vec<LifeSlot> {
+/// One life slot per biped slot, timed by its on-foot records. With
+/// `rides_recorded` (the parent state was read) a life's rides count as its
+/// records: it is alive and seated through them, and a life killed in a
+/// vehicle ends there. Inferred rides don't.
+fn life_slots_of(slots: &Slots, game_ticks: &[u32], rides_recorded: bool) -> Vec<LifeSlot> {
     let mut out = Vec::new();
     for (&slot_id, frames) in slots {
-        let foot: Vec<&RawSample> = frames.iter().filter(|f| !f.in_vehicle).collect();
+        let foot: Vec<&RawSample> = frames.iter().filter(|f| rides_recorded || !f.in_vehicle).collect();
         if foot.is_empty() {
             continue;
         }
@@ -1094,7 +1152,11 @@ fn paths_from_assignment(
         let last = match last {
             Some(l) => *l,
             None => {
-                let foot: Vec<&RawSample> = frames.iter().filter(|f| !f.in_vehicle).collect();
+                let mut foot: Vec<&RawSample> = frames.iter().filter(|f| !f.in_vehicle).collect();
+                if foot.is_empty() {
+                    // A life seen only riding.
+                    foot = frames.iter().collect();
+                }
                 let mut x = foot[0];
                 for f in &foot {
                     if f.gp > x.gp {
@@ -1151,6 +1213,8 @@ pub struct ExtractionResult {
     pub vehicles: IndexMap<i32, Vec<RawSample>>,
     /// multiplayer-composite: vehicle tags by id, and parts' vehicles.
     pub vehicle_ident: crate::vehicles::Vehicles,
+    /// multiplayer-composite: who was attached to which vehicle (`attach.rs`).
+    pub attachments: crate::attach::Attachments,
 }
 
 /// The film's encoding mode and, in a multiplayer-composite film, its c2
@@ -1178,6 +1242,7 @@ pub fn extract_all_player_positions(
     xuids: &[String],
     level: Option<&crate::levels::LevelBox>,
     vehicle_ident: Option<crate::vehicles::Vehicles>,
+    attachments: Option<crate::attach::Attachments>,
 ) -> ExtractionResult {
     let c1_at = crate::levels::c1_at(level);
     let n_players = roster.map(|r| r.len());
@@ -1197,8 +1262,15 @@ pub fn extract_all_player_positions(
             params.set_level(level);
             crate::vehicles::Vehicles::read(film, params)
         });
-        let open_stubs = splice_exits(&mut slots, &ex.stubs, &vehicles, &ident, &exits);
-        splice_vehicle_rides(&mut slots, &open_stubs, &vehicles);
+        let attachments = attachments.unwrap_or_default();
+        if attachments.read {
+            // The parent state names every ride; the exits and the distance
+            // rule are for films where it can't be read.
+            splice_attachments(&mut slots, &vehicles, &attachments);
+        } else {
+            let open_stubs = splice_exits(&mut slots, &ex.stubs, &vehicles, &ident, &exits);
+            splice_vehicle_rides(&mut slots, &open_stubs, &vehicles);
+        }
         hold_through_stubs(&mut slots, &ex.stubs, &ex.tick_gp);
 
         let life_players = match roster {
@@ -1206,7 +1278,8 @@ pub fn extract_all_player_positions(
             _ => None,
         };
         let hl_ticks = crate::lives::highlight_ticks(&ex.game_ticks);
-        let assignment = life_players.and_then(|lp| assign_lives(&life_slots_of(&slots, &hl_ticks), &lp));
+        let assignment =
+            life_players.and_then(|lp| assign_lives(&life_slots_of(&slots, &hl_ticks, attachments.read), &lp));
 
         let (paths, unlinked, deaths);
         match (&assignment, roster) {
@@ -1253,6 +1326,7 @@ pub fn extract_all_player_positions(
             hl_zero_tick,
             vehicles,
             vehicle_ident: ident,
+            attachments,
         };
     }
 
@@ -1268,6 +1342,7 @@ pub fn extract_all_player_positions(
         hl_zero_tick: None,
         vehicles: IndexMap::new(),
         vehicle_ident: Default::default(),
+        attachments: Default::default(),
     }
 }
 

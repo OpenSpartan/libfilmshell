@@ -189,6 +189,15 @@ impl Film {
         &self.rides
     }
 
+    /// The rides of one life, in tick order: its player's rides that start
+    /// within it.
+    pub fn life_rides<'a>(&'a self, life: &'a Life) -> impl Iterator<Item = &'a Ride> + 'a {
+        let span = life.start().zip(life.end());
+        self.rides
+            .iter()
+            .filter(move |r| Some(r.player) == life.player && span.is_some_and(|(a, b)| a <= r.from && r.from <= b))
+    }
+
     /// What stood on the map, from the seek snapshots. Empty unless the
     /// film's coordinates are exact.
     pub fn world_objects(&self) -> &[WorldObject] {

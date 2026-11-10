@@ -84,6 +84,7 @@ mod accuracy;
 mod actions;
 mod ammo;
 mod assemble;
+mod attach;
 mod bits;
 mod calibrate;
 mod components;

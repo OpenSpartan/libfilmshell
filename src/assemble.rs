@@ -50,7 +50,8 @@ const BLAST_AFTER_END_FRAMES: i64 = 60;
 /// Ticks before an event in which the player's latest sample places an
 /// event that carries no position.
 const SAMPLE_TICKS: u32 = 120;
-/// A ride's exit comes this many frames after its last sample at most.
+/// Without the parent state, a ride's exit comes this many frames after its
+/// last sample at most.
 const EXIT_SLACK: i64 = 90;
 /// Statborg slots of deaths and spawns.
 const DEATHS_SLOT: u32 = 5;
@@ -531,7 +532,9 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let mut splash_seen = crate::splash::Seen::new();
     let mut thrown = grenades::Flights::default();
     let mut deploys_seen = crate::deploys::Seen::default();
+    let mut attach_seen = crate::attach::Seen::default();
     if let Some(p) = walk {
+        let actor_control = crate::registry::Schema::read(&film.chunks[0]).biped.actor_control;
         vitals_marks = Vitals::start(&film, &p, level);
         walk_shared(
             &film,
@@ -545,6 +548,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 &mut crate::splash::reader(&film, &mut splash_seen),
                 &mut grenades::reader(&mut thrown),
                 &mut crate::deploys::reader(&mut deploys_seen),
+                &mut crate::attach::reader(actor_control, &mut attach_seen),
             ],
         );
         crate::statlog::finish(&mut stat_log);
@@ -553,6 +557,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let vitals = walk.map(|_| Vitals::finish(vitals_marks));
     let splashes = walk.map(|_| crate::splash::finish(splash_seen)).unwrap_or_default();
     let deploys = walk.map(|_| crate::deploys::finish(deploys_seen)).unwrap_or_default();
+    let attachments = walk.map(|_| crate::attach::finish(attach_seen));
     let entries = roster_entries(&roster, &stat_log);
     let xuids: Vec<String> = roster.players.iter().map(|p| p.xuid.map(|x| x.to_string()).unwrap_or_default()).collect();
     let ex = extract_all_player_positions(
@@ -563,6 +568,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         &xuids,
         level,
         walk.map(|_| vehicle_ident),
+        attachments,
     );
     let paths = &ex.paths;
 
@@ -1014,10 +1020,18 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                     .push((e.frame, Event::Zone(ZoneEvent { kind, player: pid(e.player), team: team(e.team), zone })));
             }
         }
-        // Vehicles and the rides in them.
+        // Vehicles and the rides in them: the runs of a path's samples
+        // spliced from one vehicle. With the parent state read a run is cut
+        // where the life changes seat or moves into a part, and its seat is
+        // the one the parent state names; otherwise the seat is that of the
+        // exit that ends the run.
         let tracks = vehicle_tracks(&ex, c);
         for (k, wp) in world.iter().enumerate() {
             let Some(player) = pid(wp.player) else { continue };
+            let mine: std::collections::HashSet<i32> = paths[k].life_slots.iter().flatten().copied().collect();
+            let spans: Vec<&crate::attach::Span> =
+                ex.attachments.bipeds.iter().filter(|s| mine.contains(&s.id)).collect();
+            let span_at = |f: i64| spans.iter().position(|s| s.from <= f && f <= s.to);
             let pos = &wp.positions;
             let mut i = 0;
             while i < pos.len() {
@@ -1026,19 +1040,28 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                     i += 1;
                     continue;
                 }
+                let at = span_at(pos[i].frame);
                 let mut j = i;
-                while j + 1 < pos.len() && pos[j + 1].in_vehicle && pos[j + 1].vehicle == v {
+                while j + 1 < pos.len()
+                    && pos[j + 1].in_vehicle
+                    && pos[j + 1].vehicle == v
+                    && span_at(pos[j + 1].frame) == at
+                {
                     j += 1;
                 }
                 let (from, to) = (pos[i].frame, pos[j].frame);
                 let track =
                     tracks.iter().position(|t| t.0 == v && t.2[0].frame <= from && from <= t.2[t.2.len() - 1].frame);
-                let seat = fired.as_ref().and_then(|ff| {
-                    ff.exits[k]
-                        .iter()
-                        .rfind(|x| ex.vehicle_ident.resolve(x.1) == v && x.0 >= from && x.0 <= to + EXIT_SLACK)
-                });
-                rides.push(Ride { player, vehicle: track, seat: seat.map(|x| x.2), from: tick(from), to: tick(to) });
+                let seat = match at {
+                    Some(at) => spans[at].seat,
+                    None => fired.as_ref().and_then(|ff| {
+                        ff.exits[k]
+                            .iter()
+                            .rfind(|x| ex.vehicle_ident.resolve(x.1) == v && x.0 >= from && x.0 <= to + EXIT_SLACK)
+                            .map(|x| x.2)
+                    }),
+                };
+                rides.push(Ride { player, vehicle: track, seat, from: tick(from), to: tick(to) });
                 i = j + 1;
             }
         }

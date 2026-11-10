@@ -177,6 +177,8 @@ pub enum Vehicle {
     M247HmgTurret,
     /// Mongoose.
     Mongoose,
+    /// Pelican.
+    Pelican,
     /// Phantom.
     Phantom,
     /// Plasma Cannon Turret.
@@ -206,6 +208,7 @@ impl Vehicle {
             Vehicle::Ghost => "Ghost",
             Vehicle::M247HmgTurret => "M247 HMG Turret",
             Vehicle::Mongoose => "Mongoose",
+            Vehicle::Pelican => "Pelican",
             Vehicle::Phantom => "Phantom",
             Vehicle::PlasmaCannonTurret => "Plasma Cannon Turret",
             Vehicle::Scorpion => "Scorpion",
@@ -268,6 +271,7 @@ pub(crate) static TAGS: &[TagInfo] = &[
     r(0x000026b6, K::Weapon, "Plasma Cannon", Some(I::Weapon(Weapon::PlasmaCannon)), 0x0, 0x0, false),
     r(0x000026c1, K::Weapon, "", None, 0x0, 0x0, false),
     r(0x000026ed, K::Vehicle, "Banshee", Some(I::Vehicle(Vehicle::Banshee)), 0x0, 0x0, false),
+    r(0x000026f0, K::Vehicle, "Pelican", Some(I::Vehicle(Vehicle::Pelican)), 0x0, 0x0, false),
     r(0x000026f2, K::Vehicle, "Phantom", Some(I::Vehicle(Vehicle::Phantom)), 0x0, 0x0, false),
     r(0x00002705, K::Vehicle, "Warthog", Some(I::Vehicle(Vehicle::Warthog)), 0x0, 0x0, false),
     r(0x00002706, K::Vehicle, "Wraith", Some(I::Vehicle(Vehicle::Wraith)), 0x0, 0x0, false),
