@@ -114,6 +114,10 @@ pub struct RosterEntry {
     /// first listing to its leaving (infinity while listed to the end), the
     /// span its lives start in.
     pub listed: Option<(f64, f64)>,
+    /// The highlight ticks the player's lives can start between: from their
+    /// first listing for a joiner (minus infinity for a player there from
+    /// the start) to their leaving (infinity for one who stays).
+    pub in_match: Option<(f64, f64)>,
     /// The frames the scoreboard counts each of the player's deaths at, one
     /// per death; None without a scoreboard.
     pub death_frames: Option<Vec<i64>>,

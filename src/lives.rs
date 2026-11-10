@@ -112,6 +112,16 @@ pub struct LifePlayer {
     pub death_ms: Option<Vec<f64>>,
     /// An uncounted bot's listing span (`RosterEntry::listed`).
     pub listed: Option<(f64, f64)>,
+    /// When the player's lives can start (`RosterEntry::in_match`).
+    pub in_match: Option<(f64, f64)>,
+}
+
+impl LifePlayer {
+    /// Whether a life starting at `start` can be the player's: not before
+    /// they joined, nor after they left.
+    fn can_start(&self, start: f64) -> bool {
+        self.in_match.is_none_or(|(a, b)| start >= a - LISTED_EARLY_TICKS && start <= b)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -422,6 +432,9 @@ pub fn assign_lives(slots: &[LifeSlot], players: &[LifePlayer]) -> Option<LifeAs
         if s.player.is_some_and(|p| p != q.player) {
             return FORBIDDEN;
         }
+        if by_index.get(&q.player).is_some_and(|p| !p.can_start(s.start)) {
+            return FORBIDDEN;
+        }
         // A slot whose player the film names needs no prior on who it is:
         // only which of their lives.
         let named = s.player.is_some();
@@ -595,7 +608,7 @@ pub fn assign_lives(slots: &[LifeSlot], players: &[LifePlayer]) -> Option<LifeAs
                 continue;
             }
             // An uncounted bot's lives start while it is listed.
-            if p.listed.is_some_and(|(a, b)| s.start < a - LISTED_EARLY_TICKS || s.start > b) {
+            if p.listed.is_some_and(|(a, b)| s.start < a - LISTED_EARLY_TICKS || s.start > b) || !p.can_start(s.start) {
                 continue;
             }
             let mut c;

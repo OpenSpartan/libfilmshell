@@ -386,6 +386,10 @@ fn roster_entries(roster: &Roster, log: &crate::statlog::Log, hl_ticks: &[u32]) 
                 deaths: if uncounted { Some(UNCOUNTED - 1.0) } else { most(i, DEATHS_SLOT).or(known.then_some(0.0)) },
                 spawns: if uncounted { Some(UNCOUNTED) } else { most(i, SPAWNS_SLOT).or(known.then_some(0.0)) },
                 listed: uncounted.then(|| (p.first.map_or(0.0, at), p.left.map_or(f64::INFINITY, at))),
+                in_match: Some((
+                    if p.present_at_start { f64::NEG_INFINITY } else { p.first.map_or(f64::NEG_INFINITY, at) },
+                    p.left.map_or(f64::INFINITY, at),
+                )),
                 death_frames: known.then(|| death_frames(i)),
             }
         })
@@ -632,9 +636,17 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let splashes = walk.map(|_| crate::splash::finish(splash_seen)).unwrap_or_default();
     let deploys = walk.map(|_| crate::deploys::finish(deploys_seen)).unwrap_or_default();
     let attachments = walk.map(|_| crate::attach::finish(attach_seen));
-    let entries = roster_entries(&roster, &stat_log, &film.highlight_ticks());
+    let mut entries = roster_entries(&roster, &stat_log, &film.highlight_ticks());
     let xuids: Vec<String> = roster.players.iter().map(|p| p.xuid.map(|x| x.to_string()).unwrap_or_default()).collect();
     let owners = crate::owners::owners(&controls, &holders);
+    // A player spawned at least as often as the film names lives of theirs,
+    // whatever the scoreboard counts (a joiner it never lists counts none).
+    for (i, e) in entries.iter_mut().enumerate() {
+        let named = owners.values().filter(|o| o.player as usize == i).count() as f64;
+        if named > 0.0 && e.spawns.is_some_and(|s| s < named) {
+            e.spawns = Some(named);
+        }
+    }
     let ex = extract_all_player_positions(
         &film,
         layout,

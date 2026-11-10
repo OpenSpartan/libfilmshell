@@ -39,3 +39,6 @@ First release.
   `Scoreboard::rounds`, `round_value` and `round_starts` work from it; a match's totals
   (`Scoreboard::total`) agree with the match stats in Attrition, Elimination and Grifball too.
 - The `Hints` builder methods and `Tick::saturating_sub` are `#[must_use]`.
+- Bots that stay after others leave stay listed: a bot keeps its slot in the game's bot table, and
+  the listing is read by those slots. No life starts before its player joined or after they left,
+  and a player has at least as many lives as the film names theirs.

@@ -1136,6 +1136,7 @@ fn life_players_of(roster: &[RosterEntry], highlights: &[HighlightEvent], xuids:
             left: r.left_in_progress.unwrap_or(false),
             death_ms: times.filter(|t| t.len() as f64 == deaths),
             listed: r.listed,
+            in_match: r.in_match,
         });
     }
     Some(out)

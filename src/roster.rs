@@ -32,6 +32,8 @@ const BOT_NAME_UNITS: i64 = 16;
 /// The bits a bot record takes at least, and at most: the next record is
 /// searched for in between.
 const BOT_RECORD_BITS: (i64, i64) = (8 * 1900, 8 * 2300);
+/// Records read from a bot listing at most, and the bot indices below it.
+const MAX_BOTS: u32 = 64;
 
 /// One player as the film lists them.
 #[derive(Clone, Debug, Default)]
@@ -148,9 +150,16 @@ fn bot_name(p: &[u8], at: i64) -> String {
     String::from_utf16_lossy(&units)
 }
 
-fn plausible_bot(p: &[u8], at: i64, k: u32) -> bool {
+/// Whether a bot record starts at `at`: its bot index comes after `after`
+/// (the previous record's; a bot keeps its slot in the bot table when others
+/// leave, so the indices rise but needn't run 0, 1, 2), its participant is a
+/// player id, its profile fits 16 bits and its name starts with a printable
+/// character.
+fn plausible_bot(p: &[u8], at: i64, after: Option<u32>) -> bool {
     let printable = |u: u32| (0x20..0x7f).contains(&u);
-    bits_at(p, at, 32) == k
+    let index = bits_at(p, at, 32);
+    index < MAX_BOTS
+        && after.is_none_or(|a| index > a)
         && bits_at(p, at + 32, 32) < 32
         && bits_at(p, at + 64, 32) < 1 << 16
         && printable(bits_at(p, at + 8 * BOT_NAME_BYTE, 16))
@@ -167,16 +176,18 @@ fn bot_records(p: &[u8]) -> Vec<(u32, u32, String)> {
     let bits = p.len() as i64 * 8;
     let mut out = Vec::new();
     let mut at = 32;
-    for k in 0..n.min(64) {
+    let mut index = None;
+    for k in 0..n.min(MAX_BOTS) {
         if k > 0 {
             let (lo, hi) = (at + BOT_RECORD_BITS.0, (at + BOT_RECORD_BITS.1).min(bits - 96));
-            match (lo..hi).find(|&b| plausible_bot(p, b, k)) {
+            match (lo..hi).find(|&b| plausible_bot(p, b, index)) {
                 Some(b) => at = b,
                 None => break,
             }
-        } else if !plausible_bot(p, at, 0) {
+        } else if !plausible_bot(p, at, None) {
             break;
         }
+        index = Some(bits_at(p, at, 32));
         out.push((bits_at(p, at + 32, 32), bits_at(p, at + 64, 32), bot_name(p, at + 8 * BOT_NAME_BYTE)));
     }
     out

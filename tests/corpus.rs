@@ -558,12 +558,38 @@ fn team_scores_agree_with_the_match_stats() {
     assert!(agree * 100 >= teams * 95, "{agree} of {teams} teams");
 }
 
-/// Every player on a team in the match from its start to its end has a life.
-/// (A player the roster lists with no team never played.)
+/// No life starts before its player joined or after they left (a joiner
+/// takes the engine id of someone who left, and their lives aren't the
+/// joiner's).
 #[test]
-fn players_present_throughout_have_lives() {
+fn lives_start_while_their_player_is_in_the_match() {
+    const MARGIN: u32 = 600;
     for (name, f) in corpus() {
-        for p in f.players().iter().filter(|p| p.present_at_start && p.left.is_none() && p.team.is_some()) {
+        for l in f.lives() {
+            let (Some(id), Some(start)) = (l.player, l.start()) else { continue };
+            let p = f.player(id).unwrap();
+            let early = p.joined.is_some_and(|j| start.0 + MARGIN < j.0);
+            let late = p.left.is_some_and(|left| start.0 > left.0 + MARGIN);
+            assert!(!early && !late, "{name}: {id}'s life at {start} is outside {:?} to {:?}", p.joined, p.left);
+        }
+    }
+}
+
+/// Every player the scoreboard counts a spawn for has a life; on a film
+/// without a scoreboard, every player on a team who was in the match when
+/// play began. (A player the roster lists with no team never played; one who
+/// left during the loadout, before anyone spawned, has none; nor has a joiner
+/// the scoreboard never lists.)
+#[test]
+fn players_who_spawned_have_lives() {
+    for (name, f) in corpus() {
+        let Some(play) = f.lives().iter().filter_map(|l| l.start()).min() else { continue };
+        let board = f.scoreboard();
+        let spawned = |p: &&Player| match board.changes.is_empty() {
+            false => board.total_stat(StatOwner::Player(p.id), Stat::Spawns) > 0,
+            true => p.team.is_some() && p.present_at_start && p.left.is_none_or(|left| left > play),
+        };
+        for p in f.players().iter().filter(spawned) {
             assert!(f.lives_of(p.id).next().is_some(), "{name}: {} has no life", p.id);
         }
     }
