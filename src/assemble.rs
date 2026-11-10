@@ -615,7 +615,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let splashes = walk.map(|_| crate::splash::finish(splash_seen)).unwrap_or_default();
     let deploys = walk.map(|_| crate::deploys::finish(deploys_seen)).unwrap_or_default();
     let attachments = walk.map(|_| crate::attach::finish(attach_seen));
-    let entries = roster_entries(&roster, &stat_log, &crate::lives::highlight_ticks(film.frame_ticks()));
+    let entries = roster_entries(&roster, &stat_log, &film.highlight_ticks());
     let xuids: Vec<String> = roster.players.iter().map(|p| p.xuid.map(|x| x.to_string()).unwrap_or_default()).collect();
     let ex = extract_all_player_positions(
         &film,
@@ -710,7 +710,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let acts = walk.map(|_| acts_out);
 
     // The highlight clock: the kill events fix it to the tick.
-    let hl_ticks = crate::lives::highlight_ticks(&ex.frame_ticks);
+    let hl_ticks = film.highlight_ticks();
     let pi_of: HashMap<&str, i32> = roster
         .players
         .iter()

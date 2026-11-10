@@ -41,9 +41,33 @@ pub fn hitches(game_ticks: &[u32]) -> Vec<(u32, u32)> {
     out
 }
 
-/// `game_ticks` without the ticks hitches skipped: the clock HighlightEvents
-/// time runs on.
-pub fn highlight_ticks(game_ticks: &[u32]) -> Vec<u32> {
+/// The clock HighlightEvents time runs on, in ticks for each frame. Its
+/// times are the server's milliseconds, which the packets' timestamps keep
+/// (a death's record falls within a tick of its kill's packet on every
+/// reference film), so with `times_us`, each frame's timestamp, it is the
+/// first frame's tick plus the time since, in ticks. A server that falls
+/// behind runs fewer ticks than time: a 34-minute minigame ran 29 minutes of
+/// ticks. Without timestamps it is `game_ticks` without the ticks recorder
+/// hitches skipped.
+pub fn highlight_ticks(game_ticks: &[u32], times_us: Option<&[u64]>) -> Vec<u32> {
+    match times_us {
+        Some(us) if us.len() == game_ticks.len() && !us.is_empty() => {
+            let (t0, us0) = (game_ticks[0] as f64, us[0]);
+            let mut last = 0u32;
+            us.iter()
+                .map(|&u| {
+                    let t = (t0 + u.saturating_sub(us0) as f64 / 1000.0 * TICKS_PER_MS).round() as u32;
+                    last = last.max(t);
+                    last
+                })
+                .collect()
+        }
+        _ => tick_clock(game_ticks),
+    }
+}
+
+/// `game_ticks` without the ticks hitches skipped.
+fn tick_clock(game_ticks: &[u32]) -> Vec<u32> {
     let steps = hitches(game_ticks);
     let mut at = 0;
     let mut skipped = 0;

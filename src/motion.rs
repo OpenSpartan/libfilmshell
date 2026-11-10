@@ -1286,7 +1286,7 @@ pub fn extract_all_player_positions(
             Some(r) if !r.is_empty() && !highlights.is_empty() => life_players_of(r, highlights, xuids),
             _ => None,
         };
-        let hl_ticks = crate::lives::highlight_ticks(&ex.game_ticks);
+        let hl_ticks = film.highlight_ticks();
         let assignment =
             life_players.and_then(|lp| assign_lives(&life_slots_of(&slots, &hl_ticks, attachments.read), &lp));
 
