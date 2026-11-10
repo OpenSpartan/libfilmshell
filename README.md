@@ -91,3 +91,7 @@ itself - most applications you will build with `libfilmshell` won't need it.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Maintainers
+
+- [Den Delimarsky](https://den.dev) (with 💖 for Halo and the Halo community)
