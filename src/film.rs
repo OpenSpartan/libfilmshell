@@ -224,11 +224,14 @@ impl Film {
 
     /// The life `player` is in at `tick`: the last to start at or before it,
     /// while it lasts ([`Life::until`]). None while the player isn't alive:
-    /// before their first life, after a death until the next spawn, and
-    /// after they left.
+    /// before their first life, after a death until the next spawn, after
+    /// they left, and past the film's end.
     ///
     /// Looks through the film's lives, so it costs O(lives) a call.
     pub fn life_at(&self, player: PlayerId, tick: Tick) -> Option<&Life> {
+        if tick > self.clock.end() {
+            return None;
+        }
         self.lives_of(player)
             .take_while(|l| l.start().is_some_and(|s| s <= tick))
             .last()
