@@ -7,7 +7,7 @@ use crate::events::Body;
 use crate::highlights::{EventType, HighlightEvent};
 use crate::lives::{assign_lives, LifeAssignment, LifePlayer, LifeSlot, LIFE_TUNING, TICKS_PER_MS};
 use crate::payload::for_each_event_view;
-use crate::replication::{detect_c2_width, detect_coord_layout, extract_multiplayer_composite};
+use crate::replication::{detect_coord_widths, extract_multiplayer_composite};
 use crate::types::*;
 use indexmap::IndexMap;
 use std::collections::{HashMap, HashSet};
@@ -1318,7 +1318,7 @@ pub struct ExtractionResult {
     pub paths: Vec<PlayerPath>,
     /// The detected c2 start bit (7 plus c1's field width).
     pub coord_layout: i64,
-    /// multiplayer-composite: c2's detected width (`detect_c2_width`).
+    /// multiplayer-composite: c2's detected width (`detect_coord_widths`).
     pub c2_width: Option<u32>,
     /// multiplayer-composite: one death per life that ended in one.
     pub deaths: Option<Vec<DeathPosition>>,
@@ -1346,10 +1346,7 @@ pub struct Layout {
 
 pub fn detect_layout(film: &Film, n_players: Option<usize>) -> Layout {
     let mode = detect_encoding_mode(film, n_players);
-    let composite = (mode == EncodingMode::MultiplayerComposite).then(|| {
-        let c2_start = detect_coord_layout(film);
-        (c2_start, detect_c2_width(film, c2_start))
-    });
+    let composite = (mode == EncodingMode::MultiplayerComposite).then(|| detect_coord_widths(film));
     Layout { mode, composite }
 }
 
