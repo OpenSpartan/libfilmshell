@@ -4,9 +4,9 @@
 //!
 //! Players get indices in the order they first appear: everyone present at
 //! the start by roster position, then joiners and bots as they are listed.
-//! A joiner who replaces a bot takes over the bot's engine player id; the
-//! takeover is recorded (`Takeover`) so that what the film says about that
-//! id afterwards is theirs.
+//! The events and the scoreboard name players by their engine player id,
+//! which isn't the index: both listings give each player's id (`Assignment`),
+//! and a joiner can take the id of someone who left.
 
 use crate::bits::bits_at;
 use crate::container::Film;
@@ -20,9 +20,8 @@ const BOT_RECORDS: u16 = 12;
 const XUID_HI: u32 = 0x0009;
 /// The 10-bit field after a player struct's inner XUID.
 const INNER_MARK: u32 = 183;
-/// A bot and the joiner who replaced it left and joined this many ticks apart
-/// at most.
-const TAKEOVER_TICKS: i64 = 120;
+/// Bits of an engine player id in a type-8 payload.
+const PLAYER_ID_BITS: i64 = 6;
 /// A bot record: `[index:32][id:32][bot id:32]`, then its name in
 /// UTF-16 big-endian at this byte offset.
 const BOT_NAME_BYTE: i64 = 120;
@@ -50,9 +49,9 @@ pub struct RosterPlayer {
     pub first_chunk: usize,
 }
 
-/// A player taking over an engine player id from `frame` on.
+/// A player listed with engine player id `id` from `frame` on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Takeover {
+pub struct Assignment {
     pub id: u32,
     pub frame: i64,
     pub player: u32,
@@ -61,21 +60,21 @@ pub struct Takeover {
 #[derive(Clone, Debug, Default)]
 pub struct Roster {
     pub players: Vec<RosterPlayer>,
-    pub takeovers: Vec<Takeover>,
+    /// Each player's engine player id, from the listing that first gives it
+    /// and from each one that changes it, in frame order.
+    pub ids: Vec<Assignment>,
 }
 
 impl Roster {
     /// Marks the bots whose engine id the first snapshot lists as present
     /// from the start: the first chunk lists no bot records, so theirs come
-    /// from the second chunk on.
+    /// from the second chunk on. A bot whose id someone held before it isn't.
     pub fn mark_present(&mut self, ids: &[u32]) {
         for (i, p) in self.players.iter_mut().enumerate() {
             let early = p.first_chunk <= 2;
-            if p.bot.is_some()
-                && early
-                && ids.contains(&(i as u32))
-                && !self.takeovers.iter().any(|t| t.player == i as u32)
-            {
+            let Some(a) = self.ids.iter().find(|a| a.player == i as u32) else { continue };
+            let first = self.ids.iter().all(|b| b.id != a.id || b.frame >= a.frame || b.player == a.player);
+            if p.bot.is_some() && early && first && ids.contains(&a.id) {
                 p.present_at_start = true;
             }
         }
@@ -96,25 +95,37 @@ fn shifts(p: &[u8]) -> [Vec<u8>; 8] {
     })
 }
 
-/// The XUIDs in a type-8 payload. Each player struct holds its XUID twice,
-/// little-endian: in its prefix, and inside the record, where fields of 10,
-/// 14, 6, 8 and 7 bits follow it that read 183 and zeros. The inner copy is
-/// the one taken.
-fn struct_xuids(p: &[u8]) -> Vec<u64> {
-    let mut found: Vec<u64> = Vec::new();
+/// The players in a type-8 payload, (engine player id, XUID), in record
+/// order. The payload is `[count:32]`, then per player `[id:6]` and the
+/// player struct, which opens with the XUID little-endian and holds it again
+/// inside, where fields of 10, 14, 6, 8 and 7 bits follow it that read 183
+/// and zeros. A XUID counts when its inner copy is there; its id is the 6
+/// bits before its first copy. (Read from the films: the count is the
+/// number of records in every payload, and the ids are the ones the kill
+/// events and the scoreboard use.)
+fn struct_players(p: &[u8]) -> Vec<(u32, u64)> {
+    // Each XUID's first bit and whether its inner copy was seen.
+    let mut found: Vec<(u64, i64, bool)> = Vec::new();
     for (s, b) in shifts(p).iter().enumerate() {
         for (i, w) in b.windows(8).enumerate() {
             let x = u64::from_le_bytes(w.try_into().unwrap_or([0; 8]));
             if (x >> 48) as u32 != XUID_HI || x as u32 == 0 {
                 continue;
             }
-            let after = 8 * i as i64 + s as i64 + 64;
-            if bits_at(p, after, 10) == INNER_MARK && bits_at(p, after + 10, 32) >> 3 == 0 && !found.contains(&x) {
-                found.push(x);
+            let at = 8 * i as i64 + s as i64;
+            let inner = bits_at(p, at + 64, 10) == INNER_MARK && bits_at(p, at + 74, 32) >> 3 == 0;
+            match found.iter_mut().find(|f| f.0 == x) {
+                Some(f) => {
+                    f.1 = f.1.min(at);
+                    f.2 |= inner;
+                }
+                None => found.push((x, at, inner)),
             }
         }
     }
-    found
+    found.retain(|f| f.2 && f.1 >= PLAYER_ID_BITS);
+    found.sort_by_key(|f| f.1);
+    found.iter().map(|&(x, at, _)| (bits_at(p, at - PLAYER_ID_BITS, PLAYER_ID_BITS as u32), x)).collect()
 }
 
 fn bot_name(p: &[u8], at: i64) -> String {
@@ -167,16 +178,20 @@ pub fn read(film: &Film, highlights: &[HighlightEvent]) -> Roster {
             ..RosterPlayer::default()
         })
         .collect();
-    let mut takeovers = Vec::new();
     let mut frame = 0i64;
     let mut last8: &[u8] = &[];
     let mut last12: &[u8] = &[];
     // Each bot id's player.
     let mut bots: HashMap<u32, usize> = HashMap::new();
-    let ticks = film.frame_ticks();
-    let tick = |f: i64| ticks.get(f.max(0) as usize).copied().unwrap_or(0) as i64;
     let mut first_listing = true;
-    let mut joiners: Vec<usize> = Vec::new();
+    // Each player's engine id as last listed.
+    let mut held: HashMap<usize, u32> = HashMap::new();
+    let mut ids = Vec::new();
+    let mut assign = |player: usize, id: u32, frame: i64| {
+        if held.insert(player, id) != Some(id) {
+            ids.push(Assignment { id, frame, player: player as u32 });
+        }
+    };
     for (ci, c) in film.chunks.iter().enumerate().skip(1) {
         let Some(ps) = film.packets(ci) else { continue };
         for pk in ps {
@@ -187,9 +202,9 @@ pub fn read(film: &Film, highlights: &[HighlightEvent]) -> Roster {
             let body = &c[pk.start..pk.end];
             if pk.kind == PLAYER_STRUCTS && body != last8 {
                 last8 = body;
-                let listed = struct_xuids(body);
+                let listed = struct_players(body);
                 for p in players.iter_mut().filter(|p| p.bot.is_none()) {
-                    let on = p.xuid.is_some_and(|x| listed.contains(&x));
+                    let on = p.xuid.is_some_and(|x| listed.iter().any(|l| l.1 == x));
                     if on {
                         p.first.get_or_insert(frame);
                         p.last = Some(frame);
@@ -198,18 +213,21 @@ pub fn read(film: &Film, highlights: &[HighlightEvent]) -> Roster {
                         p.left = Some(frame);
                     }
                 }
-                for x in listed {
-                    if players.iter().any(|p| p.xuid == Some(x)) {
-                        continue;
-                    }
-                    players.push(RosterPlayer {
-                        xuid: Some(x),
-                        present_at_start: first_listing,
-                        first: Some(frame),
-                        last: Some(frame),
-                        ..RosterPlayer::default()
-                    });
-                    joiners.push(players.len() - 1);
+                for &(id, x) in &listed {
+                    let i = match players.iter().position(|p| p.xuid == Some(x)) {
+                        Some(i) => i,
+                        None => {
+                            players.push(RosterPlayer {
+                                xuid: Some(x),
+                                present_at_start: first_listing,
+                                first: Some(frame),
+                                last: Some(frame),
+                                ..RosterPlayer::default()
+                            });
+                            players.len() - 1
+                        }
+                    };
+                    assign(i, id, frame);
                 }
                 first_listing = false;
             }
@@ -225,36 +243,26 @@ pub fn read(film: &Film, highlights: &[HighlightEvent]) -> Roster {
                         p.left = Some(frame);
                     }
                 }
-                for (_, bid, name) in listed {
-                    if bots.contains_key(&bid) {
-                        continue;
-                    }
-                    players.push(RosterPlayer {
-                        bot: Some((bid, name)),
-                        first: Some(frame),
-                        last: Some(frame),
-                        first_chunk: ci,
-                        ..RosterPlayer::default()
-                    });
-                    bots.insert(bid, players.len() - 1);
+                for (id, bid, name) in listed {
+                    let i = match bots.get(&bid) {
+                        Some(&i) => i,
+                        None => {
+                            players.push(RosterPlayer {
+                                bot: Some((bid, name)),
+                                first: Some(frame),
+                                last: Some(frame),
+                                first_chunk: ci,
+                                ..RosterPlayer::default()
+                            });
+                            bots.insert(bid, players.len() - 1);
+                            players.len() - 1
+                        }
+                    };
+                    assign(i, id, frame);
                 }
             }
         }
     }
-    // A joiner who replaces a bot that left about when they joined takes the
-    // bot's id: the bot's records can outlast the join by a few frames.
-    for &j in &joiners {
-        let Some(joined) = players[j].first else { continue };
-        let replaced = players
-            .iter()
-            .enumerate()
-            .find(|(_, b)| b.bot.is_some() && b.left.is_some_and(|l| (tick(l) - tick(joined)).abs() <= TAKEOVER_TICKS));
-        let Some((b, _)) = replaced else { continue };
-        // The bot may itself hold an id it took over.
-        let id = takeovers.iter().find(|t: &&Takeover| t.player == b as u32).map_or(b as u32, |t| t.id);
-        takeovers.push(Takeover { id, frame: joined, player: j as u32 });
-    }
-    takeovers.sort_by_key(|t| t.frame);
 
     // Teams from the players' HighlightEvents records.
     for p in &mut players {
@@ -270,5 +278,5 @@ pub fn read(film: &Film, highlights: &[HighlightEvent]) -> Roster {
         }
         p.team = votes.into_iter().max_by_key(|&(t, n)| (n, std::cmp::Reverse(t))).map(|(t, _)| t);
     }
-    Roster { players, takeovers }
+    Roster { players, ids }
 }
