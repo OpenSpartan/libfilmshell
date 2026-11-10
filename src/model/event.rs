@@ -555,9 +555,9 @@ pub struct FlagEvent {
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum FlagEventKind {
-    /// Picked up from its stand.
+    /// Picked up where it was dropped: the match stats' FlagGrabs.
     Grab,
-    /// Picked up from the ground.
+    /// Taken from its stand: the match stats' FlagSteals.
     Steal,
     /// Captured.
     Capture,

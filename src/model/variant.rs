@@ -21,6 +21,13 @@ pub enum GameMode {
     Firefight,
     /// Firefight with King of the Hill's hills.
     FirefightKingOfTheHill,
+    /// Attrition and Elimination: limited lives, revives, a last player
+    /// standing.
+    Attrition,
+    /// Extraction: arming and extracting at zones.
+    Extraction,
+    /// Escalation Slayer: a weapon ladder.
+    Escalation,
     /// Scripts the library doesn't tell apart.
     Other,
 }
@@ -39,6 +46,12 @@ impl GameMode {
             GameMode::KingOfTheHill
         } else if has("parcel_stronghold.lua") {
             GameMode::Strongholds
+        } else if has("attritionevents.lua") {
+            GameMode::Attrition
+        } else if has("eevents.lua") {
+            GameMode::Extraction
+        } else if has("gungameevents.lua") {
+            GameMode::Escalation
         } else if has("slayerevents.lua") || has("btbslayerevents.lua") {
             GameMode::Slayer
         } else {
@@ -49,6 +62,29 @@ impl GameMode {
     /// Whether players fight players (every mode but Firefight).
     pub fn is_pvp(self) -> bool {
         !matches!(self, GameMode::Firefight | GameMode::FirefightKingOfTheHill)
+    }
+
+    /// The mode's English name.
+    pub fn name(self) -> &'static str {
+        match self {
+            GameMode::Slayer => "Slayer",
+            GameMode::CaptureTheFlag => "Capture the Flag",
+            GameMode::Oddball => "Oddball",
+            GameMode::Strongholds => "Strongholds",
+            GameMode::KingOfTheHill => "King of the Hill",
+            GameMode::Firefight => "Firefight",
+            GameMode::FirefightKingOfTheHill => "Firefight King of the Hill",
+            GameMode::Attrition => "Attrition",
+            GameMode::Extraction => "Extraction",
+            GameMode::Escalation => "Escalation Slayer",
+            GameMode::Other => "Other",
+        }
+    }
+}
+
+impl std::fmt::Display for GameMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
     }
 }
 

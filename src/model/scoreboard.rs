@@ -163,14 +163,56 @@ impl Scoreboard {
         self.changes[..upto].iter().rfind(|c| c.owner == owner && c.slot == slot).map_or(0, |c| c.value)
     }
 
-    /// The final value of `slot` in `owner`'s row.
+    /// The value of `slot` in `owner`'s row at the end of the match, in its
+    /// last round. A player who leaves has their row cleared; their value is
+    /// the one before the clear.
     pub fn final_value(&self, owner: StatOwner, slot: u32) -> i32 {
-        self.changes.iter().rfind(|c| c.owner == owner && c.slot == slot).map_or(0, |c| c.value)
+        let from = self.round_starts().last().copied().unwrap_or_default();
+        self.round_value(owner, slot, from, None)
     }
 
-    /// The final value of a named statistic.
+    /// The final value of a named statistic: see [`Scoreboard::final_value`].
     pub fn final_stat(&self, owner: StatOwner, stat: Stat) -> i32 {
         self.final_value(owner, stat.slot())
+    }
+
+    /// The match's total of `slot` in `owner`'s row: each round's final
+    /// value, added up. The same as [`Scoreboard::final_value`] in a match of
+    /// one round. Meaningful for counts (kills, deaths, points), not for
+    /// highs such as the longest spree.
+    pub fn total(&self, owner: StatOwner, slot: u32) -> i32 {
+        let starts: Vec<Tick> = std::iter::once(Tick(0)).chain(self.round_starts()).collect();
+        (0..starts.len()).map(|k| self.round_value(owner, slot, starts[k], starts.get(k + 1).copied())).sum()
+    }
+
+    /// The match's total of a named statistic: see [`Scoreboard::total`].
+    pub fn total_stat(&self, owner: StatOwner, stat: Stat) -> i32 {
+        self.total(owner, stat.slot())
+    }
+
+    /// The last value of `slot` in `owner`'s row from `from` up to `to`, the
+    /// value before a clear of the whole row (a player leaving, or the next
+    /// round starting) when the range ends with one.
+    fn round_value(&self, owner: StatOwner, slot: u32, from: Tick, to: Option<Tick>) -> i32 {
+        let mine: Vec<&StatChange> = self
+            .changes
+            .iter()
+            .filter(|c| c.owner == owner && c.slot == slot && c.tick >= from && to.is_none_or(|t| c.tick < t))
+            .collect();
+        match mine.split_last() {
+            Some((last, before)) if last.value == 0 && self.row_cleared(owner, last.tick) => {
+                before.last().map_or(0, |c| c.value)
+            }
+            Some((last, _)) => last.value,
+            None => 0,
+        }
+    }
+
+    /// Whether `owner`'s whole row went to 0 at `tick`: three slots or more.
+    fn row_cleared(&self, owner: StatOwner, tick: Tick) -> bool {
+        let at = self.changes.partition_point(|c| c.tick < tick);
+        self.changes[at..].iter().take_while(|c| c.tick == tick).filter(|c| c.owner == owner && c.value == 0).count()
+            >= 3
     }
 
     /// The teams with a row, in id order.
@@ -188,9 +230,39 @@ impl Scoreboard {
         t
     }
 
-    /// The ticks rounds start at after the first: where the clock is back at
-    /// its full limit after running down.
+    /// The ticks rounds start at after the first: where a new round clears
+    /// every player's row, the spawns of two rows or more, half or more of
+    /// the rows that had spawned, dropping to 0 at once (a player who leaves
+    /// has only their own row cleared). Without spawn counts, where the match
+    /// clock is back at its full limit after running down, up to 3 s later.
     pub fn round_starts(&self) -> Vec<Tick> {
+        let spawns = Stat::Spawns.slot();
+        let mut had: std::collections::BTreeMap<PlayerId, i32> = std::collections::BTreeMap::new();
+        let mut clears = Vec::new();
+        let mut seen_spawns = false;
+        let rows: Vec<&StatChange> =
+            self.changes.iter().filter(|c| c.slot == spawns && matches!(c.owner, StatOwner::Player(_))).collect();
+        for same in rows.chunk_by(|a, b| a.tick == b.tick) {
+            seen_spawns = true;
+            let live = had.values().filter(|&&v| v > 0).count();
+            let cleared = same
+                .iter()
+                .filter(
+                    |c| matches!(c.owner, StatOwner::Player(p) if c.value == 0 && had.get(&p).is_some_and(|&v| v > 0)),
+                )
+                .count();
+            if cleared >= 2 && 2 * cleared >= live {
+                clears.push(same[0].tick);
+            }
+            for c in same {
+                if let StatOwner::Player(p) = c.owner {
+                    had.insert(p, c.value);
+                }
+            }
+        }
+        if seen_spawns {
+            return clears;
+        }
         let mut out = Vec::new();
         let mut ran_down = false;
         for c in &self.clock {

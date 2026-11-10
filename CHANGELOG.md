@@ -25,3 +25,10 @@ First release.
 - A film whose chunks inflate past 1 GiB, or a chunk past 256 MiB, is refused. `Hints` ignore
   spawn points with coordinates that aren't finite or lie more than a million world units out,
   and level boxes that aren't finite or whose low corner isn't below their high one.
+- Films older game builds recorded (`FilmMajorVersion` before 41) are refused with
+  `Error::UnknownHeader`.
+- `GameMode` tells Attrition and Elimination, Extraction and Escalation apart; `game::modes` lists
+  their options, and Infection's and VIP's.
+- Without HighlightEvents to time them (a human against bots, a human who never dies), lives go to
+  the player the film names as controlling them and end in a death where that player let go,
+  which agrees with the match stats' deaths; calibration falls back on bots' paths.

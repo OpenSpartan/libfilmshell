@@ -42,3 +42,16 @@ pub use levels::{Level, LevelBox, catalogue_build, level, level_by_api_id, level
 pub use medals::{Medal, MedalDifficulty, MedalKind};
 pub use options::{ModeOption, ModeOptions, OptionValue, modes, murmur3, option_name};
 pub use sandbox::{FireStats, ProjectileStats, fire_stats, projectile_stats, vehicle_bounds};
+
+/// `Display` as the game's English name.
+macro_rules! display_name {
+    ($($t:ty),*) => {
+        $(impl std::fmt::Display for $t {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(self.name())
+            }
+        })*
+    };
+}
+
+display_name!(Weapon, Vehicle, Equipment, Grenade, Item, Medal);

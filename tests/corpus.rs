@@ -133,8 +133,7 @@ fn deaths_agree_with_the_highlights() {
     assert!(agree * 100 >= players * 95, "{agree} of {players} players");
 }
 
-/// The scoreboard's deaths match the kills it counted. A player who leaves
-/// has their row cleared, so the highest value is the count.
+/// The scoreboard's deaths, over every round, match the kills it counted.
 #[test]
 fn the_scoreboard_counts_the_kill_events() {
     let (mut players, mut agree) = (0usize, 0usize);
@@ -146,10 +145,7 @@ fn the_scoreboard_counts_the_kill_events() {
         for p in f.players().iter().filter(|p| !p.is_bot()) {
             let scored = f.kills().filter(|(_, k)| k.victim == p.id && k.scored == Some(true)).count() as i32;
             players += 1;
-            let owner = StatOwner::Player(p.id);
-            let most =
-                s.changes.iter().filter(|c| c.owner == owner && c.slot == Stat::Deaths.slot()).map(|c| c.value).max();
-            agree += usize::from(most.unwrap_or(0) == scored);
+            agree += usize::from(s.total_stat(StatOwner::Player(p.id), Stat::Deaths) == scored);
         }
     }
     assert!(agree * 100 >= players * 95, "{agree} of {players} players");
@@ -251,7 +247,7 @@ fn every_medal_is_kept() {
         let placed = f.medals().filter(|m| m.0.is_some()).count();
         let events = f.events().iter().filter(|e| matches!(e.event, Event::Medal(_))).count();
         assert_eq!(events, placed, "{name}");
-        if recorded > 0 && f.events().iter().any(|e| matches!(e.event, Event::GameEvent(_))) {
+        if recorded > 0 && f.clock().highlight_zero().is_some() {
             assert_eq!(placed, recorded, "{name}: medals without a tick");
         }
     }
@@ -421,6 +417,84 @@ fn teams_agree_with_the_match_stats() {
     assert!(corpus().is_empty() || players > 0);
     assert!(agree * 100 >= players * 98, "{agree} of {players} players");
     assert!(bots_with_team * 100 >= bots * 90, "{bots_with_team} of {bots} bots have a team");
+}
+
+/// Films an older game build recorded (film versions before 41, next to the
+/// test films in `films-unsupported`) are refused as unknown headers.
+#[test]
+fn older_films_are_refused() {
+    let Some(root) = std::env::var_os("FILMSHELL_TEST_FILMS") else { return };
+    let Some(dir) = Path::new(&root).parent().map(|p| p.join("films-unsupported")) else { return };
+    let Ok(entries) = std::fs::read_dir(&dir) else { return };
+    for d in entries.flatten().map(|e| e.path()) {
+        let name = d.file_name().unwrap().to_string_lossy().to_string();
+        assert_eq!(Film::from_chunks(common::load(&d)).unwrap_err(), Error::UnknownHeader, "{name}");
+    }
+}
+
+/// A player's kills and deaths over the match, rounds and leaving included,
+/// are the ones the match stats give.
+#[test]
+fn scoreboard_totals_agree_with_the_match_stats() {
+    let (mut rows, mut agree) = (0usize, 0usize);
+    for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
+        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
+        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        if f.scoreboard().changes.is_empty() {
+            continue;
+        }
+        for p in f.players() {
+            let Some(xuid) = p.xuid() else { continue };
+            let Some(s) =
+                stats["Players"].as_array().into_iter().flatten().find(|q| q["PlayerId"] == format!("xuid({xuid})"))
+            else {
+                continue;
+            };
+            let core = &s["PlayerTeamStats"][0]["Stats"]["CoreStats"];
+            let row = StatOwner::Player(p.id);
+            for (stat, key) in [(Stat::Kills, "Kills"), (Stat::Deaths, "Deaths")] {
+                let Some(want) = core[key].as_i64() else { continue };
+                rows += 1;
+                let got = f.scoreboard().total_stat(row, stat) as i64;
+                agree += usize::from(got == want);
+                if got != want {
+                    println!("{name}: {} {key} {got}, the stats say {want}", p.id);
+                }
+            }
+        }
+    }
+    assert!(corpus().is_empty() || rows > 0);
+    assert!(agree * 100 >= rows * 95, "{agree} of {rows}");
+}
+
+/// Matches of one human against bots, where no death of the human times the
+/// lives: each life's player and death come from the film, so every
+/// player's deaths, the bots' included, are the ones the match stats count
+/// (in the roster's order, the film's).
+#[test]
+fn lives_die_as_the_match_stats_count() {
+    for prefix in ["813ff0a6", "f2b9163d"] {
+        let Some(dir) = common::film(prefix) else { continue };
+        let f = &corpus().iter().find(|(n, _)| n == prefix).unwrap().1;
+        let stats: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.join("match-metadata.json")).unwrap()).unwrap();
+        for (i, s) in stats["Players"].as_array().unwrap().iter().enumerate() {
+            let want = s["PlayerTeamStats"][0]["Stats"]["CoreStats"]["Deaths"].as_u64().unwrap() as usize;
+            let got = f.lives_of(PlayerId(i as u8)).filter(|l| l.died).count();
+            assert_eq!(got, want, "{prefix}: player {i}");
+        }
+    }
+}
+
+/// Every player on a team in the match from its start to its end has a life.
+/// (A player the roster lists with no team never played.)
+#[test]
+fn players_present_throughout_have_lives() {
+    for (name, f) in corpus() {
+        for p in f.players().iter().filter(|p| p.present_at_start && p.left.is_none() && p.team.is_some()) {
+            assert!(f.lives_of(p.id).next().is_some(), "{name}: {} has no life", p.id);
+        }
+    }
 }
 
 /// The film's level is the one the match stats name by the services' id.

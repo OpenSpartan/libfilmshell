@@ -132,15 +132,73 @@ fn slot_end_deaths(slots: &Slots, n_players: usize, roster: Option<&[RosterEntry
     deaths
 }
 
-/// Fallback stitcher for films without usable HighlightEvents: initial lives
-/// by slot id equal to roster index, respawns FIFO by spawn side, capped at
-/// spawns minus 1. Returns the paths and the slots it could not link. Sorts
-/// each kept slot's samples by gp in place.
+/// Deaths without HighlightEvents to time them, from what the film says: a
+/// life whose player gave up control of it died then (a life a new round
+/// ends is deleted instead, and the match's end releases every life after
+/// the last sample), and each death the scoreboard counts on a player's row
+/// that no such life accounts for ends the life of theirs last seen by
+/// then. A death is at the life's last sample up to `DEATH_TAIL` frames
+/// after it; a life ends in one death at most. None when the film says
+/// neither.
+fn recorded_deaths(
+    slots: &Slots,
+    paths: &[PlayerPath],
+    roster: &[RosterEntry],
+    owners: &HashMap<i32, crate::owners::Owner>,
+) -> Option<Vec<DeathPosition>> {
+    const DEATH_TAIL: i64 = 60;
+    if owners.is_empty() && roster.iter().all(|r| r.death_frames.is_none()) {
+        return None;
+    }
+    let last_frame = slots.values().flat_map(|v| v.iter().map(|x| x.tick)).max()?;
+    let mut out = Vec::new();
+    let at = |v: &[RawSample], d: i64| v.iter().filter(|x| x.tick <= d + DEATH_TAIL).max_by_key(|x| x.gp).map(|x| x.gp);
+    for p in paths {
+        let lives: Vec<(i32, &Vec<RawSample>)> = p
+            .life_slots
+            .iter()
+            .flatten()
+            .filter_map(|&s| slots.get(&s).filter(|v| !v.is_empty()).map(|v| (s, v)))
+            .collect();
+        let mut used: HashSet<i32> = HashSet::new();
+        let mut released: Vec<i64> = Vec::new();
+        for &(slot_id, v) in &lives {
+            let end = owners.get(&slot_id).filter(|o| o.released).and_then(|o| o.end).filter(|&e| e <= last_frame);
+            let Some(end) = end else { continue };
+            used.insert(slot_id);
+            released.push(end);
+            out.push(DeathPosition { slot_id, gp: at(v, end).unwrap_or(v[0].gp) });
+        }
+        let entry = usize::try_from(p.player_index).ok().and_then(|i| roster.get(i));
+        for &d in entry.and_then(|e| e.death_frames.as_ref()).into_iter().flatten() {
+            if released.iter().any(|&e| (e - d).abs() <= DEATH_TAIL) {
+                continue;
+            }
+            let life = lives
+                .iter()
+                .filter(|(s, v)| !used.contains(s) && v[0].tick <= d && v[v.len() - 1].tick <= d + DEATH_TAIL)
+                .max_by_key(|(_, v)| v[v.len() - 1].tick);
+            let Some(&(slot_id, v)) = life else { continue };
+            used.insert(slot_id);
+            out.push(DeathPosition { slot_id, gp: at(v, d).unwrap_or(v[0].gp) });
+        }
+    }
+    out.sort_by_key(|d| d.gp);
+    Some(out)
+}
+
+/// Fallback stitcher for films without usable HighlightEvents: a life whose
+/// player the film names (`owners`) is that player's; the others go by slot
+/// id equal to roster index for initial lives, then respawns FIFO by spawn
+/// side, capped at spawns minus 1. Returns the paths and the slots it could
+/// not link. Sorts each kept slot's samples by gp in place.
 fn stitch_slots_to_players(
     slots: &mut Slots,
     roster: Option<&[RosterEntry]>,
+    owners: &HashMap<i32, crate::owners::Owner>,
 ) -> (Vec<PlayerPath>, Vec<Vec<RawSample>>) {
     let n_players = roster.map(|r| r.len()).unwrap_or(0);
+    let owned = |slot: i32| owners.get(&slot).map(|o| o.player as usize).filter(|&p| p < n_players);
     struct S {
         slot_id: i32,
         frames: Vec<RawSample>,
@@ -197,13 +255,20 @@ fn stitch_slots_to_players(
     }
     let by_slot: HashMap<i32, usize> = slot_list.iter().enumerate().map(|(i, s)| (s.slot_id, i)).collect();
     let is_bot_at = |ri: usize| roster.get(ri).is_some_and(|r| r.is_bot());
-    let mut seeded_ids: HashSet<i32> = HashSet::new();
+    // Initial life's slot id -> roster index.
+    let mut seeded_ids: HashMap<i32, usize> = HashMap::new();
     let mut players: Vec<P> = Vec::new();
     for (ri, entry) in roster.iter().enumerate().take(n_players) {
-        let found = by_slot.get(&(ri as i32)).copied();
-        let s = found.filter(|&i| slot_list[i].ai == is_bot_at(ri));
-        if s.is_some() {
-            seeded_ids.insert(ri as i32);
+        // slot_list is in order of first appearance: a player's first named
+        // life is their first.
+        let s = slot_list.iter().position(|s| owned(s.slot_id) == Some(ri)).or_else(|| {
+            by_slot
+                .get(&(ri as i32))
+                .copied()
+                .filter(|&i| owned(slot_list[i].slot_id).is_none() && slot_list[i].ai == is_bot_at(ri))
+        });
+        if let Some(i) = s {
+            seeded_ids.insert(slot_list[i].slot_id, ri);
         }
         let team = entry.last_team_id.unwrap_or(ri as f64);
         players.push(P {
@@ -218,7 +283,7 @@ fn stitch_slots_to_players(
 
     // Spawn sides of the seeded initial lives: the c1 or c2 split with the
     // widest gap, oriented by majority vote of their teams.
-    let seeded: Vec<&S> = slot_list.iter().filter(|s| seeded_ids.contains(&s.slot_id)).collect();
+    let seeded: Vec<&S> = slot_list.iter().filter(|s| seeded_ids.contains_key(&s.slot_id)).collect();
     let gap_axis = |vals: Vec<f64>| -> (f64, Option<f64>) {
         let mut s = vals;
         s.sort_by(f64::total_cmp);
@@ -242,19 +307,20 @@ fn stitch_slots_to_players(
             1
         }
     };
-    let agree = seeded.iter().filter(|s| coord_side_of(s) == players[s.slot_id as usize].side).count();
+    let agree = seeded.iter().filter(|s| coord_side_of(s) == players[seeded_ids[&s.slot_id]].side).count();
     let flip = agree < seeded.len() - agree;
     let side_of = |s: &S| if flip { 1 - coord_side_of(s) } else { coord_side_of(s) };
 
     let mut unlinked: Vec<Vec<RawSample>> = Vec::new();
     for (idx, s) in slot_list.iter().enumerate() {
-        if seeded_ids.contains(&s.slot_id) {
+        if seeded_ids.contains_key(&s.slot_id) {
             continue;
         }
         let side = side_of(s);
-        let mut pick: Option<usize> = None;
+        let named = owned(s.slot_id);
+        let mut pick: Option<usize> = named;
         let mut pick_gp = f64::INFINITY;
-        for (ri, st) in players.iter().enumerate() {
+        for (ri, st) in players.iter().enumerate().filter(|_| named.is_none()) {
             if is_bot_at(ri) != s.ai || st.side != side || st.last_gp >= s.first_gp {
                 continue;
             }
@@ -1349,11 +1415,12 @@ pub fn extract_all_player_positions(
                 deaths = d;
             }
             _ => {
-                let (p, u) = stitch_slots_to_players(&mut slots, roster);
+                let (p, u) = stitch_slots_to_players(&mut slots, roster, owners);
                 paths = p;
                 unlinked = u;
-                deaths = match n_players {
-                    Some(n) if n > 0 => slot_end_deaths(&slots, n, roster),
+                deaths = match (roster.and_then(|r| recorded_deaths(&slots, &paths, r, owners)), n_players) {
+                    (Some(d), _) => d,
+                    (None, Some(n)) if n > 0 => slot_end_deaths(&slots, n, roster),
                     _ => Vec::new(),
                 };
             }

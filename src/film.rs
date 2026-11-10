@@ -162,6 +162,11 @@ impl Film {
         }
     }
 
+    /// The gamertag or bot name of the player `id`.
+    pub fn player_name(&self, id: PlayerId) -> Option<&str> {
+        self.player(id)?.name()
+    }
+
     /// The game variant; None when chunk 0's variant data doesn't parse.
     pub fn variant(&self) -> Option<&GameVariant> {
         self.variant.as_ref()
@@ -268,6 +273,16 @@ impl Film {
     /// Every ride, in tick order.
     pub fn rides(&self) -> &[Ride] {
         &self.rides
+    }
+
+    /// The ride `player` is on at `tick`, when they are in a vehicle.
+    pub fn ride_at(&self, player: PlayerId, tick: Tick) -> Option<&Ride> {
+        self.rides.iter().rfind(|r| r.player == player && r.from <= tick && tick <= r.to)
+    }
+
+    /// The track of the vehicle a ride is in, when it has one.
+    pub fn ride_vehicle(&self, ride: &Ride) -> Option<&Vehicle> {
+        self.vehicles.get(ride.vehicle?)
     }
 
     /// The rides of one life, in tick order: its player's rides that start

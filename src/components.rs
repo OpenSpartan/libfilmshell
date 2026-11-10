@@ -1148,7 +1148,8 @@ impl Reader<'_> {
         if state & 2 == 0 {
             return;
         }
-        self.handle_of(0, p);
+        // As the game's reader (`141fdae44`) reads it from here.
+        self.handle_of(1, p);
         self.skip(2 + 3);
         for _ in 0..self.bits(3) {
             self.handle_of(0, p);
@@ -1160,17 +1161,19 @@ impl Reader<'_> {
         self.unless(2);
         self.skip(6 + 3 + 3);
         self.unless(6);
+        // `[local:1]`: three 14-bit fields local to the unit's parent, else
+        // a point (`14076e420`).
         if self.flag() {
-            self.skip(0);
+            self.skip(3 * ATTACHED_BITS);
+        } else {
+            let _ = self.point(p);
         }
-        let _ = self.point(p);
         self.orient();
         self.vec(19, 10);
         self.vec(19, 8);
-        let target = self.flag();
-        if target {
+        // `[present:1]`: a target (kind-0 handle) and 11 signed bits.
+        if self.flag() {
             self.skip(p.handle_bits + 2);
-        } else {
             self.skip(11);
         }
         self.skip(7);
@@ -1399,20 +1402,37 @@ impl Reader<'_> {
                 }
                 self.skip(1 + 96 + 2);
             }
+            // `[raw:1][relative:1]` (reader `1406cfe44`); a position relative
+            // to the update's baseline isn't read. Then `[attached:1]`: raw,
+            // three floats; else attached, three 14-bit fields local to the
+            // parent; else a point. An attached position names its parent
+            // (kind-0 handle) and an optional 11 bits. The 2 closing bits
+            // follow a finite position only.
             Position => {
-                // [A][B][C][D]: 0000 = absolute, a level box, indexed.
-                if self.bits(4) != 0 {
+                let raw = self.flag();
+                if self.flag() {
                     return None;
                 }
-                // Fields at the box's own widths, as `point` reads them.
-                let bx = self.bits(p.box_bits);
-                let w = match p.box_widths.get(bx as usize) {
-                    Some(&x) if x[0] > 0 => x,
-                    _ => p.widths,
-                };
-                let q = [self.bits(w[0]), self.bits(w[1]), self.bits(w[2])];
+                let attached = self.flag();
+                if raw {
+                    let v: Vec<u32> = (0..3).map(|_| u32::from_le_bytes(self.bits(32).to_be_bytes())).collect();
+                    if attached {
+                        self.handle(p);
+                        self.opt(11);
+                    }
+                    if v.iter().all(|x| (x >> 23) & 0xff != 0xff) {
+                        self.skip(2);
+                    }
+                    return Some(());
+                }
+                if attached {
+                    self.skip(3 * ATTACHED_BITS);
+                    self.handle(p);
+                    self.opt(11);
+                } else {
+                    f.position = Some(self.point(p)?);
+                }
                 self.skip(2);
-                f.position = Some((bx, q));
             }
             Velocity => {
                 f.velocity = Some(if self.flag() {
@@ -2463,10 +2483,18 @@ impl Reader<'_> {
             }
             CommandTick => {
                 f.command_tick = self.opt(8);
+                // The full form (reader `1406cfb28`): `[same:1]`, an optional
+                // tick, a second one unless the same, and `[c:1]`, 2 more bits
+                // unless set.
                 if self.flag() {
-                    // A second form (two tick values and flags) whose length
-                    // isn't known: stop rather than guess.
-                    return None;
+                    let same = self.flag();
+                    self.opt(8);
+                    if !same {
+                        self.opt(8);
+                    }
+                    if !self.flag() {
+                        self.skip(2);
+                    }
                 }
             }
             Equipment => {
@@ -2708,7 +2736,8 @@ impl Reader<'_> {
                 let raw = self.flag();
                 let baseline = !raw && self.flag();
                 let high = p.vehicle_hi_bit && self.flag();
-                if raw {
+                // Raw and high together read the high form (`140c5f7ec`).
+                if raw && !high {
                     // Forward and up, three float32 each.
                     self.skip(192);
                     return Some(());

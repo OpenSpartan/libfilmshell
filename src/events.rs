@@ -7,7 +7,7 @@
 //! ```
 //!
 //! The handle widths depend on the handle's kind, which the event type fixes
-//! per slot ([`handle_kinds`]). The bodies of 37 types are known, read the
+//! per slot ([`handle_kinds`]). The bodies of 47 types are known, read the
 //! way the game's readers read them; a type whose body isn't known ends the
 //! view's walk ([`Stop::EventBody`]). The decoded fields of two types are
 //! kept: weapon fire (36) and player killed (85). Every other known body is
@@ -684,6 +684,72 @@ fn body(r: &mut Bits<'_>, t: u32, widths: Layout) -> Option<Body> {
                 let to = r.pos_codes(widths, 16);
                 return Some(Body::Teleport { from, to });
             }
+        }
+        // restore_damage_section (`142ef90a4`): `[wide:1]`, then 5 bits
+        // (a value under 32), else 2 (under 3).
+        2 => {
+            let wide = r.flag();
+            r.bits(if wide { 5 } else { 2 });
+        }
+        // biped_board_vehicle (`142f168c0`): the 6-bit seat.
+        8 => {
+            r.bits(6);
+        }
+        // biped_melee_clang (`142ef8e08`): two players, an optional tag,
+        // a point at precision 12 (`14076e494`) and a 19-bit direction
+        // (`14076dc04`).
+        12 => {
+            r.player();
+            r.player();
+            r.tag();
+            r.pos(widths, 12);
+            r.bits(19);
+        }
+        // motor_system_interruption (`142ef8f44` -> `142ef47c8`): `[wide:1]`,
+        // then 7 bits (under 100), else 2 (under 4); then a flag.
+        13 => {
+            let wide = r.flag();
+            r.bits(if wide { 7 } else { 2 });
+            r.bits(1);
+        }
+        // PlayEffectOnObject (`142eebf08`): 32 bits.
+        14 => {
+            r.bits(32);
+        }
+        // networked_ai_effect (`142ef8f74`): an optional tag, then
+        // `142ef15e0`: a 2-bit form, 0 one point, 1 three points
+        // (`142eefa5c`), at precision 16.
+        80 => {
+            r.tag();
+            match r.bits(2) {
+                0 => r.pos(widths, 16),
+                1 => {
+                    for _ in 0..3 {
+                        r.pos(widths, 16);
+                    }
+                }
+                _ => {}
+            }
+        }
+        // EquipmentKnockbackPlayer (`14116c344` -> `14076d528`): a vector,
+        // a 19-bit direction and a 10-bit magnitude, as ai_jump's.
+        104 => r.vec(19, 10),
+        // EquipmentObjectKnockedBack (`141118a00`): an optional tag.
+        105 => {
+            r.tag();
+        }
+        // ObjectCollisionDamage (`14112134c`): a point at precision 12, a
+        // 10-bit direction and a 9-bit index (stored less 1).
+        106 => {
+            r.pos(widths, 12);
+            r.bits(10 + 9);
+        }
+        // EquipmentTranslocatorTeleportEffects (`140f04fb8`): an optional
+        // tag, then two points at precision 16.
+        117 => {
+            r.tag();
+            r.pos(widths, 16);
+            r.pos(widths, 16);
         }
         // Types whose body is empty.
         3 | 4 | 23..=26 | 33 | 49 | 54 | 57 | 59 | 92 | 103 => {}

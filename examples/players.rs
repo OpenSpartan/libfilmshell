@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let board = film.scoreboard();
     for team in board.teams() {
-        println!("{team}: {}", board.final_stat(StatOwner::Team(team), Stat::Score));
+        println!("team {team}: {}", board.final_stat(StatOwner::Team(team), Stat::Score));
     }
     for p in film.players() {
         let row = StatOwner::Player(p.id);
@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             p.id.0,
             p.name().unwrap_or("unnamed"),
             if p.is_bot() { "bot" } else { "" },
-            p.team.map_or(String::new(), |t| t.to_string()),
+            p.team.map_or(String::new(), |t| format!("team {t}")),
             board.final_stat(row, Stat::Kills),
             board.final_stat(row, Stat::Deaths),
         );

@@ -53,6 +53,9 @@ const SAMPLE_TICKS: u32 = 120;
 /// Without the parent state, a ride's exit comes this many frames after its
 /// last sample at most.
 const EXIT_SLACK: i64 = 90;
+/// Two rides in the same seat at most this many ticks apart are one: the
+/// game renews an attachment within a tick or two.
+const RIDE_GAP_TICKS: i64 = 3;
 /// Statborg slots of deaths and spawns.
 const DEATHS_SLOT: u32 = 5;
 const SPAWNS_SLOT: u32 = 21;
@@ -378,6 +381,19 @@ fn roster_entries(roster: &Roster, log: &crate::statlog::Log, hl_ticks: &[u32]) 
         (!rounds.is_empty()).then(|| rounds.values().map(|&v| v as f64).sum())
     };
     let known = !log.changes.is_empty();
+    // A death is the row's count going up; a clear (a round, or a leaver)
+    // takes it down, and the next death counts up from there.
+    let death_frames = |id: usize| {
+        let mut out = Vec::new();
+        let mut prev = 0;
+        for c in log.changes.iter().filter(|c| c.kind == 0 && c.id as usize == id && c.slot == DEATHS_SLOT) {
+            if c.value > prev {
+                out.extend(std::iter::repeat_n(c.frame, (c.value - prev) as usize));
+            }
+            prev = c.value;
+        }
+        out
+    };
     roster
         .players
         .iter()
@@ -394,6 +410,7 @@ fn roster_entries(roster: &Roster, log: &crate::statlog::Log, hl_ticks: &[u32]) 
                 deaths: if uncounted { Some(UNCOUNTED - 1.0) } else { most(i, DEATHS_SLOT).or(known.then_some(0.0)) },
                 spawns: if uncounted { Some(UNCOUNTED) } else { most(i, SPAWNS_SLOT).or(known.then_some(0.0)) },
                 listed: uncounted.then(|| (p.first.map_or(0.0, at), p.left.map_or(f64::INFINITY, at))),
+                death_frames: known.then(|| death_frames(i)),
             }
         })
         .collect()
@@ -923,7 +940,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let mut zones_out = Vec::new();
     let mut hill_score = None;
     let mut vehicles = Vec::new();
-    let mut rides = Vec::new();
+    let mut rides: Vec<Ride> = Vec::new();
     if let (Some(c), Some(w)) = (&calib, widths) {
         let flights =
             walk.map(|_| pair_grenades(&thrown, paths, &world, w, c, level, &ex.frame_ticks)).unwrap_or_default();
@@ -1148,7 +1165,25 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                             .map(|x| x.2)
                     }),
                 };
-                rides.push(Ride { player, vehicle: track, seat, from: tick(from), to: tick(to) });
+                // A seat of a part (a turret, a side gun): the part the life
+                // hangs from isn't the vehicle that moves.
+                let part = at
+                    .map(|at| spans[at].vehicle)
+                    .filter(|&direct| direct >= 0 && direct != v)
+                    .and_then(|direct| ex.vehicle_ident.tag(direct, from))
+                    .map(TagId);
+                let ride = Ride { player, vehicle: track, seat, part, from: tick(from), to: tick(to) };
+                // An attachment the game renews a tick or two later is the
+                // same ride.
+                match rides.last_mut() {
+                    Some(r)
+                        if (r.player, r.vehicle, r.seat, r.part) == (ride.player, ride.vehicle, ride.seat, ride.part)
+                            && ride.from - r.to <= RIDE_GAP_TICKS =>
+                    {
+                        r.to = r.to.max(ride.to)
+                    }
+                    _ => rides.push(ride),
+                }
                 i = j + 1;
             }
         }
