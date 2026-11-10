@@ -325,20 +325,45 @@ fn pair_grenades(
 /// nothing caps its lives (one fewer deaths, so its last life can survive).
 const UNCOUNTED: f64 = 1e9;
 
+/// The frames a new round clears the scoreboard at, in order. A round
+/// clears every player's row in one frame, where a player who leaves has
+/// only their own cleared: a frame where the spawns of two rows or more
+/// drop to 0, half or more of the rows that had spawned. (Measured on the
+/// multi-round films, Oddball and the minigames: the clear comes with the
+/// round's start, up to 3 s before its clock restarts.)
+fn round_resets(log: &crate::statlog::Log) -> Vec<i64> {
+    let mut spawns: BTreeMap<u32, i32> = BTreeMap::new();
+    let mut out = Vec::new();
+    let changes: Vec<_> = log.changes.iter().filter(|c| c.kind == 0 && c.slot == SPAWNS_SLOT).collect();
+    for same in changes.chunk_by(|a, b| a.frame == b.frame) {
+        let had = spawns.values().filter(|&&v| v > 0).count();
+        let cleared = same.iter().filter(|c| c.value == 0 && spawns.get(&c.id).is_some_and(|&v| v > 0)).count();
+        if cleared >= 2 && 2 * cleared >= had {
+            out.push(same[0].frame);
+        }
+        for c in same {
+            spawns.insert(c.id, c.value);
+        }
+    }
+    out
+}
+
 /// What life assignment needs of each player, from the film: the roster, and
 /// each player's deaths and spawns on the scoreboard. A player who leaves
-/// has their row cleared, so a count is its highest value. A bot that took
-/// a leaver's place can have no row at all; its lives are chained by time
-/// without a count.
+/// has their row cleared, so a count is its highest value in each round,
+/// summed over the rounds. A bot that took a leaver's place can have no row
+/// at all; its lives are chained by time without a count.
 fn roster_entries(roster: &Roster, log: &crate::statlog::Log, hl_ticks: &[u32]) -> Vec<RosterEntry> {
     let at = |f: i64| usize::try_from(f).ok().and_then(|f| hl_ticks.get(f)).map_or(0.0, |&t| t as f64);
+    let resets = round_resets(log);
     let most = |id: usize, slot: u32| {
-        log.changes
-            .iter()
-            .filter(|c| c.kind == 0 && c.id as usize == id && c.slot == slot)
-            .map(|c| c.value)
-            .max()
-            .map(|v| v as f64)
+        let mut rounds: BTreeMap<usize, i32> = BTreeMap::new();
+        for c in log.changes.iter().filter(|c| c.kind == 0 && c.id as usize == id && c.slot == slot) {
+            let round = resets.partition_point(|&r| r <= c.frame);
+            let m = rounds.entry(round).or_insert(c.value);
+            *m = (*m).max(c.value);
+        }
+        (!rounds.is_empty()).then(|| rounds.values().map(|&v| v as f64).sum())
     };
     let known = !log.changes.is_empty();
     roster
