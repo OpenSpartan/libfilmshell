@@ -13,7 +13,10 @@ pub struct Input {
     pub forward: i8,
     /// Sideways throttle, -31 (right) to 31 (left).
     pub left: i8,
-    /// The control record's 5-bit stance field, when sent.
+    /// The control record's 5-bit stance field, when sent. Bit 4 (0x10) is
+    /// the jump button: on the test films, 89% to 98% of the jumps the
+    /// biped's vertical speed shows have it set within 3 ticks. The other
+    /// bits' meanings aren't known.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub stance: Option<u8>,
 }
@@ -57,7 +60,8 @@ pub struct Heat {
     pub slot: u32,
     /// The heat, percent.
     pub percent: i32,
-    /// The heat field's flags (overheated, venting).
+    /// The heat field's flags as the game sends them; they include
+    /// overheated and venting, but which bit is which isn't known.
     pub flags: u32,
 }
 

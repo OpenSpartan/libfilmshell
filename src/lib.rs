@@ -28,11 +28,13 @@
 //! });
 //! let film = Film::from_chunks(chunks)?;
 //!
-//! let name = |id| film.player(id).and_then(|p| p.name()).unwrap_or("someone");
+//! let name = |id| film.player_name(id).unwrap_or("someone");
 //! for e in film.events() {
 //!     if let Event::Kill(kill) = &e.event {
-//!         let killer = kill.killer.map_or("the environment", name);
-//!         println!("{} {killer} killed {}", e.tick, name(kill.victim));
+//!         match kill.credited_killer() {
+//!             Some(killer) => println!("{} {} killed {}", e.tick, name(killer), name(kill.victim)),
+//!             None => println!("{} {} died", e.tick, name(kill.victim)),
+//!         }
 //!     }
 //! }
 //! # Ok::<(), filmshell::Error>(())
@@ -63,17 +65,19 @@
 //! # Time and space
 //!
 //! Times are [`Tick`]s, 1/60 s of game time from the film's first frame.
-//! Positions are world units ([`Position`]), ten to the game's engine unit.
-//! The model and [`analysis`] use world units; the [`game`] tables keep the
-//! engine units of the game's files. A film doesn't carry the box its
-//! positions are quantized over; the library knows it for the levels in its
-//! catalogue, and otherwise fits it to the spawn pads given in the
-//! [`Hints`], or leaves positions unconverted ([`Sample::raw`]).
+//! Positions are in world units ([`Position`]): a world unit is a tenth of
+//! the engine unit of the game's files, and a foot. The model and
+//! [`analysis`] use world units; the [`game`] tables keep engine units. A film
+//! doesn't carry the box its positions are quantized over: the library knows
+//! it for the levels in its catalogue or from [`Hints::level_bounds`];
+//! otherwise it fits one (to [`Hints::spawn_pads`] where given) or leaves
+//! positions unconverted ([`Sample::raw`]).
 //!
 //! # Features
 //!
-//! - `serde`: derives `Serialize` and `Deserialize` on the types at the
-//!   crate root and the `game` enums. An [`Event`] is an object with a
+//! - `serde`: derives `Serialize` and `Deserialize` on the model's types
+//!   (not [`Film`], [`Clock`], [`Chunk`], [`Hints`] or [`Error`]; [`Rule`]
+//!   only serializes) and the `game` enums. An [`Event`] is an object with a
 //!   `type` (`{"type": "kill", "victim": 3, ...}`), enum variants are
 //!   snake_case, [`TagId`]s, [`Xuid`]s and [`Guid`]s are strings, and empty
 //!   `Option` and `Vec` fields are left out. With `serde_json`, turn on its

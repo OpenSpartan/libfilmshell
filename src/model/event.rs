@@ -57,9 +57,8 @@ pub enum Event {
     RespawnCountdown(RespawnCountdown),
     /// The game counted a headshot kill for the player: the mode script's
     /// headshot event, which the scoreboard's headshot kills count. Sent on
-    /// the tick of the kill, which [`Kill::headshot`] marks; where the film
-    /// doesn't carry that kill's event, this is all the film has of it. PvP
-    /// modes only.
+    /// the tick of the kill, which [`Kill::headshot`] marks, inferred kills
+    /// included. PvP modes only.
     Headshot {
         /// Who.
         player: PlayerId,
@@ -211,8 +210,8 @@ pub struct Kill {
     /// The death was the victim's own doing.
     pub suicide: bool,
     /// Whether the game counted the kill as a headshot: a headshot event for
-    /// the killer on the kill's tick or the two around it. None when the
-    /// film has no headshot events at all.
+    /// the killer within 2 ticks of the kill. None when the film has no
+    /// headshot events at all.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub headshot: Option<bool>,
     /// Whether the scoreboard counted the death: false for the deaths the
@@ -220,23 +219,43 @@ pub struct Kill {
     /// film's scoreboard isn't read.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub scored: Option<bool>,
-    /// What the last hit on the victim in the two seconds before was.
+    /// What the last hit on the victim in the 2 s before was.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub cause: Option<DamageCause>,
     /// The weapon: the one the fatal damage belongs to, else the killer's
-    /// last shot in the two seconds before.
+    /// last shot in the 2 s before.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub weapon: Option<TagId>,
     /// Where the victim was.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
-    /// The film has no kill event for this death: it is where the victim's
-    /// player let go of the life; the killer is the one player whose kills
-    /// the scoreboard counts up then, else the attacker of the last hit on
-    /// the victim in the 2 s before (None: neither names one); the damage
-    /// percentages and the assistant are unknown.
+    /// The film has no kill event for this death. The tick is where the
+    /// victim's player let go of the life, else its last sample; `killer` is
+    /// the one player whose kills the scoreboard counts up then, else the
+    /// attacker of the last hit in the 2 s before, else None; `assistant` and
+    /// both damage percentages are None.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "std::ops::Not::not"))]
     pub inferred: bool,
+}
+
+impl Kill {
+    /// The player credited with the kill: the killer, unless the death was
+    /// the victim's own.
+    pub fn credited_killer(&self) -> Option<PlayerId> {
+        self.killer.filter(|&k| k != self.victim && !self.suicide)
+    }
+
+    /// Whether the scoreboard counted the death: false only for the deaths
+    /// the game deals everyone still alive when a match ends. True when the
+    /// film's scoreboard isn't read.
+    pub fn is_scored(&self) -> bool {
+        self.scored != Some(false)
+    }
+
+    /// Whether the game counted the kill as a headshot.
+    pub fn is_headshot(&self) -> bool {
+        self.headshot == Some(true)
+    }
 }
 
 /// A medal award.
@@ -443,7 +462,7 @@ pub struct Chatter {
     pub speaker: Option<PlayerId>,
     /// The sound tag.
     pub sound: TagId,
-    /// The line's priority class.
+    /// The line's priority class: the game's DialoguePriority.
     pub priority: u32,
     /// The vocalization's index in the game's dialogue tables.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
@@ -529,7 +548,7 @@ pub enum GameEventArgument {
 pub struct GameEvent {
     /// The event's id: its response's position in the mode's event tree.
     pub id: u32,
-    /// The 8 bits after the id.
+    /// The 8 bits after the id; what they mean isn't known.
     pub small: u32,
     /// Its values, each under a key (the murmur3 of the property's name).
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]

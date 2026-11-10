@@ -32,9 +32,9 @@ pub enum Error {
         /// The chunk's index.
         index: u32,
     },
-    /// Chunk 0 is not a film header the library knows: not a film's, or a
-    /// film an older game build recorded (film versions before 41, the
-    /// manifest's `FilmMajorVersion`; the format of chunk 0 changed).
+    /// Chunk 0 is not a film header this library reads: either not a film's,
+    /// or one recorded by a build older than film version 41 (the manifest's
+    /// `FilmMajorVersion`), whose chunk 0 has another layout.
     UnknownHeader,
     /// The film has no replay chunk.
     NoReplay,

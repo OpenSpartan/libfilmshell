@@ -6,8 +6,8 @@ use std::time::Duration;
 ///
 /// Adding or subtracting a number of ticks works as it does for `u32`: going
 /// below tick 0 panics in debug builds and wraps in release ones, so use
-/// [`Tick::checked_sub`] or [`Tick::saturating_sub`] where it can. The
-/// difference of two ticks is signed:
+/// [`Tick::checked_sub`] or [`Tick::saturating_sub`] where the result can
+/// fall below 0. The difference of two ticks is signed:
 ///
 /// ```
 /// use filmshell::Tick;

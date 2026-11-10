@@ -1386,14 +1386,14 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             let slot = p.life_slots.as_ref().and_then(|s| s.get(k)).copied();
             let entity = slot.and_then(|s| u16::try_from(s).ok()).map(EntityId);
             let died = slot.is_some_and(|s| deaths.iter().any(|d| d.slot_id == s));
-            lives.push(Life { player: pid(p.player_index), entity, died, death: None, samples });
+            lives.push(Life { player: pid(p.player_index), entity, died, death: None, until: None, samples });
         }
     }
     if let Some(c) = &calib {
         for p in &ex.unassigned {
             let w = apply_calibration(&p.positions, c);
             let samples = p.positions.iter().zip(&w).map(|(m, w)| sample(m, Some(w), None)).collect();
-            lives.push(Life { player: None, entity: None, died: false, death: None, samples });
+            lives.push(Life { player: None, entity: None, died: false, death: None, until: None, samples });
         }
     }
     lives.sort_by_key(|l| l.start());
@@ -1427,6 +1427,30 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             })
         })
         .collect();
+
+    // When each life is over: at its death; a death without a kill, or a
+    // life another of the player's follows, at its last sample; the last
+    // life of a player who left, when they left.
+    for p in &players {
+        let mine: Vec<usize> = (0..lives.len()).filter(|&i| lives[i].player == Some(p.id)).collect();
+        for (k, &i) in mine.iter().enumerate() {
+            let l = &lives[i];
+            let followed = k + 1 < mine.len();
+            let end = match l.death {
+                Some(d) => Some(d),
+                None if l.died || followed => l.end(),
+                None => None,
+            };
+            let left = p.left.filter(|_| !followed);
+            lives[i].until = match (end, left) {
+                (Some(e), Some(l)) => Some(e.min(l)),
+                (e, l) => e.or(l),
+            };
+        }
+    }
+    for l in lives.iter_mut().filter(|l| l.player.is_none() && l.died) {
+        l.until = l.end();
+    }
 
     // What each player pressed and carried.
     let mut states: BTreeMap<PlayerId, PlayerState> = BTreeMap::new();
@@ -1492,7 +1516,10 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                         lives_left: g
                             .lives
                             .iter()
-                            .filter_map(|(&p, series)| Some((pid(p as i32)?, series.get(k).copied().flatten()?)))
+                            .filter_map(|(&p, series)| {
+                                let left = series.get(k).copied().flatten()?;
+                                Some((pid(p as i32)?, u32::try_from(left).ok()))
+                            })
                             .collect(),
                         rows: g
                             .players

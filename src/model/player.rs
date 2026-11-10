@@ -30,13 +30,13 @@ pub enum PlayerKind {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Player {
-    /// The player's index.
+    /// The player's id.
     pub id: PlayerId,
     /// Person or bot.
     pub kind: PlayerKind,
     /// The player's team: from their HighlightEvents records, else from the
-    /// team their engine player id carries while they hold it, which a
-    /// free-for-all game leaves out.
+    /// team their engine player id carries while they hold it. None in free
+    /// for all.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub team: Option<TeamId>,
     /// In the match from its start.

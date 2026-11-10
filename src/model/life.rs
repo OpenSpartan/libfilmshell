@@ -54,6 +54,12 @@ impl Coordinates {
 
 /// One sample of a life: where the biped was and its state as of its last
 /// update.
+///
+/// In a small lobby (four players or fewer:
+/// [`Encoding::PerEntity`](crate::format::Encoding::PerEntity) and
+/// [`Encoding::BotComposite`](crate::format::Encoding::BotComposite)) the
+/// biped updates aren't read field by field, so `yaw`, `speed`, `health` and
+/// `shield` are None.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
@@ -68,9 +74,7 @@ pub struct Sample {
     /// The position in world units, when the film's coordinates are known.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
-    /// Aim yaw in radians, in world axes (from +x toward +y). The aim, speed,
-    /// health and shield are None in small lobbies, whose biped updates
-    /// aren't read field by field.
+    /// Aim yaw in radians, in world axes (from +x toward +y).
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub yaw: Option<f64>,
     /// On-foot speed, world units a second; None in a vehicle.
@@ -98,8 +102,8 @@ pub struct Sample {
 /// the life's first and last records against the players' death times in
 /// the HighlightEvents chunk. A life neither places has no player.
 ///
-/// For playback, prefer [`Film::sample_at`](crate::Film::sample_at) to
-/// [`Life::at`]: it also ends a life when its player leaves.
+/// [`Film::life_at`](crate::Film::life_at) finds the life a player is in at a
+/// tick, and [`Film::sample_at`](crate::Film::sample_at) their sample then.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
@@ -110,13 +114,20 @@ pub struct Life {
     /// The biped's id, unique among the lives under way at the same time.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub entity: Option<EntityId>,
-    /// Whether the life ended in a death, by the HighlightEvents death times
-    /// or, without them, by a respawn following it.
+    /// Whether the life ended in a death: by the HighlightEvents death times,
+    /// else where the player controlling it let go of it or the scoreboard
+    /// counted a death; in a small lobby, by a respawn following it.
     pub died: bool,
-    /// The tick of the kill event that ended the life. It can be None when
-    /// `died` is true: no kill event names that death.
+    /// The tick of the [`Kill`](crate::Kill) that ended the life, recorded or
+    /// [`inferred`](crate::Kill::inferred). None when `died` is true but no
+    /// kill was placed.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub death: Option<Tick>,
+    /// The last tick the life lasts, when it ends before the film does: its
+    /// death; the last sample of a death no kill was placed for, or of a life
+    /// another of the player's follows; or when its player left.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub until: Option<Tick>,
     /// Its samples, in tick order.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub samples: Vec<Sample>,
@@ -133,20 +144,15 @@ impl Life {
         self.samples.last().map(|s| s.tick)
     }
 
-    /// Whether the life is over at `tick`: after its death, or, for a life
-    /// that ended in a death no kill event names, after its last sample.
-    pub fn over_at(&self, tick: Tick) -> bool {
-        match (self.death, self.end()) {
-            (Some(d), _) => tick > d,
-            (None, Some(end)) => self.died && tick > end,
-            (None, None) => true,
-        }
+    /// Whether the life is over at `tick`: after [`Life::until`].
+    pub fn is_over_at(&self, tick: Tick) -> bool {
+        self.samples.is_empty() || self.until.is_some_and(|u| tick > u)
     }
 
     /// The last sample at or before `tick`, while the life lasts: None
-    /// before its first sample and once it is over ([`Life::over_at`]).
-    pub fn at(&self, tick: Tick) -> Option<&Sample> {
-        if self.over_at(tick) {
+    /// before its first sample and once it is over ([`Life::is_over_at`]).
+    pub fn sample_at(&self, tick: Tick) -> Option<&Sample> {
+        if self.is_over_at(tick) {
             return None;
         }
         self.samples.partition_point(|s| s.tick <= tick).checked_sub(1).map(|i| &self.samples[i])
@@ -169,30 +175,33 @@ mod tests {
             in_vehicle: false,
             vehicle: None,
         };
+        // As the film sets it for a player's only life.
+        let until = death.or(ticks.last().copied().filter(|_| died)).map(Tick);
         Life {
             player: None,
             entity: None,
             died,
             death: death.map(Tick),
+            until,
             samples: ticks.iter().map(|&t| sample(t)).collect(),
         }
     }
 
     #[test]
-    fn a_life_ends_at_its_death() {
+    fn a_life_ends_when_it_is_over() {
         let l = life(&[10, 20, 30], true, Some(32));
-        assert!(l.at(Tick(9)).is_none());
-        assert_eq!(l.at(Tick(25)).map(|s| s.tick), Some(Tick(20)));
-        assert_eq!(l.at(Tick(32)).map(|s| s.tick), Some(Tick(30)));
-        assert!(l.at(Tick(33)).is_none());
-        // A death the kill events don't name ends at the last sample.
+        assert!(l.sample_at(Tick(9)).is_none());
+        assert_eq!(l.sample_at(Tick(25)).map(|s| s.tick), Some(Tick(20)));
+        assert_eq!(l.sample_at(Tick(32)).map(|s| s.tick), Some(Tick(30)));
+        assert!(l.sample_at(Tick(33)).is_none());
+        // A death no kill was placed for ends at the last sample.
         let l = life(&[10, 20, 30], true, None);
-        assert!(l.at(Tick(30)).is_some() && l.at(Tick(31)).is_none());
+        assert!(l.sample_at(Tick(30)).is_some() && l.sample_at(Tick(31)).is_none());
         // Samples past the kill (a vehicle's) don't extend the life.
         let l = life(&[10, 20, 30, 90], true, Some(30));
-        assert!(l.at(Tick(31)).is_none());
+        assert!(l.sample_at(Tick(31)).is_none());
         // A life that didn't end in a death lasts past its last sample.
         let l = life(&[10, 20], false, None);
-        assert_eq!(l.at(Tick(1000)).map(|s| s.tick), Some(Tick(20)));
+        assert_eq!(l.sample_at(Tick(1000)).map(|s| s.tick), Some(Tick(20)));
     }
 }

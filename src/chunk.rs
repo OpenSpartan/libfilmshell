@@ -104,35 +104,44 @@ impl<'a> Chunk<'a> {
     /// when the name isn't a chunk's, the bytes don't inflate or inflate past
     /// [`MAX_CHUNK_BYTES`], or they are no chunk of a film.
     ///
-    /// Reading a film saved as a folder of chunk files:
+    /// Reading a film saved as a folder of chunk files, taking the inflated
+    /// copy of a chunk where both are there:
     ///
     /// ```no_run
     /// use filmshell::{Chunk, Film};
     ///
+    /// let dir = std::path::Path::new("path/to/film");
     /// let mut chunks = Vec::new();
-    /// for entry in std::fs::read_dir("path/to/film")? {
+    /// for entry in std::fs::read_dir(dir)? {
     ///     let path = entry?.path();
     ///     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
-    ///     if name.starts_with("filmChunk") {
-    ///         chunks.extend(Chunk::from_file(name, std::fs::read(&path)?));
+    ///     if Chunk::file_index(name).is_none() || dir.join(format!("{name}_dec")).exists() {
+    ///         continue;
     ///     }
+    ///     chunks.extend(Chunk::from_file(name, std::fs::read(&path)?));
     /// }
     /// let film = Film::from_chunks(chunks)?;
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn from_file(name: &str, data: impl Into<Cow<'a, [u8]>>) -> Option<Chunk<'a>> {
-        let digits = name.strip_prefix("filmChunk")?;
-        let digits = digits.strip_suffix("_dec").unwrap_or(digits);
-        if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
-            return None;
-        }
-        let index: u32 = digits.parse().ok()?;
+        let index = Chunk::file_index(name)?;
         let mut data = data.into();
         if is_zlib(&data) {
             data = Cow::Owned(crate::inflate::zlib(&data, MAX_CHUNK_BYTES).ok()?);
         }
         let kind = ChunkKind::detect(index, &data)?;
         Some(Chunk { index, kind, data })
+    }
+
+    /// The index a chunk file's name gives: `N` for `filmChunk{N}` (as
+    /// downloaded) or `filmChunk{N}_dec` (inflated). None for any other name.
+    pub fn file_index(name: &str) -> Option<u32> {
+        let digits = name.strip_prefix("filmChunk")?;
+        let digits = digits.strip_suffix("_dec").unwrap_or(digits);
+        if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        digits.parse().ok()
     }
 
     /// Whether the bytes are a zlib stream: a deflate method byte with a

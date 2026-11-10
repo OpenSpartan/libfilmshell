@@ -152,7 +152,8 @@ pub struct StatDefinition {
     pub id: u32,
     /// The base entry type (2 a best-of, 3 computed).
     pub base: i64,
-    /// How a match's value comes from its rounds, the game's number.
+    /// How a match's value comes from its rounds, as the game numbers it;
+    /// what each number means isn't known.
     pub aggregation: i64,
     /// Whether a lower value ranks higher.
     pub lower_is_better: bool,
@@ -209,7 +210,8 @@ pub struct StatSettings {
     pub scoreboard: Vec<usize>,
     /// The server runs at 30 Hz.
     pub server_30fps: bool,
-    /// The tick rate, when the variant sets one.
+    /// The variant's tick rate setting as stored, when it sets one; its
+    /// unit isn't known.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub tick_rate: Option<i64>,
     /// Kill cams, when set.

@@ -28,7 +28,7 @@ The crate is named `filmshell`:
 filmshell = { git = "https://github.com/OpenSpartan/libfilmshell" }
 ```
 
-## Film Chunks
+## Film chunks
 
 Halo Infinite records every match for theater replay in **chunks** that are listed through the API.
 A film has three kinds:
@@ -40,7 +40,8 @@ A film has three kinds:
 | 3    | `Highlights` | Last   | Summary of kills, deaths, and medals on the theater timeline         |
 
 Reading a film takes the header and every replay chunk. The highlights chunk is optional, but
-without it the library can't tell whose life is whose by the players' death times. You can
+without it a film has no medals, and lives the film doesn't name an owner for can't be matched
+to players by their death times. You can
 download the chunks yourself with a script or a third-party tool, using your own
 [Spartan token](https://den.dev/blog/halo-api-authentication/), including for matches other players
 participated in.
@@ -59,13 +60,16 @@ fn print_match(chunks: &[(u32, u32, Vec<u8>)]) -> Result<(), filmshell::Error> {
         Chunk::new(*index, kind, bytes.as_slice())
     }))?;
 
-    let name = |id| film.player(id).and_then(|p| p.name()).unwrap_or("unknown");
+    let name = |id| film.player_name(id).unwrap_or("unknown");
     for player in film.players() {
         println!("{}", name(player.id));
     }
-    for (tick, kill) in film.kills() {
-        let killer = kill.killer.map_or("the environment", name);
-        println!("{tick}: {killer} killed {}", name(kill.victim));
+    // Leaves out the deaths the game deals everyone alive when a match ends.
+    for (tick, kill) in film.kills().filter(|(_, k)| k.is_scored()) {
+        match kill.credited_killer() {
+            Some(killer) => println!("{tick}: {} killed {}", name(killer), name(kill.victim)),
+            None => println!("{tick}: {} died", name(kill.victim)),
+        }
     }
     Ok(())
 }
@@ -94,7 +98,7 @@ cargo run --release --example raw -- path/to/film                # the packets a
 
 If you would like to read the raw contents of the film, `Film::raw()` exposes what the actual
 underlying data model is built from: inflated chunks, packets, frames, each frame's events and
-entity updates, the seek snapshots and a bit reader. It is mostly useful for working on the format
+entity updates, and the seek snapshots. It is mostly useful for working on the format
 itself; most applications you will build with `libfilmshell` won't need it.
 
 ## License

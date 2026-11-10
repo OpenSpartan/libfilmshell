@@ -48,7 +48,7 @@ impl fmt::Display for EntityId {
 
 /// An Xbox user id.
 ///
-/// It serializes as its decimal text: a XUID is past the integers
+/// It serializes as its decimal text: XUIDs exceed 2^53, past the integers
 /// JavaScript holds exactly.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Xuid(pub u64);
@@ -82,9 +82,9 @@ impl fmt::Display for TeamId {
     }
 }
 
-/// A set of players as the game packs it: bit `31 - index` for each player,
-/// the index a [`PlayerId`]'s, so at most the first 32 players. Voice lines,
-/// game events and zones name their players this way.
+/// A set of players as the game packs it: bit `31 - id` for each
+/// [`PlayerId`], so ids 0 to 31 only. Voice lines, game events and zones name
+/// their players this way.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PlayerMask(pub u32);
@@ -156,9 +156,9 @@ impl FromStr for Guid {
     }
 }
 
-/// A position in world units (ten to an engine unit, the unit of the game's
-/// files). `x` and `y` are horizontal, `z` is up and known only when the
-/// film's level is in the catalogue.
+/// A position in world units (a tenth of the engine unit of the game's files,
+/// and a foot). `x` and `y` are horizontal; `z` is up, known when positions
+/// convert with the level's box ([`CoordinateSource::LevelBox`](crate::CoordinateSource::LevelBox)).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Position {

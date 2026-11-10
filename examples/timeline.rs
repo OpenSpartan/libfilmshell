@@ -14,14 +14,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dir = args.next().ok_or("usage: timeline <film folder> <player index>")?;
     let me = PlayerId(args.next().ok_or("give a player index")?.parse()?);
     let film = Film::from_chunks(common::load_folder(dir.as_ref())?)?;
-    let name = |id: PlayerId| film.player(id).and_then(|p| p.name()).unwrap_or("someone");
+    let name = |id: PlayerId| film.player_name(id).unwrap_or("someone");
     println!("{}", name(me));
 
     for e in film.events().iter().filter(|e| e.event.involves(me)) {
         let line = match &e.event {
-            Event::Kill(k) if k.victim == me => match k.killer {
-                Some(killer) if killer != me => format!("killed by {}", name(killer)),
-                _ => "died".to_string(),
+            Event::Kill(k) if k.victim == me => match k.credited_killer() {
+                Some(killer) => format!("killed by {}", name(killer)),
+                None => "died".to_string(),
             },
             Event::Kill(k) if k.killer == Some(me) => format!("killed {}", name(k.victim)),
             Event::Kill(k) => format!("assisted on {}", name(k.victim)),
@@ -42,7 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("life from {start} to {end}{}", if life.died { ", died" } else { "" });
         let mut t = start;
         while t <= end {
-            let sample = life.at(t);
+            let sample = life.sample_at(t);
             t += Tick::PER_SECOND;
             let Some((s, p)) = sample.and_then(|s| Some((s, s.position?))) else { continue };
             let health = s.health.map_or(String::new(), |h| format!("  health {:.0}%", h * 100.0));

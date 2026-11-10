@@ -11,7 +11,7 @@ use crate::{Film, TagId};
 /// player created (the two don't overlap), hits are damage events whose
 /// effect belongs to a weapon, once per attacker, victim and frame. Measured
 /// against the match stats, shots and hits are a median 1.00 of the game's
-/// counts, and accuracy is off by a median of 4 points.
+/// counts, and accuracy is off by a median of 4.4 points (90th percentile 38).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Accuracy {
@@ -55,7 +55,7 @@ pub struct WeaponProfile {
 }
 
 /// How a respawn's pad scored under the game's default spawn weights, from
-/// where everyone else was a moment before. Needs the map's spawn points in
+/// where everyone else was 2 ticks before. Needs the map's spawn points in
 /// [`Hints::spawn_pads`](crate::Hints::spawn_pads).
 ///
 /// The game scores every spawn point by regions around allies, enemies and

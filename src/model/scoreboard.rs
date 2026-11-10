@@ -119,7 +119,11 @@ pub struct MatchClock {
     pub limit: f64,
     /// Seconds left.
     pub left: f64,
-    /// The timer's state.
+    /// The timer's 5-bit state as the game sends it. Seen on the test
+    /// films: 1 while stopped; 6 while running in timed modes, where a mode
+    /// like Oddball also stops it while no one scores; 19 while running in
+    /// the rounds of Attrition and Elimination, which have no time limit.
+    /// What the bits mean isn't known.
     pub state: u32,
 }
 
@@ -132,9 +136,9 @@ pub struct EngineState {
     pub tick: Tick,
     /// The match phase: 1 in play, 2 over.
     pub phase: u32,
-    /// The lives each player in the game has left, -1 for unlimited.
+    /// The lives each player in the game has left, None for unlimited.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
-    pub lives_left: Vec<(PlayerId, i32)>,
+    pub lives_left: Vec<(PlayerId, Option<u32>)>,
     /// The scoreboard's rows as the snapshot holds them: each player's and
     /// team's values of the statborg's 56 slots, by slot. The values the
     /// snapshot misses are carried from the one before.
@@ -142,8 +146,21 @@ pub struct EngineState {
     pub rows: Vec<(StatOwner, Vec<i32>)>,
 }
 
-/// The game's scoreboard over the match: every value the statborg
-/// replicates as it changes, and the match clock.
+/// The game's scoreboard over the match: every value the statborg (the
+/// game's replicated scoreboard: a row of 56 slots per player and per team)
+/// sends as it changes, and the match clock.
+///
+/// A value belongs to one round ([`StatChange::round`]), and modes that play
+/// rounds restart their rows each round: [`Scoreboard::final_stat`] is the
+/// last round's value, [`Scoreboard::total_stat`] the match's.
+///
+/// ```no_run
+/// # fn run(film: &filmshell::Film, id: filmshell::PlayerId) {
+/// use filmshell::{Stat, StatOwner};
+///
+/// let kills = film.scoreboard().total_stat(StatOwner::Player(id), Stat::Kills);
+/// # }
+/// ```
 #[derive(Clone, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
@@ -168,7 +185,9 @@ impl Scoreboard {
     }
 
     /// How many rounds the match had, by the rounds the scoreboard's values
-    /// are for: 1 for a match of one round, or a film without a scoreboard.
+    /// are for: 1 for a match of one round, or a film without a scoreboard
+    /// (whose [`Scoreboard::round_starts`] can still find rounds by the match
+    /// clock).
     pub fn rounds(&self) -> u32 {
         self.changes.iter().map(|c| c.round).max().map_or(1, |r| r + 1)
     }

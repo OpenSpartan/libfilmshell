@@ -92,8 +92,8 @@ impl Hints {
     }
 
     /// The level's play-space box, in place of the catalogue's. A box whose
-    /// corners aren't finite, or whose low corner isn't below its high one,
-    /// is ignored.
+    /// corners aren't finite, whose low corner isn't below its high one, or
+    /// that spans a million engine units or more is ignored.
     #[must_use]
     pub fn level_bounds(mut self, bounds: LevelBounds) -> Hints {
         let ok = (0..3).all(|i| {
@@ -104,7 +104,7 @@ impl Hints {
         self
     }
 
-    /// The map variant's spawn points, in an order of the caller's:
+    /// The map variant's spawn points, in any order:
     /// [`SpawnFactor::pad`](crate::analysis::SpawnFactor::pad) indexes them.
     /// Points whose coordinates aren't finite or lie more than a million
     /// world units out are kept in the order but never used.

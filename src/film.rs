@@ -54,23 +54,38 @@ impl Film {
     ///
     /// The chunks must be numbered 0 to n without gaps: chunk 0 the header,
     /// then the replay chunks, then optionally the highlights chunk.
-    /// In a release build reading takes a second or two for a 10-minute
-    /// match, a few seconds for a long one.
+    /// Everything is read up front: in a release build about 4 s for a
+    /// 9-minute Big Team Battle match of 27 players, 9 s for an 18-minute one
+    /// of 35. A debug build is several times slower; a crate that depends on
+    /// this one can optimize it alone with `[profile.dev.package.filmshell]
+    /// opt-level = 3`.
     ///
     /// # Errors
     ///
-    /// When the chunks don't make up a film: none given, a gap or a repeat
-    /// in their indices, a kind out of place, a chunk that doesn't inflate,
-    /// one larger than [`MAX_CHUNK_BYTES`](crate::MAX_CHUNK_BYTES) or chunks
-    /// together larger than [`MAX_FILM_BYTES`](crate::MAX_FILM_BYTES), a
-    /// header the library doesn't know, or replay chunks that record no
-    /// tick. The [`Error`] says which.
+    /// When the chunks don't make up a film:
+    ///
+    /// - [`Error::NoChunks`]: none given.
+    /// - [`Error::DuplicateChunk`], [`Error::MissingChunks`]: a repeat or a
+    ///   gap in their indices.
+    /// - [`Error::UnexpectedKind`]: a header that isn't chunk 0, highlights
+    ///   that aren't the last chunk.
+    /// - [`Error::NoReplay`]: no replay chunk.
+    /// - [`Error::Inflate`], [`Error::TooLarge`]: a chunk that doesn't
+    ///   inflate, or one larger than [`MAX_CHUNK_BYTES`](crate::MAX_CHUNK_BYTES),
+    ///   or chunks together larger than [`MAX_FILM_BYTES`](crate::MAX_FILM_BYTES).
+    /// - [`Error::UnknownHeader`]: chunk 0 isn't a film header this library
+    ///   reads, among them those of films before version 41.
+    /// - [`Error::NoTicks`]: replay chunks that record no tick.
     pub fn from_chunks<'a>(chunks: impl IntoIterator<Item = Chunk<'a>>) -> Result<Film, Error> {
         Film::from_chunks_with(chunks, &Hints::default())
     }
 
-    /// [`Film::from_chunks`] with what the caller knows beyond the film:
-    /// see [`Hints`].
+    /// [`Film::from_chunks`] with what the caller knows beyond the film (see
+    /// [`Hints`]): for a level the library's catalogue lacks
+    /// ([`Film::coordinates`] is None, or not [`CoordinateSource::LevelBox`]),
+    /// to name the level in place of the one the film names, or for
+    /// [`analysis::spawn_factors`](crate::analysis::spawn_factors), which
+    /// needs the map's spawn points.
     ///
     /// # Errors
     ///
@@ -200,28 +215,23 @@ impl Film {
         self.lives.iter().filter(move |l| l.player == Some(player))
     }
 
-    /// Where `player` was at `tick`: their last sample at or before it, in
-    /// the life under way then. None while the player isn't alive: before
-    /// their first life, after a death until the next spawn, and after a
-    /// player who left was last listed. A life no kill ended that another
-    /// life follows ends at its last sample.
+    /// The life `player` is in at `tick`: the last to start at or before it,
+    /// while it lasts ([`Life::until`]). None while the player isn't alive:
+    /// before their first life, after a death until the next spawn, and
+    /// after they left.
     ///
     /// Looks through the film's lives, so it costs O(lives) a call.
+    pub fn life_at(&self, player: PlayerId, tick: Tick) -> Option<&Life> {
+        self.lives_of(player)
+            .take_while(|l| l.start().is_some_and(|s| s <= tick))
+            .last()
+            .filter(|l| !l.is_over_at(tick))
+    }
+
+    /// Where `player` was at `tick`: their last sample at or before it, in
+    /// the life they are in then ([`Film::life_at`]).
     pub fn sample_at(&self, player: PlayerId, tick: Tick) -> Option<&Sample> {
-        let mut lives = self.lives_of(player).peekable();
-        let mut current = None;
-        while let Some(l) = lives.next_if(|l| l.start().is_some_and(|s| s <= tick)) {
-            current = Some(l);
-        }
-        let life = current?;
-        let last = lives.peek().is_none();
-        if !last && life.death.is_none() && life.end().is_some_and(|e| tick > e) {
-            return None;
-        }
-        if last && self.player(player).and_then(|p| p.left).is_some_and(|left| tick > left) {
-            return None;
-        }
-        life.at(tick)
+        self.life_at(player, tick)?.sample_at(tick)
     }
 
     /// Whether `player` is alive at `tick`, by the rules of
@@ -249,7 +259,7 @@ impl Film {
         self.players.iter().filter_map(move |p| Some((p.id, self.sample_at(p.id, tick)?)))
     }
 
-    /// The players of `team`, in index order.
+    /// The players of `team`, in id order.
     pub fn team(&self, team: TeamId) -> impl Iterator<Item = &Player> + '_ {
         self.players.iter().filter(move |p| p.team == Some(team))
     }
@@ -332,7 +342,10 @@ impl Film {
         &self.events[a..b.max(a)]
     }
 
-    /// Every kill, in tick order.
+    /// Every kill, in tick order: the deaths the film records a kill event
+    /// for and those it doesn't ([`Kill::inferred`]), and the deaths the game
+    /// deals everyone still alive when a match ends ([`Kill::is_scored`] is
+    /// false for those).
     pub fn kills(&self) -> impl Iterator<Item = (Tick, &Kill)> + '_ {
         self.events.iter().filter_map(|e| match &e.event {
             Event::Kill(k) => Some((e.tick, k)),

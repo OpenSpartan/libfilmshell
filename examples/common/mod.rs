@@ -19,7 +19,7 @@ pub fn load_folder(dir: &Path) -> std::io::Result<Vec<Chunk<'static>>> {
     for entry in std::fs::read_dir(dir)? {
         let path = entry?.path();
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-        if !is_chunk_name(name) || dir.join(format!("{name}_dec")).exists() {
+        if Chunk::file_index(name).is_none() || dir.join(format!("{name}_dec")).exists() {
             continue;
         }
         let chunk = Chunk::from_file(name, std::fs::read(&path)?)
@@ -27,11 +27,4 @@ pub fn load_folder(dir: &Path) -> std::io::Result<Vec<Chunk<'static>>> {
         chunks.push(chunk);
     }
     Ok(chunks)
-}
-
-/// `filmChunk{N}` or `filmChunk{N}_dec`.
-fn is_chunk_name(name: &str) -> bool {
-    let Some(rest) = name.strip_prefix("filmChunk") else { return false };
-    let digits = rest.strip_suffix("_dec").unwrap_or(rest);
-    !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
 }

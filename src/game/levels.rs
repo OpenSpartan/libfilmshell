@@ -3,7 +3,7 @@
 //! A film stores a position as an N-bit integer per axis over a box it never
 //! carries: the bounds of a structure BSP of the level. With the box a
 //! position converts exactly: `min + (q + 0.5) * (max - min) / 2^N` in
-//! engine units, and world units are ten engine units.
+//! engine units; one engine unit is ten world units.
 
 use super::levels_data::{BUILD, LEVELS};
 use crate::{Guid, TagId};
