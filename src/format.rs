@@ -303,7 +303,7 @@ impl<'a> Raw<'a> {
         self.film.chunks[..n].iter().enumerate().skip(1).map(|(i, c)| (i as u32, c.as_slice()))
     }
 
-    /// The HighlightEvents chunk, inflated.
+    /// The highlights chunk, inflated.
     pub fn highlights_chunk(&self) -> Option<&'a [u8]> {
         self.has_highlights.then(|| self.film.chunks[self.film.chunks.len() - 1].as_slice())
     }

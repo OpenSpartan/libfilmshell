@@ -20,7 +20,7 @@ pub struct TimedEvent {
 pub enum Event {
     /// A player was killed.
     Kill(Kill),
-    /// A player earned a medal (from the HighlightEvents chunk, when the
+    /// A player earned a medal (from the highlights chunk, when the
     /// film fixes its clock; [`Film::medals`](crate::Film::medals) lists every medal).
     Medal(MedalAward),
     /// A weapon fired a round.
@@ -679,7 +679,7 @@ pub struct RespawnCountdown {
     pub seconds: u32,
 }
 
-/// A record of the HighlightEvents chunk: the theater timeline's markers.
+/// A record of the highlights chunk: the theater timeline's markers.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]

@@ -13,6 +13,7 @@ use crate::{Film, TagId};
 /// against the match stats, shots and hits are a median 1.00 of the game's
 /// counts, and accuracy is off by a median of 4.4 points (90th percentile 38).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Accuracy {
     /// Rounds fired.
@@ -33,6 +34,7 @@ impl Accuracy {
 /// A weapon's numbers in this film, from the projectile and damage effect
 /// its hits used, so a variant that swaps them shows its own.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct WeaponProfile {
     /// The weapon.
@@ -64,6 +66,7 @@ pub struct WeaponProfile {
 /// the player influencers are modelled, and there is no line of sight, so
 /// a factor can rule pads out but doesn't name the one the game chose.
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct SpawnFactor {
     /// When the player spawned.
@@ -86,6 +89,8 @@ pub struct SpawnFactor {
 
 /// Whose presence a spawn influencer region is around.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 #[non_exhaustive]
 pub enum Influencer {
     /// A living teammate.
@@ -99,6 +104,7 @@ pub enum Influencer {
 /// One influencer region of the spawn model: a cylinder around each source,
 /// which adds its weight to a spawn point inside it.
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct SpawnRegion {
     /// Around whom.
@@ -120,6 +126,7 @@ pub struct SpawnRegion {
 
 /// The game's default spawn weights as [`spawn_factors`] models them.
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct SpawnModel {
     /// Scores are compared in steps of this.
@@ -132,6 +139,7 @@ pub struct SpawnModel {
 
 /// One player's projectiles and hits, as their accuracy counts them.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub struct AccuracyTicks<'a> {
     /// When the player created a non-grenade projectile.

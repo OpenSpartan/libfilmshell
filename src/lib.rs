@@ -1,8 +1,8 @@
 //! Reads Halo Infinite theater films.
 //!
 //! A film is a set of chunks: a header chunk, replay chunks that record the
-//! match tick by tick, and a HighlightEvents chunk with the theater
-//! timeline. [`Film::from_chunks`] reads them into a data model: who played,
+//! match tick by tick, and a highlights chunk (the game's HighlightEvents)
+//! with the theater timeline. [`Film::from_chunks`] reads them into a data model: who played,
 //! every life with its positions and vitals, vehicles and what stood on the
 //! map, one stream of events (kills, shots, hits, pickups, medals, voice
 //! lines, objectives), the scoreboard, and each player's inputs and
@@ -77,15 +77,28 @@
 //! otherwise it fits one (to [`Hints::spawn_pads`] where given) or leaves
 //! positions unconverted ([`Sample::raw`]).
 //!
+//! # Checked against the match stats
+//!
+//! A film doesn't carry the stats the Halo services keep for its match (the
+//! match stats), and the library doesn't read them; its tests do. Over 86
+//! films (film version 41: Slayer, CTF, Big Team Battle, King of the Hill,
+//! Strongholds, Oddball, Firefight, the minigames, Attrition and Elimination,
+//! Extraction, Escalation, Grifball) they check that the level, every
+//! player's kills and deaths over the match, and each team's score agree
+//! with the match stats: kills agree for 97% of players, and every player's
+//! kills and deaths do in the Attrition and Elimination matches against
+//! bots.
+//!
 //! # Features
 //!
 //! - `serde`: derives `Serialize` and `Deserialize` on the model's types
 //!   (not [`Film`], [`Clock`], [`Chunk`], [`Hints`] or [`Error`]; [`Rule`]
-//!   only serializes) and the `game` enums. An [`Event`] is an object with a
-//!   `type` (`{"type": "kill", "victim": 3, ...}`), enum variants are
-//!   snake_case, [`TagId`]s, [`Xuid`]s and [`Guid`]s are strings, and empty
-//!   `Option` and `Vec` fields are left out. With `serde_json`, turn on its
-//!   `float_roundtrip` feature for floats to read back exactly.
+//!   only serializes), the [`analysis`] results and the `game` enums. An
+//!   [`Event`] is an object with a `type` (`{"type": "kill", "victim": 3,
+//!   ...}`), enum variants are snake_case, [`TagId`]s, [`StringId`]s,
+//!   [`Xuid`]s and [`Guid`]s are strings, and empty `Option` and `Vec` fields
+//!   are left out. With `serde_json`, turn on its `float_roundtrip` feature
+//!   for floats to read back exactly.
 //! - `research`: makes the internal readers public under a hidden
 //!   `research` module, for studying the format; they are outside the API's
 //!   stability guarantees.

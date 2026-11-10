@@ -400,7 +400,7 @@ impl Film {
         })
     }
 
-    /// Every medal the HighlightEvents chunk records for a player of the
+    /// Every medal the highlights chunk records for a player of the
     /// film, in its order, with the medal's tick. The tick is None when the
     /// film fixes no highlight clock; only medals with a tick are also in
     /// the event stream as [`Event::Medal`].
@@ -411,7 +411,7 @@ impl Film {
         })
     }
 
-    /// The HighlightEvents chunk's records, in its order.
+    /// The highlights chunk's records, in its order.
     pub fn highlights(&self) -> &[Highlight] {
         &self.highlights
     }

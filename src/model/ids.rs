@@ -95,14 +95,26 @@ impl PlayerMask {
         player.0 < 32 && self.0 & (0x8000_0000 >> player.0) != 0
     }
 
-    /// The players in the set, in index order.
+    /// The players in the set, in id order.
     pub fn iter(self) -> impl Iterator<Item = PlayerId> {
         (0..32u8).filter(move |&p| self.0 & (0x8000_0000 >> p) != 0).map(PlayerId)
+    }
+
+    /// How many players are in the set.
+    pub fn len(self) -> usize {
+        self.0.count_ones() as usize
     }
 
     /// Whether the set is empty.
     pub fn is_empty(self) -> bool {
         self.0 == 0
+    }
+}
+
+impl FromIterator<PlayerId> for PlayerMask {
+    /// The set of the players given; ids from 32 on are left out.
+    fn from_iter<I: IntoIterator<Item = PlayerId>>(players: I) -> PlayerMask {
+        PlayerMask(players.into_iter().filter(|p| p.0 < 32).fold(0, |m, p| m | 0x8000_0000 >> p.0))
     }
 }
 
@@ -208,5 +220,7 @@ mod tests {
         let m = PlayerMask(0x8000_0000 | 0x2000_0000);
         assert!(m.contains(PlayerId(0)) && m.contains(PlayerId(2)) && !m.contains(PlayerId(1)));
         assert_eq!(m.iter().collect::<Vec<_>>(), vec![PlayerId(0), PlayerId(2)]);
+        assert_eq!(m.len(), 2);
+        assert_eq!(m.iter().collect::<PlayerMask>(), m);
     }
 }

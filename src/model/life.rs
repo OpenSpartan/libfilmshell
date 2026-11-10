@@ -110,7 +110,7 @@ pub struct Sample {
 /// A life is one biped entity. Its owner is the player controlling the unit,
 /// as the biped's own records say; where they don't, the library matches
 /// the life's first and last records against the players' death times in
-/// the HighlightEvents chunk. A life neither places has no player.
+/// the highlights chunk. A life neither places has no player.
 ///
 /// [`Film::life_at`](crate::Film::life_at) finds the life a player is in at a
 /// tick, and [`Film::sample_at`](crate::Film::sample_at) their sample then.
