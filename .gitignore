@@ -26,3 +26,4 @@ rustc-ice-*.txt
 # Film corpora: local only, never committed
 films/
 films-local/
+test-films/
