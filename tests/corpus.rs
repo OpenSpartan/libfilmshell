@@ -303,3 +303,59 @@ fn chunk_files_name_their_kinds() {
     assert!(without.highlights().is_empty());
     assert!(!without.players().is_empty() && without.kills().count() > 0);
 }
+
+#[test]
+fn rides_come_from_the_parent_state() {
+    if corpus().is_empty() {
+        return;
+    }
+    let (mut exits, mut inside) = (0, 0);
+    for (name, f) in corpus() {
+        for r in f.rides() {
+            // The parent state names the seat of every ride it records.
+            assert!(r.seat.is_some(), "{name}: {r:?}");
+            assert!(r.from <= r.to, "{name}: {r:?}");
+            let lives: Vec<&Life> = f.lives_of(r.player).filter(|l| f.life_rides(l).any(|x| x == r)).collect();
+            assert_eq!(lives.len(), 1, "{name}: {r:?} is in one life");
+        }
+        for e in f.events() {
+            let Event::VehicleExit(x) = &e.event else { continue };
+            // An exit from a vehicle whose track runs through it (a part or
+            // a mounted turret sends no positions).
+            let tracked = f.vehicles().iter().any(|v| {
+                v.entity == x.vehicle
+                    && v.track.first().is_some_and(|p| p.0 <= e.tick)
+                    && v.track.last().is_some_and(|p| e.tick <= p.0)
+            });
+            if !tracked {
+                continue;
+            }
+            exits += 1;
+            // The exit starts the exit animation; the rider stays seated
+            // until it ends, so the ride reaches past the exit or nearly.
+            inside +=
+                f.rides().iter().any(|r| r.player == x.player && r.from <= e.tick && e.tick.0 <= r.to.0 + 90) as usize;
+        }
+    }
+    assert!(exits > 0 && inside == exits, "{inside} of {exits} exits end a ride");
+}
+
+/// Every death a player's HighlightEvents records is a life of theirs that
+/// ended in one, players who left included (their scoreboard row is cleared).
+#[test]
+fn lives_end_in_the_recorded_deaths() {
+    let (mut players, mut agree) = (0usize, 0usize);
+    for (_, f) in corpus() {
+        if f.scoreboard().changes.is_empty() {
+            continue;
+        }
+        for p in f.players().iter().filter(|p| !p.is_bot()) {
+            let recorded =
+                f.highlights().iter().filter(|h| h.player == Some(p.id) && h.kind == HighlightKind::Death).count();
+            let died = f.lives_of(p.id).filter(|l| l.died).count();
+            players += 1;
+            agree += usize::from(died == recorded);
+        }
+    }
+    assert!(agree * 100 >= players * 97, "{agree} of {players} players");
+}

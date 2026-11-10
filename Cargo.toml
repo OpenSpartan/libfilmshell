@@ -15,6 +15,9 @@ exclude = ["films/", "films-local/", "data/", "assets/"]
 [features]
 ## Derive `serde::Serialize` on the model types.
 serde = ["dep:serde"]
+## Makes the internal readers public under `filmshell::research`, for
+## studying the format. Outside the API's stability guarantees.
+research = []
 
 [dependencies]
 indexmap = "2"

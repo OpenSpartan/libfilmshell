@@ -739,6 +739,15 @@ pub struct Fields {
     /// Object parent state: Some(Some(parent)) attached to `parent`,
     /// Some(None) detached (a dropped or placed item).
     pub parent: Option<Option<Parent>>,
+    /// With an attached `parent`: its handle's 2-bit generation (a vehicle
+    /// parent's id is `(generation - 1) * 256 + index - 256`) and the
+    /// parent's node it hangs from (the object's node index, `142f0b490`).
+    pub parent_generation: Option<u32>,
+    pub parent_node: Option<u32>,
+    /// The unit's seat in its parent (the index `vehicle_test_seat_unit`
+    /// compares, `1431aef58`), when parent state is listed: Some(Some(seat))
+    /// seated, Some(None) not.
+    pub seat: Option<Option<u32>>,
     /// A unit's weapon slots' state, by slot as `weapons` (the `n`th row of
     /// each of weapon-state-ammo, -rounds-inventory and -overheated): the
     /// rounds loaded (0 when the reader gets none) and a 0 to 1 fraction the
@@ -2215,14 +2224,15 @@ impl Reader<'_> {
             }
             ParentState => {
                 if self.flag() {
-                    // Attached: the parent (a bare kind-1 handle), its
-                    // marker, an optional second index, two flags, a local
-                    // offset (3 times 16 bits), an orientation and a flag.
+                    // Attached: the parent (a bare kind-1 handle), the
+                    // parent's node it hangs from, an optional second index,
+                    // two flags, a local offset (3 times 16 bits), an
+                    // orientation and a flag (`142f0b490` gathers them).
                     let unit = self.flag();
                     let index = self.bits(if unit { 9 } else { crate::events::INDEX_BITS });
-                    self.skip(2);
+                    f.parent_generation = Some(self.bits(2));
                     f.parent = Some(Some(if unit { Parent::Unit(index) } else { Parent::Object(index) }));
-                    self.skip(16);
+                    f.parent_node = Some(self.bits(16));
                     self.opt(16);
                     self.skip(2 + 48);
                     self.orient();
@@ -2234,7 +2244,8 @@ impl Reader<'_> {
                         self.opt(11);
                     }
                 }
-                self.opt(6);
+                // The unit's seat in its parent, when seated.
+                f.seat = Some(self.opt(6));
                 self.skip(1);
                 if p.version <= 2 || self.object_type == 0x23 {
                     self.skip(3);

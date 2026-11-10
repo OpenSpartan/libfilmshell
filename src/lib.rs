@@ -60,6 +60,9 @@
 //! # Features
 //!
 //! - `serde`: derives `serde::Serialize` on the model types.
+//! - `research`: makes the internal readers public under a hidden
+//!   `research` module, for studying the format; they are outside the API's
+//!   stability guarantees.
 
 #![deny(missing_docs)]
 
@@ -80,51 +83,76 @@ pub use hints::{Hints, LevelBounds, SpawnPad};
 pub use model::*;
 pub use tag::TagId;
 
-mod accuracy;
-mod actions;
-mod ammo;
-mod assemble;
-mod bits;
-mod calibrate;
-mod components;
-mod container;
-mod control;
-mod creation;
-mod damage;
-mod deploys;
-mod events;
-mod fire;
-mod gamestate;
-mod grenades;
-mod header;
-mod highlights;
-mod hit_damage;
-mod holders;
-mod identity;
-mod inflate;
-mod inventory;
-mod levels;
-mod lives;
-mod motion;
-mod objectives;
-mod payload;
-mod registry;
-mod replication;
-mod roster;
-mod sandbox;
-mod scripts;
-mod snapshot;
-mod spawns;
-mod splash;
-mod statlog;
+// The internal readers: private, or public and hidden from the docs with the
+// `research` feature.
+macro_rules! internal {
+    ($($m:ident),* $(,)?) => {
+        $(
+            #[cfg(feature = "research")]
+            #[doc(hidden)]
+            pub mod $m;
+            #[cfg(not(feature = "research"))]
+            mod $m;
+        )*
+
+        /// The internal readers the model is built from, for studying the
+        /// format. Not part of the API: they change without notice.
+        #[cfg(feature = "research")]
+        #[doc(hidden)]
+        pub mod research {
+            $(pub use crate::$m;)*
+        }
+    };
+}
+
+internal!(
+    accuracy,
+    actions,
+    ammo,
+    assemble,
+    attach,
+    bits,
+    calibrate,
+    components,
+    container,
+    control,
+    creation,
+    damage,
+    deploys,
+    events,
+    fire,
+    gamestate,
+    grenades,
+    header,
+    highlights,
+    hit_damage,
+    holders,
+    identity,
+    inflate,
+    inventory,
+    levels,
+    lives,
+    motion,
+    objectives,
+    payload,
+    registry,
+    replication,
+    roster,
+    sandbox,
+    scripts,
+    snapshot,
+    spawns,
+    splash,
+    statlog,
+    types,
+    variant,
+    variant_stats,
+    vehicles,
+    vitals,
+    weapon_stats,
+    weapons,
+    world,
+    zones,
+);
 #[cfg(test)]
 mod testing;
-mod types;
-mod variant;
-mod variant_stats;
-mod vehicles;
-mod vitals;
-mod weapon_stats;
-mod weapons;
-mod world;
-mod zones;

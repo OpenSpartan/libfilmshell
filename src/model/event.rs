@@ -345,6 +345,25 @@ pub enum GameEventValue {
     Empty,
 }
 
+/// An argument of a game event's text, by its 3-bit type.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[non_exhaustive]
+pub enum GameEventArgument {
+    /// No value (type 0).
+    Empty,
+    /// A player (type 1); None when the index names no one.
+    Player(Option<PlayerId>),
+    /// A value with its type: 3 a string id (`%s`), 4 an integer (`%i`),
+    /// the others not told apart.
+    Word {
+        /// The type, 2 to 7.
+        kind: u32,
+        /// The value.
+        value: u32,
+    },
+}
+
 /// A mode script's game event: an id whose meaning depends on the mode, up
 /// to seven keyed values, and the players it is about.
 #[derive(Clone, Debug, PartialEq)]
@@ -359,6 +378,8 @@ pub struct GameEvent {
     pub values: Vec<(u32, GameEventValue)>,
     /// The string id of the event's own text, when it has one.
     pub text: Option<u32>,
+    /// The text's arguments, in order.
+    pub arguments: Vec<GameEventArgument>,
     /// The players it is about.
     pub players: PlayerMask,
 }

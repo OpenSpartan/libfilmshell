@@ -8,7 +8,7 @@ use crate::calibrate::{apply_calibration, level_matches, scale_paths_to_world, P
 use crate::components::{self, Params, SlotStates};
 use crate::container::{Film as Container, Framing};
 use crate::damage::{self, Cause};
-use crate::events::{Body, Value};
+use crate::events::{Body, Param, Value};
 use crate::fire::{self, FilmFire};
 use crate::game::{self, Grenade, Level};
 use crate::grenades;
@@ -50,7 +50,8 @@ const BLAST_AFTER_END_FRAMES: i64 = 60;
 /// Ticks before an event in which the player's latest sample places an
 /// event that carries no position.
 const SAMPLE_TICKS: u32 = 120;
-/// A ride's exit comes this many frames after its last sample at most.
+/// Without the parent state, a ride's exit comes this many frames after its
+/// last sample at most.
 const EXIT_SLACK: i64 = 90;
 /// Statborg slots of deaths and spawns.
 const DEATHS_SLOT: u32 = 5;
@@ -320,25 +321,43 @@ fn pair_grenades(
     out
 }
 
+/// A bot's spawns when the scoreboard has no row of its: high enough that
+/// nothing caps its lives (one fewer deaths, so its last life can survive).
+const UNCOUNTED: f64 = 1e9;
+
 /// What life assignment needs of each player, from the film: the roster, and
-/// each player's final deaths and spawns on the scoreboard.
-fn roster_entries(roster: &Roster, log: &crate::statlog::Log) -> Vec<RosterEntry> {
-    let last = |id: usize, slot: u32| {
-        log.changes.iter().rfind(|c| c.kind == 0 && c.id as usize == id && c.slot == slot).map(|c| c.value as f64)
+/// each player's deaths and spawns on the scoreboard. A player who leaves
+/// has their row cleared, so a count is its highest value. A bot that took
+/// a leaver's place can have no row at all; its lives are chained by time
+/// without a count.
+fn roster_entries(roster: &Roster, log: &crate::statlog::Log, hl_ticks: &[u32]) -> Vec<RosterEntry> {
+    let at = |f: i64| usize::try_from(f).ok().and_then(|f| hl_ticks.get(f)).map_or(0.0, |&t| t as f64);
+    let most = |id: usize, slot: u32| {
+        log.changes
+            .iter()
+            .filter(|c| c.kind == 0 && c.id as usize == id && c.slot == slot)
+            .map(|c| c.value)
+            .max()
+            .map(|v| v as f64)
     };
     let known = !log.changes.is_empty();
     roster
         .players
         .iter()
         .enumerate()
-        .map(|(i, p)| RosterEntry {
-            bot: p.bot.is_some(),
-            last_team_id: p.team.map(|t| t as f64),
-            xuid: p.xuid.map(|x| x.to_string()),
-            present_at_beginning: Some(p.present_at_start),
-            left_in_progress: Some(p.left.is_some()),
-            deaths: last(i, DEATHS_SLOT).or(known.then_some(0.0)),
-            spawns: last(i, SPAWNS_SLOT).or(known.then_some(0.0)),
+        .map(|(i, p)| {
+            let has_row = log.changes.iter().any(|c| c.kind == 0 && c.id as usize == i);
+            let uncounted = known && p.bot.is_some() && !has_row;
+            RosterEntry {
+                bot: p.bot.is_some(),
+                last_team_id: p.team.map(|t| t as f64),
+                xuid: p.xuid.map(|x| x.to_string()),
+                present_at_beginning: Some(p.present_at_start),
+                left_in_progress: Some(p.left.is_some()),
+                deaths: if uncounted { Some(UNCOUNTED - 1.0) } else { most(i, DEATHS_SLOT).or(known.then_some(0.0)) },
+                spawns: if uncounted { Some(UNCOUNTED) } else { most(i, SPAWNS_SLOT).or(known.then_some(0.0)) },
+                listed: uncounted.then(|| (p.first.map_or(0.0, at), p.left.map_or(f64::INFINITY, at))),
+            }
         })
         .collect()
 }
@@ -371,11 +390,24 @@ fn game_events(film: &Container, w: [u32; 3], c: Option<&Calibration>, holders: 
             let players = (0..32)
                 .filter(|p| g.last & (0x8000_0000u32 >> p) != 0)
                 .fold(0u32, |m, p| m | 0x8000_0000u32 >> (holders.api(p, frame as i64) & 31));
+            let arguments = g
+                .extra
+                .iter()
+                .flat_map(|x| x.1.iter().flatten())
+                .map(|&a| match a {
+                    Param::None => GameEventArgument::Empty,
+                    Param::Player(p) => GameEventArgument::Player(
+                        p.and_then(|p| u8::try_from(holders.api(p, frame as i64)).ok()).map(PlayerId),
+                    ),
+                    Param::Word(kind, value) => GameEventArgument::Word { kind, value },
+                })
+                .collect();
             let event = GameEvent {
                 id: g.id,
                 small: g.small,
                 values,
                 text: g.extra.map(|x| x.0),
+                arguments,
                 players: PlayerMask(players),
             };
             out.push((frame as i64, event));
@@ -531,7 +563,9 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let mut splash_seen = crate::splash::Seen::new();
     let mut thrown = grenades::Flights::default();
     let mut deploys_seen = crate::deploys::Seen::default();
+    let mut attach_seen = crate::attach::Seen::default();
     if let Some(p) = walk {
+        let actor_control = crate::registry::Schema::read(&film.chunks[0]).biped.actor_control;
         vitals_marks = Vitals::start(&film, &p, level);
         walk_shared(
             &film,
@@ -545,6 +579,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 &mut crate::splash::reader(&film, &mut splash_seen),
                 &mut grenades::reader(&mut thrown),
                 &mut crate::deploys::reader(&mut deploys_seen),
+                &mut crate::attach::reader(actor_control, &mut attach_seen),
             ],
         );
         crate::statlog::finish(&mut stat_log);
@@ -553,7 +588,8 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let vitals = walk.map(|_| Vitals::finish(vitals_marks));
     let splashes = walk.map(|_| crate::splash::finish(splash_seen)).unwrap_or_default();
     let deploys = walk.map(|_| crate::deploys::finish(deploys_seen)).unwrap_or_default();
-    let entries = roster_entries(&roster, &stat_log);
+    let attachments = walk.map(|_| crate::attach::finish(attach_seen));
+    let entries = roster_entries(&roster, &stat_log, &crate::lives::highlight_ticks(film.frame_ticks()));
     let xuids: Vec<String> = roster.players.iter().map(|p| p.xuid.map(|x| x.to_string()).unwrap_or_default()).collect();
     let ex = extract_all_player_positions(
         &film,
@@ -563,6 +599,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         &xuids,
         level,
         walk.map(|_| vehicle_ident),
+        attachments,
     );
     let paths = &ex.paths;
 
@@ -1014,10 +1051,18 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                     .push((e.frame, Event::Zone(ZoneEvent { kind, player: pid(e.player), team: team(e.team), zone })));
             }
         }
-        // Vehicles and the rides in them.
+        // Vehicles and the rides in them: the runs of a path's samples
+        // spliced from one vehicle. With the parent state read a run is cut
+        // where the life changes seat or moves into a part, and its seat is
+        // the one the parent state names; otherwise the seat is that of the
+        // exit that ends the run.
         let tracks = vehicle_tracks(&ex, c);
         for (k, wp) in world.iter().enumerate() {
             let Some(player) = pid(wp.player) else { continue };
+            let mine: std::collections::HashSet<i32> = paths[k].life_slots.iter().flatten().copied().collect();
+            let spans: Vec<&crate::attach::Span> =
+                ex.attachments.bipeds.iter().filter(|s| mine.contains(&s.id)).collect();
+            let span_at = |f: i64| spans.iter().position(|s| s.from <= f && f <= s.to);
             let pos = &wp.positions;
             let mut i = 0;
             while i < pos.len() {
@@ -1026,19 +1071,28 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                     i += 1;
                     continue;
                 }
+                let at = span_at(pos[i].frame);
                 let mut j = i;
-                while j + 1 < pos.len() && pos[j + 1].in_vehicle && pos[j + 1].vehicle == v {
+                while j + 1 < pos.len()
+                    && pos[j + 1].in_vehicle
+                    && pos[j + 1].vehicle == v
+                    && span_at(pos[j + 1].frame) == at
+                {
                     j += 1;
                 }
                 let (from, to) = (pos[i].frame, pos[j].frame);
                 let track =
                     tracks.iter().position(|t| t.0 == v && t.2[0].frame <= from && from <= t.2[t.2.len() - 1].frame);
-                let seat = fired.as_ref().and_then(|ff| {
-                    ff.exits[k]
-                        .iter()
-                        .rfind(|x| ex.vehicle_ident.resolve(x.1) == v && x.0 >= from && x.0 <= to + EXIT_SLACK)
-                });
-                rides.push(Ride { player, vehicle: track, seat: seat.map(|x| x.2), from: tick(from), to: tick(to) });
+                let seat = match at {
+                    Some(at) => spans[at].seat,
+                    None => fired.as_ref().and_then(|ff| {
+                        ff.exits[k]
+                            .iter()
+                            .rfind(|x| ex.vehicle_ident.resolve(x.1) == v && x.0 >= from && x.0 <= to + EXIT_SLACK)
+                            .map(|x| x.2)
+                    }),
+                };
+                rides.push(Ride { player, vehicle: track, seat, from: tick(from), to: tick(to) });
                 i = j + 1;
             }
         }
@@ -1255,6 +1309,14 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                             .iter()
                             .filter_map(|(&p, series)| Some((pid(p as i32)?, series.get(k).copied().flatten()?)))
                             .collect(),
+                        rows: g
+                            .players
+                            .iter()
+                            .filter_map(|(&p, series)| Some((StatOwner::Player(pid(p as i32)?), series.get(k)?.to_vec())))
+                            .chain(g.teams.iter().filter_map(|(&t, series)| {
+                                Some((StatOwner::Team(TeamId(u8::try_from(t).ok()?)), series.get(k)?.to_vec()))
+                            }))
+                            .collect(),
                     })
                     .collect()
             }
@@ -1408,6 +1470,11 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         raw: film,
         params,
         has_highlights,
+        encoding: match layout.mode {
+            EncodingMode::PerEntity => crate::format::Encoding::PerEntity,
+            EncodingMode::BotComposite => crate::format::Encoding::BotComposite,
+            EncodingMode::MultiplayerComposite => crate::format::Encoding::Composite,
+        },
         header,
         clock,
         players,

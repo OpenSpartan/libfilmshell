@@ -110,6 +110,10 @@ pub struct RosterEntry {
     pub left_in_progress: Option<bool>,
     pub deaths: Option<f64>,
     pub spawns: Option<f64>,
+    /// For a bot the scoreboard doesn't count: the highlight ticks from its
+    /// first listing to its leaving (infinity while listed to the end), the
+    /// span its lives start in.
+    pub listed: Option<(f64, f64)>,
 }
 
 impl RosterEntry {

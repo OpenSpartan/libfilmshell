@@ -69,6 +69,10 @@ pub struct LifeSlot {
     pub y: Option<f64>,
 }
 
+/// Ticks before an uncounted bot's first listing that its first life may
+/// start.
+const LISTED_EARLY_TICKS: f64 = 120.0;
+
 #[derive(Clone, Debug)]
 pub struct LifePlayer {
     pub index: usize,
@@ -79,6 +83,8 @@ pub struct LifePlayer {
     pub present_at_start: bool,
     pub left: bool,
     pub death_ms: Option<Vec<f64>>,
+    /// An uncounted bot's listing span (`RosterEntry::listed`).
+    pub listed: Option<(f64, f64)>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -546,6 +552,10 @@ pub fn assign_lives(slots: &[LifeSlot], players: &[LifePlayer]) -> Option<LifeAs
             }
             let chain = &chains[&p.index];
             if chain.len() as f64 >= p.spawns {
+                continue;
+            }
+            // An uncounted bot's lives start while it is listed.
+            if p.listed.is_some_and(|(a, b)| s.start < a - LISTED_EARLY_TICKS || s.start > b) {
                 continue;
             }
             let mut c;

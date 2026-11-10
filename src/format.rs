@@ -216,11 +216,37 @@ pub struct Raw<'a> {
     film: &'a Container,
     has_highlights: bool,
     params: Option<crate::components::Params>,
+    encoding: Encoding,
+}
+
+/// How a film's tick packets carry its bipeds' positions, which depends on
+/// the lobby.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Encoding {
+    /// Up to four players, none a bot: each biped's position is an entity
+    /// record at any bit offset of a tick packet.
+    PerEntity,
+    /// Up to four players with a bot: the same records, a bot's often first.
+    BotComposite,
+    /// Five or more players: every object update is an entry of the tick
+    /// packet's entity view, bit-packed.
+    Composite,
 }
 
 impl<'a> Raw<'a> {
-    pub(crate) fn new(film: &'a Container, has_highlights: bool, params: Option<crate::components::Params>) -> Raw<'a> {
-        Raw { film, has_highlights, params }
+    pub(crate) fn new(
+        film: &'a Container,
+        has_highlights: bool,
+        params: Option<crate::components::Params>,
+        encoding: Encoding,
+    ) -> Raw<'a> {
+        Raw { film, has_highlights, params, encoding }
+    }
+
+    /// How the tick packets carry positions.
+    pub fn encoding(&self) -> Encoding {
+        self.encoding
     }
 
     /// Chunk 0, inflated.

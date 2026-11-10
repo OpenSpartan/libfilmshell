@@ -12,6 +12,7 @@ pub struct Film {
     pub(crate) raw: crate::container::Film,
     pub(crate) params: Option<crate::components::Params>,
     pub(crate) has_highlights: bool,
+    pub(crate) encoding: crate::format::Encoding,
     pub(crate) header: Header,
     pub(crate) clock: Clock,
     pub(crate) players: Vec<Player>,
@@ -189,6 +190,15 @@ impl Film {
         &self.rides
     }
 
+    /// The rides of one life, in tick order: its player's rides that start
+    /// within it.
+    pub fn life_rides<'a>(&'a self, life: &'a Life) -> impl Iterator<Item = &'a Ride> + 'a {
+        let span = life.start().zip(life.end());
+        self.rides
+            .iter()
+            .filter(move |r| Some(r.player) == life.player && span.is_some_and(|(a, b)| a <= r.from && r.from <= b))
+    }
+
     /// What stood on the map, from the seek snapshots. Empty unless the
     /// film's coordinates are exact.
     pub fn world_objects(&self) -> &[WorldObject] {
@@ -263,6 +273,6 @@ impl Film {
 
     /// The film's raw layers: chunks, packets, frames.
     pub fn raw(&self) -> crate::format::Raw<'_> {
-        crate::format::Raw::new(&self.raw, self.has_highlights, self.params)
+        crate::format::Raw::new(&self.raw, self.has_highlights, self.params, self.encoding)
     }
 }

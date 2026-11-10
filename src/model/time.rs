@@ -78,6 +78,20 @@ impl Clock {
         &self.frame_ticks
     }
 
+    /// The highlight clock's tick of HighlightEvents time 0, when the film's
+    /// kills, or its medals, fix it. The highlight clock runs on game ticks
+    /// without the ticks recorder hitches skipped ([`Clock::hitches`]): time
+    /// `ms` is highlight tick `zero + ms * 0.05994`.
+    pub fn highlight_zero(&self) -> Option<f64> {
+        self.highlight_zero
+    }
+
+    /// The recorder hitches HighlightEvents time doesn't count: each as the
+    /// highlight tick it falls at and the game ticks it skipped, in order.
+    pub fn hitches(&self) -> Vec<(u32, u32)> {
+        crate::lives::hitches(&self.frame_ticks)
+    }
+
     /// The tick of HighlightEvents time `ms`, when the film's kills, or its
     /// medals and the mode events sent with them, fix the highlight clock.
     pub fn highlight_tick(&self, ms: u32) -> Option<Tick> {

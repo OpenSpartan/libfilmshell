@@ -127,6 +127,10 @@ pub struct EngineState {
     pub phase: u32,
     /// The lives each player in the game has left, -1 for unlimited.
     pub lives_left: Vec<(PlayerId, i32)>,
+    /// The scoreboard's rows as the snapshot holds them: each player's and
+    /// team's values of the statborg's 56 slots, by slot. The values the
+    /// snapshot misses are carried from the one before.
+    pub rows: Vec<(StatOwner, Vec<i32>)>,
 }
 
 /// The game's scoreboard over the match: every value the statborg
