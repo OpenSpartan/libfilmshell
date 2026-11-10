@@ -41,6 +41,18 @@ pub enum Error {
     /// No replay chunk records a tick: the bytes given as replay chunks
     /// aren't a film's.
     NoTicks,
+    /// A file name that isn't a chunk's (`filmChunk{N}` or
+    /// `filmChunk{N}_dec`), given to [`Chunk::from_file`](crate::Chunk::from_file).
+    NotAChunkFile {
+        /// The name.
+        name: String,
+    },
+    /// The bytes of a chunk file are no kind of film chunk:
+    /// [`ChunkKind::detect`](crate::ChunkKind::detect) doesn't know them.
+    UnknownChunk {
+        /// The chunk's index.
+        index: u32,
+    },
 }
 
 impl fmt::Display for Error {
@@ -58,6 +70,8 @@ impl fmt::Display for Error {
             Error::UnknownHeader => write!(f, "chunk 0 is not a film header this library reads"),
             Error::NoReplay => write!(f, "the film has no replay chunk"),
             Error::NoTicks => write!(f, "no replay chunk records a tick"),
+            Error::NotAChunkFile { name } => write!(f, "{name} is not the name of a film chunk file"),
+            Error::UnknownChunk { index } => write!(f, "chunk {index} is not a film chunk"),
         }
     }
 }

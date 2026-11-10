@@ -117,6 +117,16 @@ pub struct Clock {
     pub(crate) highlight_zero: Option<f64>,
 }
 
+/// A pause in the recording that HighlightEvents time doesn't count.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Hitch {
+    /// Where it falls, on the highlight clock (the ticks HighlightEvents
+    /// times count, not [`Tick`]s).
+    pub at: u32,
+    /// The game ticks it skipped.
+    pub skipped: u32,
+}
 /// Game ticks per millisecond of HighlightEvents time.
 const TICKS_PER_MS: f64 = crate::lives::TICKS_PER_MS;
 
@@ -167,10 +177,9 @@ impl Clock {
         self.highlight_zero
     }
 
-    /// The recorder hitches HighlightEvents time doesn't count: each as the
-    /// highlight tick it falls at and the game ticks it skipped, in order.
-    pub fn hitches(&self) -> Vec<(u32, u32)> {
-        crate::lives::hitches(&self.frame_ticks)
+    /// The recorder hitches HighlightEvents time doesn't count, in order.
+    pub fn hitches(&self) -> Vec<Hitch> {
+        crate::lives::hitches(&self.frame_ticks).into_iter().map(|(at, skipped)| Hitch { at, skipped }).collect()
     }
 
     /// The tick of HighlightEvents time `ms`, when the film's kills, or its

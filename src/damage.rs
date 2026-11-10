@@ -28,7 +28,8 @@ pub fn projectiles(tag: u32) -> Vec<u32> {
 
 /// The multiplayer Spartan's body and shield vitality.
 pub fn spartan() -> (f64, f64) {
-    game::spartan_vitality()
+    let v = game::spartan_vitality();
+    (v.body, v.shield)
 }
 
 /// Whether a damage tag is a blast that grenades spawn among other

@@ -146,10 +146,21 @@ pub fn damage_effect(tag: TagId) -> Option<&'static DamageEffect> {
     DAMAGE.binary_search_by_key(&tag, |d| d.tag).ok().map(|i| &DAMAGE[i])
 }
 
+/// How many points of damage a Spartan's body and shield take.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct Vitality {
+    /// The body's points.
+    pub body: f64,
+    /// The shield's points.
+    pub shield: f64,
+}
+
 /// The multiplayer Spartan's body and shield vitality, from its model's
 /// damage info.
-pub fn spartan_vitality() -> (f64, f64) {
-    SPARTAN
+pub fn spartan_vitality() -> Vitality {
+    Vitality { body: SPARTAN.0, shield: SPARTAN.1 }
 }
 
 #[cfg(test)]
@@ -172,6 +183,6 @@ mod tests {
         assert_eq!(damage_effect(TagId(0xdaa03c35)).map(|d| (d.cause, d.weapon)), Some((DamageCause::Melee, None)));
         assert!(damage_effect(TagId(0xd21ac495)).unwrap().grenade_blast);
         assert_eq!(damage_effect(TagId(0xda3b5ba4)).map(|d| d.cause), Some(DamageCause::Grenade));
-        assert_eq!(spartan_vitality(), (90.0, 140.0));
+        assert_eq!(spartan_vitality(), Vitality { body: 90.0, shield: 140.0 });
     }
 }

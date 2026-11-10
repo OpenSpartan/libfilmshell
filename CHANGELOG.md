@@ -22,7 +22,9 @@ The first release, 0.1.0.
   left.
 - The scoreboard has every value the game sends, with the round it is for (`StatChange::round`);
   `Scoreboard::total_stat` adds the rounds up, as the match stats do.
-- Playback: `Film::life_at`, `sample_at`, `samples_at`, `weapon_at`, `ride_at`, `vehicle_at`.
+- Playback: `Film::players_at` gives every living player at a tick with their life, sample,
+  weapon, ride and vehicle; `life_at`, `sample_at`, `weapon_at`, `ride_at`, `vehicle_at` and
+  `events_in` look up one thing.
 - `GameMode` names the mode a film's scripts run, Attrition and Elimination, Extraction and
   Escalation among them; `game::modes` lists each mode's options and their defaults.
 - `filmshell::game` holds the game's own tables: weapons, vehicles, medals, damage effects, and

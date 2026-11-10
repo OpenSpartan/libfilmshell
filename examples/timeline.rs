@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Event::Action(a) if a.kind == ActionKind::Reload => "reloaded".to_string(),
             Event::Medal(m) => format!("earned {}", m.medal().map_or("a medal", |m| m.name())),
             Event::VehicleExit(x) => {
-                let vehicle = film.vehicle_at(x.vehicle, e.tick).and_then(|v| v.kind());
+                let vehicle = film.vehicle_at(x.vehicle, e.tick).and_then(|v| v.vehicle());
                 format!("got out of {}", vehicle.map_or("a vehicle", |v| v.name()))
             }
             _ => continue,

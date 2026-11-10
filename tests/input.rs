@@ -104,10 +104,13 @@ fn chunks_from_file_names() {
     // As downloaded: inflated on the way in.
     let c = Chunk::from_file("filmChunk5", common::zlib_stored(&packets(&[9, 7]))).unwrap();
     assert_eq!((c.index, c.kind, c.is_compressed()), (5, ChunkKind::Highlights, false));
-    assert!(Chunk::from_file("filmChunk", &replay[..]).is_none());
-    assert!(Chunk::from_file("filmChunk+3", &replay[..]).is_none());
-    assert!(Chunk::from_file("meta.json", &replay[..]).is_none());
-    assert!(Chunk::from_file("filmChunk2", &[0u8; 20][..]).is_none());
+    for name in ["filmChunk", "filmChunk+3", "meta.json"] {
+        let e = Chunk::from_file(name, &replay[..]).unwrap_err();
+        assert_eq!(e, Error::NotAChunkFile { name: name.to_string() });
+    }
+    assert_eq!(Chunk::from_file("filmChunk2", &[0u8; 20][..]).unwrap_err(), Error::UnknownChunk { index: 2 });
+    let broken = [0x78, 0x9c, 0xff, 0xff];
+    assert_eq!(Chunk::from_file("filmChunk3", &broken[..]).unwrap_err(), Error::Inflate { index: 3 });
 }
 
 /// A deflate stream (fixed codes) of a zero byte and then `copies` copies of

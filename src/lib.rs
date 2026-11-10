@@ -43,12 +43,12 @@
 //! # Playback
 //!
 //! Everything is read up front, so playback can seek to any tick: at any
-//! [`Tick`], [`Film::samples_at`] gives every living player's sample (where
-//! they were, their aim, health and shield, the vehicle they rode),
-//! [`Film::weapon_at`] what they held, [`Film::vehicle_at`] the track of the
-//! vehicle a sample or an exit names, and [`Film::events_between`] what
-//! happened in a stretch of time.
-//! [`Clock`] maps the film's frames to ticks.
+//! [`Tick`], [`Film::players_at`] gives every living player with their
+//! sample (where they were, their aim, health and shield), the weapon in
+//! their hands and the vehicle they ride, and [`Film::events_in`] what
+//! happened in a stretch of time. [`Film::life_at`], [`Film::weapon_at`] and
+//! [`Film::vehicle_at`] look up one thing. [`Clock`] maps the film's frames
+//! to ticks.
 //!
 //! # Layout
 //!
@@ -65,6 +65,10 @@
 //! # Time and space
 //!
 //! Times are [`Tick`]s, 1/60 s of game time from the film's first frame.
+//! A span that lasts through its ticks (a life, a ride, a vehicle's track)
+//! gives its first and last, both inclusive; one that ends when something is
+//! gone (an object off the map, a weapon picked up) gives that tick, and says
+//! so.
 //! Positions are in world units ([`Position`]): a world unit is a tenth of
 //! the engine unit of the game's files, and a foot. The model and
 //! [`analysis`] use world units; the [`game`] tables keep engine units. A film
@@ -101,8 +105,8 @@ mod text;
 
 pub use chunk::{Chunk, ChunkKind, MAX_CHUNK_BYTES, MAX_FILM_BYTES};
 pub use error::Error;
-pub use film::Film;
-pub use hints::{Hints, LevelBounds, SpawnPad};
+pub use film::{Film, PlayerAt};
+pub use hints::{Hints, LevelBounds, SpawnKind, SpawnPad};
 pub use model::*;
 pub use tag::{StringId, TagId};
 pub use text::ParseIdError;

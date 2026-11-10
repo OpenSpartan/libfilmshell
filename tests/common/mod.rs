@@ -83,8 +83,7 @@ pub fn load_folder(dir: &Path) -> std::io::Result<Vec<Chunk<'static>>> {
         if !name.starts_with("filmChunk") || dir.join(format!("{name}_dec")).exists() {
             continue;
         }
-        let chunk = Chunk::from_file(name, std::fs::read(&path)?)
-            .ok_or_else(|| Error::new(ErrorKind::InvalidData, format!("{name} is not a film chunk")))?;
+        let chunk = Chunk::from_file(name, std::fs::read(&path)?).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
         chunks.push(chunk);
     }
     Ok(chunks)

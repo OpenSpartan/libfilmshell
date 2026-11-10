@@ -17,10 +17,11 @@ pub struct Film {
     pub(crate) clock: Clock,
     pub(crate) players: Vec<Player>,
     pub(crate) variant: Option<GameVariant>,
-    pub(crate) level: Option<Level>,
+    pub(crate) level: Option<&'static Level>,
+    pub(crate) level_id: Option<TagId>,
     pub(crate) coordinates: Option<Coordinates>,
     pub(crate) lives: Vec<Life>,
-    pub(crate) vehicles: Vec<Vehicle>,
+    pub(crate) vehicles: Vec<VehicleTrack>,
     pub(crate) rides: Vec<Ride>,
     pub(crate) world: Vec<WorldObject>,
     pub(crate) ground: Vec<GroundWeapon>,
@@ -192,11 +193,17 @@ impl Film {
         self.variant.as_ref().map_or(GameMode::Other, GameVariant::mode)
     }
 
-    /// The level, when the catalogue or the hints know it. With
-    /// [`Hints::level_bounds`] it is a level made from the box: no name,
-    /// `structure` 0, and the hinted or header level id, else 0.
-    pub fn level(&self) -> Option<&Level> {
-        self.level.as_ref()
+    /// The level the film is on, when the library's catalogue has it
+    /// ([`game::levels`](crate::game::levels)). Positions convert with its
+    /// box unless [`Hints::level_bounds`] gives another.
+    pub fn level(&self) -> Option<&'static Level> {
+        self.level
+    }
+
+    /// The `levl` tag of the level the film is on: the one
+    /// [`Hints::level`] names, else the film's.
+    pub fn level_id(&self) -> Option<TagId> {
+        self.level_id
     }
 
     /// How raw positions map to world units, when the library could tell.
@@ -259,13 +266,43 @@ impl Film {
         self.players.iter().filter_map(move |p| Some((p.id, self.sample_at(p.id, tick)?)))
     }
 
+    /// Everything playback draws for `player` at `tick`: their life and
+    /// sample then, the weapon in their hands, and the ride and vehicle
+    /// they're in. None while they aren't alive ([`Film::life_at`]).
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film) {
+    /// use filmshell::Tick;
+    ///
+    /// for p in film.players_at(Tick::from_seconds(90.0)) {
+    ///     let holding = p.weapon.and_then(|w| w.name()).unwrap_or("nothing");
+    ///     println!("{} holds {holding}", p.player.name().unwrap_or("someone"));
+    /// }
+    /// # }
+    /// ```
+    pub fn player_at(&self, player: PlayerId, tick: Tick) -> Option<PlayerAt<'_>> {
+        let life = self.life_at(player, tick)?;
+        let sample = life.sample_at(tick)?;
+        let ride = self.ride_at(player, tick);
+        let vehicle =
+            ride.and_then(|r| self.ride_vehicle(r)).or_else(|| sample.vehicle.and_then(|v| self.vehicle_at(v, tick)));
+        let weapon = (!sample.in_vehicle).then(|| self.state(player)?.weapon_at(tick)).flatten();
+        Some(PlayerAt { player: self.player(player)?, life, sample, weapon, ride, vehicle })
+    }
+
+    /// [`Film::player_at`] for every player alive at `tick`, in id order:
+    /// one frame of playback. O(players × lives).
+    pub fn players_at(&self, tick: Tick) -> impl Iterator<Item = PlayerAt<'_>> + '_ {
+        self.players.iter().filter_map(move |p| self.player_at(p.id, tick))
+    }
+
     /// The players of `team`, in id order.
     pub fn team(&self, team: TeamId) -> impl Iterator<Item = &Player> + '_ {
         self.players.iter().filter(move |p| p.team == Some(team))
     }
 
     /// Every vehicle track, in the order of their first record.
-    pub fn vehicles(&self) -> &[Vehicle] {
+    pub fn vehicles(&self) -> &[VehicleTrack] {
         &self.vehicles
     }
 
@@ -273,7 +310,7 @@ impl Film {
     /// that id, the last to start at or before `tick`. Ids are reused, so
     /// the tick picks the vehicle; a vehicle may stop sending positions while
     /// still in use, so the track can end before `tick`.
-    pub fn vehicle_at(&self, entity: EntityId, tick: Tick) -> Option<&Vehicle> {
+    pub fn vehicle_at(&self, entity: EntityId, tick: Tick) -> Option<&VehicleTrack> {
         self.vehicles
             .iter()
             .filter(|v| v.entity == entity && v.span().is_some_and(|(from, _)| from <= tick))
@@ -291,7 +328,7 @@ impl Film {
     }
 
     /// The track of the vehicle a ride is in, when it has one.
-    pub fn ride_vehicle(&self, ride: &Ride) -> Option<&Vehicle> {
+    pub fn ride_vehicle(&self, ride: &Ride) -> Option<&VehicleTrack> {
         self.vehicles.get(ride.vehicle?)
     }
 
@@ -335,10 +372,20 @@ impl Film {
         &self.events
     }
 
-    /// The events from `from` up to and including `to`.
-    pub fn events_between(&self, from: Tick, to: Tick) -> &[TimedEvent] {
-        let a = self.events.partition_point(|e| e.tick < from);
-        let b = self.events.partition_point(|e| e.tick <= to);
+    /// The events in a range of ticks, in tick order: `film.events_in(a..b)`
+    /// leaves out tick `b`, `film.events_in(a..=b)` keeps it.
+    pub fn events_in(&self, range: impl std::ops::RangeBounds<Tick>) -> &[TimedEvent] {
+        use std::ops::Bound;
+        let a = match range.start_bound() {
+            Bound::Included(&t) => self.events.partition_point(|e| e.tick < t),
+            Bound::Excluded(&t) => self.events.partition_point(|e| e.tick <= t),
+            Bound::Unbounded => 0,
+        };
+        let b = match range.end_bound() {
+            Bound::Included(&t) => self.events.partition_point(|e| e.tick <= t),
+            Bound::Excluded(&t) => self.events.partition_point(|e| e.tick < t),
+            Bound::Unbounded => self.events.len(),
+        };
         &self.events[a..b.max(a)]
     }
 
@@ -397,4 +444,24 @@ impl Film {
     pub fn raw(&self) -> crate::format::Raw<'_> {
         crate::format::Raw::new(&self.raw, self.has_highlights, self.params, self.encoding)
     }
+}
+
+/// A player alive at one tick, with what playback draws for them:
+/// [`Film::player_at`].
+#[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
+pub struct PlayerAt<'a> {
+    /// The player.
+    pub player: &'a Player,
+    /// The life they are in.
+    pub life: &'a Life,
+    /// Their last sample at or before the tick.
+    pub sample: &'a Sample,
+    /// The weapon in their hands: None in a vehicle, where they fire its
+    /// weapons, and in small lobbies, whose weapon state isn't read.
+    pub weapon: Option<TagId>,
+    /// The ride they are on.
+    pub ride: Option<&'a Ride>,
+    /// The track of the vehicle they are in.
+    pub vehicle: Option<&'a VehicleTrack>,
 }

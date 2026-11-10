@@ -13,7 +13,7 @@ use crate::fire::{self, FilmFire};
 use crate::game::{self, Grenade, Level};
 use crate::grenades;
 use crate::highlights::{extract_highlight_events, EventType, HighlightEvent};
-use crate::hints::Hints;
+use crate::hints::{Hints, SpawnKind};
 use crate::holders::Holders;
 use crate::inventory::{self};
 use crate::levels::{self, LevelBox};
@@ -132,9 +132,11 @@ pub(crate) fn position_widths(
 }
 
 /// The box the film's positions are quantized over: the hints' bounds, else
-/// the catalogue's level the hints or the header name.
-fn level_box(header: &crate::header::Header, hints: &Hints) -> (Option<LevelBox>, Option<Level>) {
+/// the catalogue's level the hints or the header name; and that level, when
+/// the catalogue has it.
+fn level_box(header: &crate::header::Header, hints: &Hints) -> (Option<LevelBox>, Option<&'static Level>) {
     let id = hints.level.map(|t| t.0).or(header.level);
+    let catalogued = id.and_then(|i| game::level(TagId(i)));
     if let Some(b) = hints.level_bounds {
         let widths: [u32; 3] =
             std::array::from_fn(|k| (60.0 * (b.max[k] as f64 - b.min[k] as f64)).max(1.0).ceil().log2().ceil() as u32);
@@ -146,20 +148,10 @@ fn level_box(header: &crate::header::Header, hints: &Hints) -> (Option<LevelBox>
             box_bits: 1,
             others: Vec::new(),
         };
-        let level = Level {
-            id: TagId(id.unwrap_or(0)),
-            name: "",
-            display_name: None,
-            api_id: None,
-            structure: TagId(0),
-            play: game::LevelBox { index: 0, min: b.min, max: b.max, widths },
-            index_bits: 1,
-            others: &[],
-        };
-        return (Some(lb), Some(level));
+        return (Some(lb), catalogued);
     }
     let Some(id) = id else { return (None, None) };
-    (levels::level(id).cloned(), game::level(TagId(id)).copied())
+    (levels::level(id).cloned(), catalogued)
 }
 
 /// Each path's sample states and jumps, from the component data of the
@@ -999,7 +991,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             grenade_flights.push(GrenadeFlight {
                 player,
                 grenade: f.grenade.and_then(Grenade::from_type),
-                path: f.path.iter().map(|&(fr, x, y)| (tick(fr), Position::new(x, y))).collect(),
+                path: f.path.iter().map(|&(fr, x, y)| PathPoint::new(tick(fr), Position::new(x, y))).collect(),
                 end: tick(f.end),
                 deleted: f.deleted,
             });
@@ -1065,7 +1057,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                     points: h
                         .runs
                         .iter()
-                        .filter_map(|&(f, t, n)| Some((tick(f), TeamId(u8::try_from(t).ok()?), n)))
+                        .filter_map(|&(f, t, n)| Some(HillPoints { tick: tick(f), team: TeamId(u8::try_from(t).ok()?), points: n }))
                         .collect(),
                 });
             }
@@ -1208,10 +1200,10 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         rides.sort_by_key(|r| (r.from, r.player));
         vehicles = tracks
             .into_iter()
-            .map(|(id, tag, pts)| Vehicle {
+            .map(|(id, tag, pts)| VehicleTrack {
                 entity: EntityId(id as u16),
                 tag: TagId(tag),
-                track: pts.iter().map(|p| (tick(p.frame), Position::new(p.x, p.y))).collect(),
+                track: pts.iter().map(|p| PathPoint::new(tick(p.frame), Position::new(p.x, p.y))).collect(),
             })
             .collect();
     }
@@ -1368,7 +1360,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         scale_y: c.scale_y,
         offset_x: c.offset_x,
         offset_y: c.offset_y,
-        spawn_fit: c.spawn_samples.zip(c.spawn_inliers),
+        spawn_fit: c.spawn_samples.zip(c.spawn_inliers).map(|(checked, on_pads)| SpawnFit { checked, on_pads }),
     });
     let sample = |p: &MotionPoint, wpos: Option<&WorldPosition>, st: Option<&SampleState>| Sample {
         tick: tick(p.frame),
@@ -1653,7 +1645,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 x: p.position.x,
                 y: p.position.y,
                 z: p.position.z,
-                respawn: p.respawn,
+                respawn: p.kind == SpawnKind::Respawn,
                 team: p.team.map(|t| t.0 as i64),
             })
             .collect();
@@ -1703,6 +1695,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         players,
         variant,
         level: level_model,
+        level_id: hints.level.or(raw_header.level.map(TagId)),
         coordinates,
         lives,
         vehicles,

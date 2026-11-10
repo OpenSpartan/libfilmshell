@@ -35,7 +35,7 @@ impl fmt::Display for PlayerId {
 /// so bipeds and vehicles have separate ids. The game reuses an id once its
 /// object is gone, so an id is unique only among the objects that exist at
 /// the same time: a biped's id names one life, a vehicle's one
-/// [`Vehicle`](crate::Vehicle) track.
+/// [`VehicleTrack`](crate::VehicleTrack).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct EntityId(pub u16);

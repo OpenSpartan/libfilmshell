@@ -9,12 +9,11 @@
 //! and the kind from the bytes.
 
 use filmshell::Chunk;
-use std::io::{Error, ErrorKind};
 use std::path::Path;
 
 /// The chunks of the film in `dir`, the inflated copy of a chunk where both
 /// are there. Other files are skipped.
-pub fn load_folder(dir: &Path) -> std::io::Result<Vec<Chunk<'static>>> {
+pub fn load_folder(dir: &Path) -> Result<Vec<Chunk<'static>>, Box<dyn std::error::Error>> {
     let mut chunks = Vec::new();
     for entry in std::fs::read_dir(dir)? {
         let path = entry?.path();
@@ -22,9 +21,7 @@ pub fn load_folder(dir: &Path) -> std::io::Result<Vec<Chunk<'static>>> {
         if Chunk::file_index(name).is_none() || dir.join(format!("{name}_dec")).exists() {
             continue;
         }
-        let chunk = Chunk::from_file(name, std::fs::read(&path)?)
-            .ok_or_else(|| Error::new(ErrorKind::InvalidData, format!("{name} is not a film chunk")))?;
-        chunks.push(chunk);
+        chunks.push(Chunk::from_file(name, std::fs::read(&path)?)?);
     }
     Ok(chunks)
 }

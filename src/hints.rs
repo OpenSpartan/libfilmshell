@@ -8,26 +8,36 @@ use crate::{Position, TagId, TeamId};
 pub struct SpawnPad {
     /// Where it stands, in world units.
     pub position: Position,
-    /// A respawn point; else an initial spawn point.
-    pub respawn: bool,
+    /// Which spawns it serves.
+    pub kind: SpawnKind,
     /// The team it is reserved for.
     pub team: Option<TeamId>,
 }
 
+/// Which spawns a [`SpawnPad`] serves.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum SpawnKind {
+    /// The match's first spawns.
+    Initial,
+    /// Spawns after a death.
+    Respawn,
+}
+
 impl SpawnPad {
-    /// A spawn point at `position`: a respawn point, else an initial one.
-    pub fn new(position: Position, respawn: bool) -> SpawnPad {
-        SpawnPad { position, respawn, team: None }
+    /// A spawn point of `kind` at `position`.
+    pub fn new(position: Position, kind: SpawnKind) -> SpawnPad {
+        SpawnPad { position, kind, team: None }
     }
 
     /// An initial spawn point at `position`.
     pub fn initial(position: Position) -> SpawnPad {
-        SpawnPad::new(position, false)
+        SpawnPad::new(position, SpawnKind::Initial)
     }
 
     /// A respawn point at `position`.
     pub fn respawn(position: Position) -> SpawnPad {
-        SpawnPad::new(position, true)
+        SpawnPad::new(position, SpawnKind::Respawn)
     }
 
     /// The same point reserved for `team`.

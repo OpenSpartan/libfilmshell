@@ -126,6 +126,12 @@ fn latest<T>(series: &[T], tick: Tick, at: impl Fn(&T) -> Tick) -> Option<&T> {
     series.partition_point(|x| at(x) <= tick).checked_sub(1).map(|i| &series[i])
 }
 
+/// The last entry for `slot` of a series of all slots' changes at or before
+/// `tick`.
+fn latest_in<T>(series: &[T], tick: Tick, at: impl Fn(&T) -> (Tick, u32), slot: u32) -> Option<&T> {
+    series[..series.partition_point(|x| at(x).0 <= tick)].iter().rfind(|x| at(x).1 == slot)
+}
+
 /// What a player carried and pressed over the match, each series at its
 /// changes.
 ///
@@ -165,7 +171,7 @@ pub struct PlayerState {
 impl PlayerState {
     /// The weapon in `slot` at `tick`.
     pub fn weapon_in(&self, slot: u32, tick: Tick) -> Option<TagId> {
-        self.weapons.iter().take_while(|w| w.tick <= tick).filter(|w| w.slot == slot).last()?.weapon
+        latest_in(&self.weapons, tick, |w| (w.tick, w.slot), slot)?.weapon
     }
 
     /// The weapon slot held at `tick`.
@@ -180,7 +186,7 @@ impl PlayerState {
 
     /// The magazine and reserve of `slot` at `tick`.
     pub fn ammo_in(&self, slot: u32, tick: Tick) -> Option<&Ammo> {
-        self.ammo.iter().take_while(|a| a.tick <= tick).filter(|a| a.slot == slot).last()
+        latest_in(&self.ammo, tick, |a| (a.tick, a.slot), slot)
     }
 
     /// The grenades carried at `tick`.
@@ -195,12 +201,12 @@ impl PlayerState {
 
     /// The charge of the energy weapon in `slot` at `tick`.
     pub fn energy_in(&self, slot: u32, tick: Tick) -> Option<&Energy> {
-        self.energy.iter().take_while(|e| e.tick <= tick).filter(|e| e.slot == slot).last()
+        latest_in(&self.energy, tick, |e| (e.tick, e.slot), slot)
     }
 
     /// The heat of the weapon in `slot` at `tick`.
     pub fn heat_in(&self, slot: u32, tick: Tick) -> Option<&Heat> {
-        self.heat.iter().take_while(|h| h.tick <= tick).filter(|h| h.slot == slot).last()
+        latest_in(&self.heat, tick, |h| (h.tick, h.slot), slot)
     }
 
     /// The equipment's charge at `tick`.

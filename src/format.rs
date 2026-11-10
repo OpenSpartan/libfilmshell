@@ -162,7 +162,7 @@ impl Handle {
 
 /// The model's [`EntityId`] of a biped (index 512 to 767) or vehicle (768 to
 /// 1023) with its generation, the id [`Life::entity`](crate::Life::entity),
-/// [`Vehicle::entity`](crate::Vehicle::entity) and
+/// [`VehicleTrack::entity`](crate::VehicleTrack::entity) and
 /// [`Sample::vehicle`](crate::Sample::vehicle) use. None for other entities
 /// and generation 0.
 pub fn entity_id(index: u32, generation: u32) -> Option<EntityId> {

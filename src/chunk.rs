@@ -1,3 +1,4 @@
+use crate::Error;
 use std::borrow::Cow;
 
 /// What a chunk holds. The film's manifest gives each chunk a type: the
@@ -100,9 +101,7 @@ impl<'a> Chunk<'a> {
     /// A chunk saved as a file: `filmChunk{N}` as downloaded or
     /// `filmChunk{N}_dec` inflated, `name` the file's name without its
     /// folder. The index comes from the name and the kind from the bytes
-    /// ([`ChunkKind::detect`]); compressed bytes are inflated here. None
-    /// when the name isn't a chunk's, the bytes don't inflate or inflate past
-    /// [`MAX_CHUNK_BYTES`], or they are no chunk of a film.
+    /// ([`ChunkKind::detect`]); compressed bytes are inflated here.
     ///
     /// Reading a film saved as a folder of chunk files, taking the inflated
     /// copy of a chunk where both are there:
@@ -118,19 +117,30 @@ impl<'a> Chunk<'a> {
     ///     if Chunk::file_index(name).is_none() || dir.join(format!("{name}_dec")).exists() {
     ///         continue;
     ///     }
-    ///     chunks.extend(Chunk::from_file(name, std::fs::read(&path)?));
+    ///     chunks.push(Chunk::from_file(name, std::fs::read(&path)?)?);
     /// }
     /// let film = Film::from_chunks(chunks)?;
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    pub fn from_file(name: &str, data: impl Into<Cow<'a, [u8]>>) -> Option<Chunk<'a>> {
-        let index = Chunk::file_index(name)?;
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotAChunkFile`] for a name that isn't a chunk file's;
+    /// [`Error::Inflate`] or [`Error::TooLarge`] for compressed bytes that
+    /// don't inflate or inflate past [`MAX_CHUNK_BYTES`];
+    /// [`Error::UnknownChunk`] for bytes that are no chunk of a film.
+    pub fn from_file(name: &str, data: impl Into<Cow<'a, [u8]>>) -> Result<Chunk<'a>, Error> {
+        let index = Chunk::file_index(name).ok_or_else(|| Error::NotAChunkFile { name: name.to_string() })?;
         let mut data = data.into();
         if is_zlib(&data) {
-            data = Cow::Owned(crate::inflate::zlib(&data, MAX_CHUNK_BYTES).ok()?);
+            let inflated = crate::inflate::zlib(&data, MAX_CHUNK_BYTES).map_err(|f| match f {
+                crate::inflate::Fault::Malformed => Error::Inflate { index },
+                crate::inflate::Fault::TooLong => Error::TooLarge { index },
+            })?;
+            data = Cow::Owned(inflated);
         }
-        let kind = ChunkKind::detect(index, &data)?;
-        Some(Chunk { index, kind, data })
+        let kind = ChunkKind::detect(index, &data).ok_or(Error::UnknownChunk { index })?;
+        Ok(Chunk { index, kind, data })
     }
 
     /// The index a chunk file's name gives: `N` for `filmChunk{N}` (as

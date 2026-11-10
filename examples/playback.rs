@@ -18,17 +18,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for p in film.players() {
         let name = p.name().unwrap_or("unnamed");
-        let Some(s) = film.sample_at(p.id, at) else {
+        let Some(now) = film.player_at(p.id, at) else {
             println!("{name:<16} not on the map");
             continue;
         };
+        let s = now.sample;
         let place = s.position.map_or("unknown place".to_string(), |w| format!("{:7.1} {:7.1}", w.x, w.y));
         let percent = |v: Option<f64>| v.map_or("   ".to_string(), |v| format!("{:>3.0}", v * 100.0));
-        let doing = if s.in_vehicle {
-            let vehicle = s.vehicle.and_then(|v| film.vehicle_at(v, at)).and_then(|v| v.kind());
-            format!("in {}", vehicle.map_or("a vehicle", |v| v.name()))
-        } else {
-            film.weapon_at(p.id, at).and_then(|w| w.name()).unwrap_or("").to_string()
+        let doing = match (now.vehicle, now.weapon) {
+            (Some(v), _) => format!("in {}", v.vehicle().map_or("a vehicle", |v| v.name())),
+            (None, Some(w)) => w.name().unwrap_or("").to_string(),
+            (None, None) => String::new(),
         };
         println!("{name:<16} {place}  shield {}  health {}  {doing}", percent(s.shield), percent(s.health));
     }

@@ -2,12 +2,31 @@ use super::{EntityId, PlayerId, PlayerMask, Position, TeamId, Tick};
 use crate::TagId;
 use crate::game::{self, Grenade, Item};
 
+/// Where something was at a tick: a point of a vehicle's track or a
+/// grenade's path.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct PathPoint {
+    /// When.
+    pub tick: Tick,
+    /// Where.
+    pub position: Position,
+}
+
+impl PathPoint {
+    /// A point at `tick`.
+    pub fn new(tick: Tick, position: Position) -> PathPoint {
+        PathPoint { tick, position }
+    }
+}
+
 /// A vehicle's track: one vehicle object from its creation, or the film's
 /// start, to its last position record.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
-pub struct Vehicle {
+pub struct VehicleTrack {
     /// The vehicle's id. Later vehicles reuse it; each creation starts a new
     /// track.
     pub entity: EntityId,
@@ -15,18 +34,18 @@ pub struct Vehicle {
     pub tag: TagId,
     /// Where it was, in tick order.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
-    pub track: Vec<(Tick, Position)>,
+    pub track: Vec<PathPoint>,
 }
 
-impl Vehicle {
-    /// The vehicle type.
-    pub fn kind(&self) -> Option<game::Vehicle> {
+impl VehicleTrack {
+    /// What vehicle it is.
+    pub fn vehicle(&self) -> Option<game::Vehicle> {
         game::Vehicle::from_tag(self.tag)
     }
 
-    /// The first and last ticks of the track.
+    /// The first and last ticks of the track, both inclusive.
     pub fn span(&self) -> Option<(Tick, Tick)> {
-        Some((self.track.first()?.0, self.track.last()?.0))
+        Some((self.track.first()?.tick, self.track.last()?.tick))
     }
 
     /// Where the vehicle was at `tick`: its last position at or before it.
@@ -36,8 +55,8 @@ impl Vehicle {
         if tick > end {
             return None;
         }
-        let i = self.track.partition_point(|p| p.0 <= tick).checked_sub(1)?;
-        Some(self.track[i].1)
+        let i = self.track.partition_point(|p| p.tick <= tick).checked_sub(1)?;
+        Some(self.track[i].position)
     }
 }
 
@@ -72,7 +91,7 @@ pub struct Ride {
     pub part: Option<TagId>,
     /// The first tick in the vehicle.
     pub from: Tick,
-    /// The last.
+    /// The last tick in the vehicle (inclusive).
     pub to: Tick,
 }
 
@@ -102,7 +121,9 @@ pub struct WorldObject {
     pub position: Position,
     /// The first snapshot that had it.
     pub from: Tick,
-    /// The first snapshot without it (snapshots are 20 s apart, so it went somewhere in between); None if it was there to the end.
+    /// The first snapshot without it, so not inclusive: snapshots are 20 s
+    /// apart, and it went somewhere in between. None if it was there to the
+    /// end.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub to: Option<Tick>,
 }
@@ -126,7 +147,8 @@ pub struct GroundWeapon {
     pub position: Position,
     /// When it came to rest.
     pub from: Tick,
-    /// When it was removed; None if it was still there at the end.
+    /// When it was removed, so not inclusive; None if it was still there at
+    /// the end.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub to: Option<Tick>,
     /// Removed by a player picking it up.
@@ -145,7 +167,7 @@ pub struct GrenadeFlight {
     pub grenade: Option<Grenade>,
     /// Its path, thinned to within a quarter of a world unit of the full one.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
-    pub path: Vec<(Tick, Position)>,
+    pub path: Vec<PathPoint>,
     /// When it went off: its deletion, else its last position.
     pub end: Tick,
     /// Whether `end` is the grenade's deletion.
@@ -244,5 +266,18 @@ pub struct HillScore {
     pub hills_to_win: u32,
     /// Each team's points on the current hill, at each change.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
-    pub points: Vec<(Tick, TeamId, u32)>,
+    pub points: Vec<HillPoints>,
+}
+
+/// A team's points on the current King of the Hill hill, from `tick` on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct HillPoints {
+    /// When the points changed.
+    pub tick: Tick,
+    /// Whose.
+    pub team: TeamId,
+    /// The points.
+    pub points: u32,
 }

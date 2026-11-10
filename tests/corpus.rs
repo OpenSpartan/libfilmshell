@@ -339,8 +339,8 @@ fn rides_come_from_the_parent_state() {
             // a mounted turret sends no positions).
             let tracked = f.vehicles().iter().any(|v| {
                 v.entity == x.vehicle
-                    && v.track.first().is_some_and(|p| p.0 <= e.tick)
-                    && v.track.last().is_some_and(|p| e.tick <= p.0)
+                    && v.track.first().is_some_and(|p| p.tick <= e.tick)
+                    && v.track.last().is_some_and(|p| e.tick <= p.tick)
             });
             if !tracked {
                 continue;

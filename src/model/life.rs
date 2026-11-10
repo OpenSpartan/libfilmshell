@@ -39,12 +39,22 @@ pub struct Coordinates {
     pub offset_x: f64,
     /// World y at raw 0.
     pub offset_y: f64,
-    /// For a fit to spawn pads: the life starts checked against the pads,
-    /// and how many landed within 5 world units of one.
+    /// How well the life starts fit the spawn pads, when the box was fitted
+    /// to them.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
-    pub spawn_fit: Option<(usize, usize)>,
+    pub spawn_fit: Option<SpawnFit>,
 }
 
+/// How well a fitted box puts the life starts on the spawn pads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct SpawnFit {
+    /// The life starts checked against the pads.
+    pub checked: usize,
+    /// How many landed within 5 world units of one.
+    pub on_pads: usize,
+}
 impl Coordinates {
     /// A raw position in world units.
     pub fn to_world(&self, raw: [f64; 2]) -> Position {
