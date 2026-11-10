@@ -393,8 +393,11 @@ pub fn assign_lives(slots: &[LifeSlot], players: &[LifePlayer]) -> Option<LifeAs
     let mut pos: Vec<Pos> = Vec::new();
     for p in &timed {
         let d = p.death_ms.as_ref().unwrap();
+        // More lives than the film has slots and deaths can't be matched; a
+        // damaged scoreboard can claim billions.
+        let lives = p.spawns.min((slots.len() + d.len() + 1) as f64);
         let mut k = 0usize;
-        while (k as f64) < p.spawns {
+        while (k as f64) < lives {
             pos.push(Pos {
                 player: p.index,
                 life: k,

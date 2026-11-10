@@ -60,8 +60,9 @@ impl Film {
     /// # Errors
     ///
     /// When the chunks don't make up a film: none given, a gap or a repeat
-    /// in their indices, a kind out of place, a chunk that doesn't inflate
-    /// or inflates past [`MAX_CHUNK_BYTES`](crate::MAX_CHUNK_BYTES), a
+    /// in their indices, a kind out of place, a chunk that doesn't inflate,
+    /// one larger than [`MAX_CHUNK_BYTES`](crate::MAX_CHUNK_BYTES) or chunks
+    /// together larger than [`MAX_FILM_BYTES`](crate::MAX_FILM_BYTES), a
     /// header the library doesn't know, or replay chunks that record no
     /// tick. The [`Error`] says which.
     pub fn from_chunks<'a>(chunks: impl IntoIterator<Item = Chunk<'a>>) -> Result<Film, Error> {
@@ -153,7 +154,10 @@ impl Film {
 
     /// The player with index `id`.
     pub fn player(&self, id: PlayerId) -> Option<&Player> {
-        self.players.iter().find(|p| p.id == id)
+        match self.players.get(id.index()) {
+            Some(p) if p.id == id => Some(p),
+            _ => self.players.iter().find(|p| p.id == id),
+        }
     }
 
     /// The game variant, when chunk 0's variant data reads.

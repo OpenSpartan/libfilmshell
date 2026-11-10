@@ -17,4 +17,5 @@ The first release.
 - `filmshell::format` exposes the raw layers, with the game's names for every event and entity
   type.
 - `filmshell::analysis` estimates what films don't state: accuracy, weapon numbers, spawn factors.
-- A film whose chunks inflate past 1 GiB, or a chunk past 256 MiB, is refused.
+- A film whose chunks inflate past 1 GiB, or a chunk past 256 MiB, is refused. `Hints` leave out
+  spawn points and level boxes whose coordinates aren't finite.

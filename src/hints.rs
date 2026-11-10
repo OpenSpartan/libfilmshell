@@ -66,15 +66,26 @@ impl Hints {
         self
     }
 
-    /// The level's play-space box, in place of the catalogue's.
+    /// The level's play-space box, in place of the catalogue's. A box whose
+    /// corners aren't finite, or whose low corner isn't below its high one,
+    /// is ignored.
     pub fn level_bounds(mut self, bounds: LevelBounds) -> Hints {
-        self.level_bounds = Some(bounds);
+        let ok = (0..3).all(|i| {
+            let (lo, hi) = (bounds.min[i], bounds.max[i]);
+            lo.is_finite() && hi.is_finite() && lo < hi && hi - lo < 1e6
+        });
+        self.level_bounds = ok.then_some(bounds);
         self
     }
 
-    /// The map variant's spawn points.
+    /// The map variant's spawn points. Points whose coordinates aren't
+    /// finite or lie more than a million world units out are left out.
     pub fn spawn_pads(mut self, pads: impl IntoIterator<Item = SpawnPad>) -> Hints {
-        self.spawn_pads = pads.into_iter().collect();
+        let sane = |v: f64| v.is_finite() && v.abs() <= 1e6;
+        self.spawn_pads = pads
+            .into_iter()
+            .filter(|p| sane(p.position.x) && sane(p.position.y) && p.position.z.is_none_or(sane))
+            .collect();
         self
     }
 }
