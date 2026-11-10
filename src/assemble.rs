@@ -469,7 +469,7 @@ fn medal_clock(medals: &[(i32, f64)], events: &[(i64, u32)], hl_ticks: &[u32]) -
         d.sort_by(f64::total_cmp);
         offsets.push(d);
     }
-    let (&peak, &n) = votes.iter().max_by_key(|(&b, &n)| (n, std::cmp::Reverse(b)))?;
+    let (&peak, &n) = votes.iter().max_by_key(|&(&b, &n)| (n, std::cmp::Reverse(b)))?;
     if n < 3 || 2 * n < medals.len() {
         return None;
     }
@@ -849,7 +849,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         for (k, exits) in ff.exits.iter().enumerate() {
             let Some(player) = pid(paths[k].player_index) else { continue };
             for &(frame, v, seat) in exits {
-                events.push((frame, Event::VehicleExit(VehicleExit { player, vehicle: v as u16, seat })));
+                events.push((frame, Event::VehicleExit(VehicleExit { player, vehicle: EntityId(v as u16), seat })));
             }
         }
         for &(frame, sound, mask) in &ff.voice {
@@ -1046,9 +1046,11 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                         == (b.owner, b.capturing, b.progress, b.contested, b.inside)
                 });
                 let shape = o.shape.map(|s| ZoneShape {
-                    cylinder: s.cylinder,
-                    a: s.a,
-                    b: s.b,
+                    area: if s.cylinder {
+                        ZoneArea::Cylinder { radius: s.a }
+                    } else {
+                        ZoneArea::Box { length: s.a, width: s.b }
+                    },
                     top: s.top,
                     bottom: s.bottom,
                     angle: s.angle,
@@ -1137,7 +1139,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         vehicles = tracks
             .into_iter()
             .map(|(id, tag, pts)| Vehicle {
-                entity: id as u16,
+                entity: EntityId(id as u16),
                 tag: TagId(tag),
                 track: pts.iter().map(|p| (tick(p.frame), Position::new(p.x, p.y))).collect(),
             })
@@ -1224,7 +1226,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         health: st.and_then(|s| s.health),
         shield: st.and_then(|s| s.shield),
         in_vehicle: p.in_vehicle,
-        vehicle: u16::try_from(p.vehicle).ok(),
+        vehicle: u16::try_from(p.vehicle).ok().map(EntityId),
     };
     let deaths = match &ex.deaths {
         Some(d) => d.clone(),
@@ -1242,7 +1244,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 .map(|i| sample(&p.positions[i], calib.as_ref().and(wp.positions.get(i)), wp.states.get(i)))
                 .collect();
             let slot = p.life_slots.as_ref().and_then(|s| s.get(k)).copied();
-            let entity = slot.and_then(|s| u16::try_from(s).ok());
+            let entity = slot.and_then(|s| u16::try_from(s).ok()).map(EntityId);
             let died = slot.is_some_and(|s| deaths.iter().any(|d| d.slot_id == s));
             lives.push(Life { player: pid(p.player_index), entity, died, death: None, samples });
         }
@@ -1471,7 +1473,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 team: p.team.map(|t| t.0 as i64),
             })
             .collect();
-        let tracks: Vec<crate::spawns::WorldTrack> = world
+        let tracks: Vec<crate::spawns::WorldTrack<'_>> = world
             .iter()
             .map(|w| crate::spawns::WorldTrack { positions: &w.positions, z: w.states.iter().map(|s| s.z).collect() })
             .collect();

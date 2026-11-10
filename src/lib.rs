@@ -64,7 +64,7 @@
 //!   `research` module, for studying the format; they are outside the API's
 //!   stability guarantees.
 
-#![deny(missing_docs)]
+#![warn(clippy::print_stdout, clippy::print_stderr, clippy::dbg_macro)]
 
 pub mod analysis;
 mod chunk;

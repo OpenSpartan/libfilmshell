@@ -48,6 +48,7 @@ pub struct Packet {
     pub end: usize,
 }
 
+#[derive(Debug)]
 pub struct Film {
     pub chunks: Vec<Vec<u8>>,
     pub framing: Framing,
@@ -63,7 +64,7 @@ pub struct Film {
     pub(crate) object_updates: std::sync::OnceLock<Vec<crate::replication::Found>>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct FrameSpan {
     ci: usize,
     /// Start of the frame (marker, or packet payload).
@@ -77,7 +78,7 @@ struct FrameSpan {
 
 /// One frame: records in `chunk[body..end]` share its index and its global
 /// byte position (offset over chunks 1.., the sort key of every sample).
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Frame<'a> {
     pub chunk: &'a [u8],
     pub start: usize,

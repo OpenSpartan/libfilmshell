@@ -21,7 +21,7 @@ const HEALTH: u32 = 4;
 const SHIELD: u32 = 5;
 const MAX_VITALITIES: u32 = 13;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct Life {
     /// (frame, health or unchanged, shield or unchanged), then, once read in
     /// order, each mark holds the full state as of it.
@@ -31,9 +31,10 @@ struct Life {
 
 /// Each life's marks while a film is being read: [`Vitals::start`], then
 /// [`Vitals::reader`] over a walk, then [`Vitals::finish`].
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Marks(HashMap<i32, Life>);
 
+#[derive(Debug)]
 pub struct Vitals {
     lives: HashMap<i32, Life>,
     /// Most lives' answer, for a life with no statement of its own.

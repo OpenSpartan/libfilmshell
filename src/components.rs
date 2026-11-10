@@ -2762,13 +2762,13 @@ pub fn update_header_at(c: &[u8], bp: i64) -> bool {
 /// The absolute bit where the data of the update `g` (as
 /// `for_each_object_update` dispatches it) starts, after a `count`-entry
 /// component list.
-pub fn data_start(g: &Shifted, count: usize) -> i64 {
+pub fn data_start(g: &Shifted<'_>, count: usize) -> i64 {
     8 * (g.q as i64 + 5) + g.sh as i64 + 6 * count as i64 - 22
 }
 
 /// The biped updates of `film` with their component lists (stubs as
 /// `[aim, command tick]`): f(g, frame, slot, list).
-fn for_each_biped_update(film: &Film, mut f: impl FnMut(&Shifted, i64, i32, &[u32]) -> bool) {
+fn for_each_biped_update(film: &Film, mut f: impl FnMut(&Shifted<'_>, i64, i32, &[u32]) -> bool) {
     let schema = Schema::read(&film.chunks[0]);
     let stub = [schema.biped.aim, schema.biped.command_tick];
     for_each_object_update(film, |g, _gp, frame, kind, id, off| match kind {
@@ -2821,6 +2821,7 @@ pub struct State {
 }
 
 /// Every biped slot's state over the film.
+#[derive(Debug)]
 pub struct SlotStates(HashMap<i32, Vec<(i64, State)>>, HashMap<i32, Vec<i64>>);
 
 /// A jump: the vertical speed (engine units a second) rises to at least

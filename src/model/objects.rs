@@ -1,6 +1,6 @@
-use super::{PlayerId, PlayerMask, Position, TeamId, Tick};
-use crate::game::{self, Grenade, Item};
+use super::{EntityId, PlayerId, PlayerMask, Position, TeamId, Tick};
 use crate::TagId;
+use crate::game::{self, Grenade, Item};
 
 /// A vehicle's track: one vehicle object from its creation, or the film's
 /// start, to its last position record.
@@ -8,9 +8,9 @@ use crate::TagId;
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub struct Vehicle {
-    /// The vehicle's entity id: `(generation - 1) * 256 + index`. One id is
-    /// reused by later vehicles; each creation starts a new track.
-    pub entity: u16,
+    /// The vehicle's id. Later vehicles reuse it; each creation starts a new
+    /// track.
+    pub entity: EntityId,
     /// The vehicle's tag.
     pub tag: TagId,
     /// Where it was, in tick order.
@@ -21,6 +21,22 @@ impl Vehicle {
     /// The vehicle type.
     pub fn kind(&self) -> Option<game::Vehicle> {
         game::Vehicle::from_tag(self.tag)
+    }
+
+    /// The first and last ticks of the track.
+    pub fn span(&self) -> Option<(Tick, Tick)> {
+        Some((self.track.first()?.0, self.track.last()?.0))
+    }
+
+    /// Where the vehicle was at `tick`: its last position at or before it.
+    /// None before the track starts and after it ends.
+    pub fn position_at(&self, tick: Tick) -> Option<Position> {
+        let (_, end) = self.span()?;
+        if tick > end {
+            return None;
+        }
+        let i = self.track.partition_point(|p| p.0 <= tick).checked_sub(1)?;
+        Some(self.track[i].1)
     }
 }
 
@@ -112,18 +128,32 @@ pub struct GrenadeFlight {
     pub deleted: bool,
 }
 
+/// The ground a zone covers, in world units.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[non_exhaustive]
+pub enum ZoneArea {
+    /// A circle.
+    Cylinder {
+        /// Its radius.
+        radius: f64,
+    },
+    /// A rectangle, turned by the shape's `angle`.
+    Box {
+        /// Its whole length along its forward axis.
+        length: f64,
+        /// Its whole width along its right axis.
+        width: f64,
+    },
+}
+
 /// A zone's or a hill's shape, from its object's properties.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub struct ZoneShape {
-    /// A cylinder of radius `a`, else a box `a` long along its forward axis
-    /// and `b` along its right.
-    pub cylinder: bool,
-    /// The radius, or the box's length, world units.
-    pub a: f64,
-    /// The box's width, world units.
-    pub b: f64,
+    /// The ground it covers.
+    pub area: ZoneArea,
     /// How far it reaches above its centre, world units.
     pub top: f64,
     /// How far below.

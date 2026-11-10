@@ -159,6 +159,7 @@ pub fn state_start(c: &[u8], e: &Entity) -> Option<i64> {
 
 /// What a film's snapshots are read with: its registry and the level's
 /// widths.
+#[derive(Debug)]
 pub struct Context {
     tables: Vec<Table>,
     lists: Vec<Vec<u32>>,
@@ -184,6 +185,7 @@ impl Context {
 }
 
 /// A snapshot read in sequence.
+#[derive(Debug)]
 pub struct Walk {
     pub entities: Vec<Entity>,
     /// Per entity, where each of its components' blocks starts.

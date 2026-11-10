@@ -1,5 +1,5 @@
-use crate::game::{self, OptionValue};
 use crate::TagId;
+use crate::game::{self, OptionValue};
 
 /// The mode a game variant runs, from the mode scripts chunk 0 names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

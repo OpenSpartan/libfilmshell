@@ -415,7 +415,7 @@ pub fn handle_kinds(t: u32) -> Option<[u32; 3]> {
 /// Walk an event view from `r.at` (its first continuation bit). Ok with the
 /// bit after the terminating 0 (the entity view's start), or the stop; the
 /// events read before a stop are kept in `out`.
-pub(crate) fn walk(r: &mut Bits, widths: Layout, out: &mut Vec<Event>) -> Result<i64, Stop> {
+pub(crate) fn walk(r: &mut Bits<'_>, widths: Layout, out: &mut Vec<Event>) -> Result<i64, Stop> {
     let mut n = 0;
     while r.flag() {
         let at = r.at;
@@ -434,7 +434,7 @@ pub(crate) fn walk(r: &mut Bits, widths: Layout, out: &mut Vec<Event>) -> Result
 
 /// One event body; None when the type's reader isn't known. The comments
 /// name the game's event type.
-fn body(r: &mut Bits, t: u32, widths: Layout) -> Option<Body> {
+fn body(r: &mut Bits<'_>, t: u32, widths: Layout) -> Option<Body> {
     match t {
         // damage_aftermath
         0 => {
@@ -693,7 +693,7 @@ fn body(r: &mut Bits, t: u32, widths: Layout) -> Option<Body> {
 }
 
 /// A typed value of PlayerGameEventSmall: a 3-bit type, then its value.
-fn typed_value(r: &mut Bits, widths: Layout) -> Value {
+fn typed_value(r: &mut Bits<'_>, widths: Layout) -> Value {
     match r.bits(3) {
         0 => Value::None,
         t @ (1 | 2 | 3 | 6) => Value::Word(t, r.bits(32)),
@@ -714,7 +714,7 @@ fn typed_value(r: &mut Bits, widths: Layout) -> Value {
 }
 
 /// A parameter of PlayerGameEventSmall: a 3-bit type, then its value.
-fn param_value(r: &mut Bits) -> Param {
+fn param_value(r: &mut Bits<'_>) -> Param {
     match r.bits(3) {
         0 => Param::None,
         1 => Param::Player(r.player()),
@@ -731,7 +731,7 @@ fn param_value(r: &mut Bits) -> Param {
 
 /// A target of the fire body: a 2-bit kind (1: a kind-1 handle and an
 /// optional 6-bit marker; 2: a kind-2 handle).
-fn fire_target(r: &mut Bits) {
+fn fire_target(r: &mut Bits<'_>) {
     match r.bits(2) {
         1 => {
             r.handle(1);
@@ -747,7 +747,7 @@ fn fire_target(r: &mut Bits) {
 /// action_weapon_fire. Two mode bits `a` and `b`, the shooter's player and
 /// the weapon (tag and variant), then per-mode fire data: barrels and
 /// projectile batches, an aim block with targets, and the origin.
-fn fire(r: &mut Bits, widths: Layout) -> Fire {
+fn fire(r: &mut Bits<'_>, widths: Layout) -> Fire {
     let a = r.flag();
     let b = r.flag();
     r.bits(7 + 1);

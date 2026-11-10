@@ -14,6 +14,10 @@
 //! for objects, its tag and position. Kind 8 holds the players' structs and
 //! kind 12 the bots' records.
 //!
+//! This layer follows the format as far as it is understood, so it changes
+//! more often than the model: expect breaking changes here in minor
+//! releases.
+//!
 //! ```no_run
 //! # fn run(film: &filmshell::Film) {
 //! let raw = film.raw();
@@ -25,9 +29,9 @@
 //! # }
 //! ```
 
+use crate::TagId;
 use crate::container::{Film as Container, Framing};
 use crate::model::Tick;
-use crate::TagId;
 
 /// MSB-first bit reads over a byte slice. Reads past the end give zero bits.
 #[derive(Clone, Copy, Debug)]
@@ -59,6 +63,10 @@ impl<'a> BitReader<'a> {
 
     /// Reads `n` bits (at most 32) as an unsigned number, the first bit
     /// most significant.
+    ///
+    /// # Panics
+    ///
+    /// If `n` is over 32.
     pub fn read(&mut self, n: u32) -> u32 {
         assert!(n <= 32, "read at most 32 bits at a time");
         let v = crate::bits::bits_at(self.data, self.pos as i64, n);
@@ -72,6 +80,10 @@ impl<'a> BitReader<'a> {
     }
 
     /// Reads `n` bits (at most 64).
+    ///
+    /// # Panics
+    ///
+    /// If `n` is over 64.
     pub fn read_u64(&mut self, n: u32) -> u64 {
         assert!(n <= 64, "read at most 64 bits at a time");
         let hi = n.saturating_sub(32);
@@ -211,7 +223,7 @@ pub struct Snapshot {
 }
 
 /// The film's raw layers. See [`crate::Film::raw`].
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Raw<'a> {
     film: &'a Container,
     has_highlights: bool,
@@ -255,7 +267,7 @@ impl<'a> Raw<'a> {
     }
 
     /// The replay chunks, inflated, with their indices.
-    pub fn replay_chunks(&self) -> impl Iterator<Item = (u32, &'a [u8])> + 'a {
+    pub fn replay_chunks(&self) -> impl Iterator<Item = (u32, &'a [u8])> + use<'a> {
         let n = self.film.chunks.len() - usize::from(self.has_highlights);
         self.film.chunks[..n].iter().enumerate().skip(1).map(|(i, c)| (i as u32, c.as_slice()))
     }
@@ -267,7 +279,7 @@ impl<'a> Raw<'a> {
 
     /// Every packet of the replay chunks, in order. A chunk whose packets
     /// don't walk to its last byte has none.
-    pub fn packets(&self) -> impl Iterator<Item = Packet<'a>> + 'a {
+    pub fn packets(&self) -> impl Iterator<Item = Packet<'a>> + use<'a> {
         let film = self.film;
         self.replay_chunks().flat_map(move |(ci, c)| {
             film.packets(ci as usize).unwrap_or(&[]).iter().map(move |p| Packet {
@@ -281,7 +293,7 @@ impl<'a> Raw<'a> {
     }
 
     /// Every frame, in order.
-    pub fn frames(&self) -> impl Iterator<Item = Frame<'a>> + 'a {
+    pub fn frames(&self) -> impl Iterator<Item = Frame<'a>> + use<'a> {
         let film = self.film;
         let chunk_of = move |c: &[u8]| film.chunks.iter().position(|x| x.as_ptr() == c.as_ptr()).unwrap_or(0) as u32;
         film.frames().map(move |f| Frame {

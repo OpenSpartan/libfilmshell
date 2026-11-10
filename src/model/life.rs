@@ -1,4 +1,4 @@
-use super::{PlayerId, Position, Tick};
+use super::{EntityId, PlayerId, Position, Tick};
 
 /// How the film's quantized positions became world units.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -75,8 +75,9 @@ pub struct Sample {
     pub shield: Option<f64>,
     /// In a vehicle: the sample is the vehicle's position.
     pub in_vehicle: bool,
-    /// The vehicle's entity id, when known.
-    pub vehicle: Option<u16>,
+    /// The vehicle, when known: [`Film::vehicle_at`](crate::Film::vehicle_at)
+    /// finds its track.
+    pub vehicle: Option<EntityId>,
 }
 
 /// One life of a biped: from its spawn to its death or the film's end.
@@ -90,8 +91,8 @@ pub struct Sample {
 pub struct Life {
     /// The player whose life it is.
     pub player: Option<PlayerId>,
-    /// The biped's per-life entity id: `(generation - 1) * 256 + index`.
-    pub entity: Option<u16>,
+    /// The biped's id, which names this life only.
+    pub entity: Option<EntityId>,
     /// The life ended in a death, as the life assignment counts them.
     pub died: bool,
     /// The tick of the kill that ended the life, when the film's kill

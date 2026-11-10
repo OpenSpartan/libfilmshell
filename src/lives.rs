@@ -120,6 +120,7 @@ pub struct LifeClock {
     pub respawn_ticks: f64,
 }
 
+#[derive(Debug)]
 pub struct LifeAssignment {
     pub clock: LifeClock,
     /// Slot id to (roster index, life index).
@@ -130,6 +131,7 @@ pub struct LifeAssignment {
 }
 
 /// Matching costs, in game ticks of disagreement.
+#[derive(Debug)]
 pub struct LifeTuning {
     pub start_early_max: f64,
     pub start_soft: f64,
@@ -549,7 +551,7 @@ pub fn assign_lives(slots: &[LifeSlot], players: &[LifePlayer]) -> Option<LifeAs
     let sample = |matched: &IndexMap<usize, usize>, kind: PosKind| -> Vec<(&LifeSlot, f64)> {
         matched
             .iter()
-            .filter(|(&si, &qi)| {
+            .filter(|&(&si, &qi)| {
                 pos[qi].kind == kind
                     && (kind != PosKind::Respawn
                         || (human_slots[si].start - pos[qi].s_exp.unwrap_or(f64::NAN)).abs() <= t.start_soft)

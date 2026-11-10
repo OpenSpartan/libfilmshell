@@ -51,11 +51,24 @@ impl Film {
     ///
     /// The chunks must be numbered 0 to n without gaps: chunk 0 the header,
     /// the rest replay chunks, the last of them optionally the highlights.
+    /// Reading takes about a second for a 10-minute match.
+    ///
+    /// # Errors
+    ///
+    /// When the chunks don't make up a film: none given, a gap or a repeat
+    /// in their indices, a kind out of place, a chunk that doesn't inflate
+    /// or inflates past [`MAX_CHUNK_BYTES`](crate::MAX_CHUNK_BYTES), a
+    /// header the library doesn't know, or replay chunks that record no
+    /// tick. The [`Error`] says which.
     pub fn from_chunks<'a>(chunks: impl IntoIterator<Item = Chunk<'a>>) -> Result<Film, Error> {
         Film::from_chunks_with(chunks, &Hints::default())
     }
 
     /// [`Film::from_chunks`] with what the caller knows beyond the film.
+    ///
+    /// # Errors
+    ///
+    /// As [`Film::from_chunks`].
     pub fn from_chunks_with<'a>(chunks: impl IntoIterator<Item = Chunk<'a>>, hints: &Hints) -> Result<Film, Error> {
         let mut chunks: Vec<Chunk<'a>> = chunks.into_iter().collect();
         if chunks.is_empty() {
@@ -180,9 +193,44 @@ impl Film {
         self.sample_at(player, tick).is_some()
     }
 
+    /// Every player alive at `tick` with their sample then, in player order:
+    /// one frame of playback.
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film) {
+    /// use filmshell::Tick;
+    ///
+    /// let at = Tick::from_seconds(90.0);
+    /// for (player, sample) in film.samples_at(at) {
+    ///     if let Some(p) = sample.position {
+    ///         println!("{player} at {:.1}, {:.1}", p.x, p.y);
+    ///     }
+    /// }
+    /// # }
+    /// ```
+    pub fn samples_at(&self, tick: Tick) -> impl Iterator<Item = (PlayerId, &Sample)> + '_ {
+        self.players.iter().filter_map(move |p| Some((p.id, self.sample_at(p.id, tick)?)))
+    }
+
+    /// The players of `team`, in index order.
+    pub fn team(&self, team: TeamId) -> impl Iterator<Item = &Player> + '_ {
+        self.players.iter().filter(move |p| p.team == Some(team))
+    }
+
     /// Every vehicle track, in the order of their first record.
     pub fn vehicles(&self) -> &[Vehicle] {
         &self.vehicles
+    }
+
+    /// The track of the vehicle `entity` names at `tick`: of the tracks with
+    /// that id, the last to start at or before `tick`. Ids are reused, so
+    /// the tick picks the vehicle; a vehicle may stop sending positions while
+    /// still in use, so the track can end before `tick`.
+    pub fn vehicle_at(&self, entity: EntityId, tick: Tick) -> Option<&Vehicle> {
+        self.vehicles
+            .iter()
+            .filter(|v| v.entity == entity && v.span().is_some_and(|(from, _)| from <= tick))
+            .max_by_key(|v| v.span().map(|s| s.0))
     }
 
     /// Every ride, in tick order.

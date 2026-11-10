@@ -41,6 +41,7 @@ pub enum Who {
 }
 
 /// One influencer region: a cylinder, `height` its whole height.
+#[derive(Debug)]
 pub struct Term {
     pub who: Who,
     pub radius: f64,
@@ -52,6 +53,7 @@ pub struct Term {
     pub falloff: Vec<[f64; 3]>,
 }
 
+#[derive(Debug)]
 pub struct Model {
     pub step: f64,
     pub dead_seconds: f64,
@@ -165,6 +167,7 @@ fn score(m: &Model, pad: &Pad, alive: &[(bool, Unit)], dead: &[Unit], counts: &m
 }
 
 /// A path's positions in world units, with each one's height when known.
+#[derive(Debug)]
 pub struct WorldTrack<'a> {
     pub positions: &'a [WorldPosition],
     pub z: Vec<Option<f64>>,
@@ -172,7 +175,7 @@ pub struct WorldTrack<'a> {
 
 /// Every respawn of a timed life that started on a pad. `paths` and
 /// `world_paths` are parallel; `ticks` maps the film's frames to game ticks.
-pub fn explain(pads: &[Pad], paths: &[PlayerPath], world_paths: &[WorldTrack], ticks: &[u32]) -> Vec<Spawn> {
+pub fn explain(pads: &[Pad], paths: &[PlayerPath], world_paths: &[WorldTrack<'_>], ticks: &[u32]) -> Vec<Spawn> {
     let m = &model();
     if pads.is_empty() || m.terms.is_empty() || paths.len() != world_paths.len() {
         return Vec::new();
@@ -194,7 +197,7 @@ pub fn explain(pads: &[Pad], paths: &[PlayerPath], world_paths: &[WorldTrack], t
                 .collect()
         })
         .collect();
-    let z_of = |w: &WorldTrack, i: usize| w.z.get(i).copied().flatten();
+    let z_of = |w: &WorldTrack<'_>, i: usize| w.z.get(i).copied().flatten();
     let mut out = Vec::new();
     for (k, (p, w)) in paths.iter().zip(world_paths).enumerate() {
         for &(start, _) in lives[k].iter().skip(1) {

@@ -20,6 +20,20 @@ impl fmt::Display for PlayerId {
     }
 }
 
+/// A replicated object's id: `(generation - 1) * 256 + index`, the index
+/// counted within the object's kind, so bipeds and vehicles have separate
+/// ids. The game reuses an id once its object is gone: a biped's id names
+/// one life, a vehicle's one [`Vehicle`](crate::Vehicle) track.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+pub struct EntityId(pub u16);
+
+impl fmt::Display for EntityId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// An Xbox user id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]

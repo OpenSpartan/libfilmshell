@@ -67,7 +67,7 @@ impl Code {
         Code { count, symbol }
     }
 
-    fn decode(&self, r: &mut Bits) -> Option<u16> {
+    fn decode(&self, r: &mut Bits<'_>) -> Option<u16> {
         let (mut code, mut first, mut index) = (0i32, 0i32, 0i32);
         for l in 1..=MAX_BITS {
             code |= r.take(1)? as i32;
@@ -90,7 +90,7 @@ fn fixed() -> (Code, Code) {
     (Code::new(&lit), Code::new(&[5u8; 30]))
 }
 
-fn dynamic(r: &mut Bits) -> Option<(Code, Code)> {
+fn dynamic(r: &mut Bits<'_>) -> Option<(Code, Code)> {
     let nlen = r.take(5)? as usize + 257;
     let ndist = r.take(5)? as usize + 1;
     let ncode = r.take(4)? as usize + 4;
@@ -126,7 +126,7 @@ fn dynamic(r: &mut Bits) -> Option<(Code, Code)> {
     Some((Code::new(&lengths[..nlen]), Code::new(&lengths[nlen..nlen + ndist])))
 }
 
-fn codes(r: &mut Bits, out: &mut Vec<u8>, lit: &Code, dist: &Code, limit: usize, over: &mut bool) -> Option<()> {
+fn codes(r: &mut Bits<'_>, out: &mut Vec<u8>, lit: &Code, dist: &Code, limit: usize, over: &mut bool) -> Option<()> {
     loop {
         let sym = lit.decode(r)? as usize;
         match sym {

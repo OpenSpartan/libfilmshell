@@ -207,7 +207,8 @@ fn downloaded_and_inflated_chunks_read_the_same() {
 fn stored_block_chunks_read_the_same() {
     let Some(dir) = common::film("dc2ce439") else { return };
     let plain = common::load_folder(&dir).unwrap();
-    let packed: Vec<Chunk> = plain.iter().map(|c| Chunk::new(c.index, c.kind, common::zlib_stored(&c.data))).collect();
+    let packed: Vec<Chunk<'_>> =
+        plain.iter().map(|c| Chunk::new(c.index, c.kind, common::zlib_stored(&c.data))).collect();
     assert!(packed.iter().all(Chunk::is_compressed));
     let a = Film::from_chunks(plain).unwrap();
     let b = Film::from_chunks(packed.into_iter().rev()).unwrap();

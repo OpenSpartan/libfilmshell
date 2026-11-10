@@ -1,6 +1,6 @@
-use super::{PlayerId, PlayerMask, Position, TeamId, Tick};
-use crate::game::{DamageCause, Grenade, Medal};
+use super::{EntityId, PlayerId, PlayerMask, Position, TeamId, Tick};
 use crate::TagId;
+use crate::game::{DamageCause, Grenade, Medal};
 
 /// One event and when it happened.
 #[derive(Clone, Debug, PartialEq)]
@@ -60,6 +60,121 @@ pub enum Event {
     /// doesn't carry that kill's event, this is all the film has of it. PvP
     /// modes only.
     Headshot(PlayerId),
+}
+
+/// The kind of an [`Event`], without its data: for filtering and counting.
+///
+/// ```no_run
+/// # fn run(film: &filmshell::Film) {
+/// use filmshell::EventKind;
+///
+/// let shots = film.events().iter().filter(|e| e.event.kind() == EventKind::Shot).count();
+/// # }
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[non_exhaustive]
+pub enum EventKind {
+    /// [`Event::Kill`].
+    Kill,
+    /// [`Event::Medal`].
+    Medal,
+    /// [`Event::Shot`].
+    Shot,
+    /// [`Event::Hit`].
+    Hit,
+    /// [`Event::Pickup`].
+    Pickup,
+    /// [`Event::Throw`].
+    Throw,
+    /// [`Event::Detonation`].
+    Detonation,
+    /// [`Event::Action`].
+    Action,
+    /// [`Event::Teleport`].
+    Teleport,
+    /// [`Event::VehicleExit`].
+    VehicleExit,
+    /// [`Event::EquipmentUse`].
+    EquipmentUse,
+    /// [`Event::VoiceLine`].
+    VoiceLine,
+    /// [`Event::Chatter`].
+    Chatter,
+    /// [`Event::HudMessage`].
+    HudMessage,
+    /// [`Event::GameEvent`].
+    GameEvent,
+    /// [`Event::Flag`].
+    Flag,
+    /// [`Event::Zone`].
+    Zone,
+    /// [`Event::RespawnCountdown`].
+    RespawnCountdown,
+    /// [`Event::Headshot`].
+    Headshot,
+}
+
+impl Event {
+    /// The event's kind.
+    pub fn kind(&self) -> EventKind {
+        match self {
+            Event::Kill(_) => EventKind::Kill,
+            Event::Medal(_) => EventKind::Medal,
+            Event::Shot(_) => EventKind::Shot,
+            Event::Hit(_) => EventKind::Hit,
+            Event::Pickup(_) => EventKind::Pickup,
+            Event::Throw(_) => EventKind::Throw,
+            Event::Detonation(_) => EventKind::Detonation,
+            Event::Action(_) => EventKind::Action,
+            Event::Teleport(_) => EventKind::Teleport,
+            Event::VehicleExit(_) => EventKind::VehicleExit,
+            Event::EquipmentUse(_) => EventKind::EquipmentUse,
+            Event::VoiceLine(_) => EventKind::VoiceLine,
+            Event::Chatter(_) => EventKind::Chatter,
+            Event::HudMessage(_) => EventKind::HudMessage,
+            Event::GameEvent(_) => EventKind::GameEvent,
+            Event::Flag(_) => EventKind::Flag,
+            Event::Zone(_) => EventKind::Zone,
+            Event::RespawnCountdown(_) => EventKind::RespawnCountdown,
+            Event::Headshot(_) => EventKind::Headshot,
+        }
+    }
+
+    /// The players the event is about: a kill's victim, killer and
+    /// assistant, a hit's attacker and victim, a game event's players, the
+    /// player who acted for the rest. A voice line's or a HUD message's
+    /// audience isn't counted.
+    pub fn players(&self) -> Vec<PlayerId> {
+        let one = |p: PlayerId| vec![p];
+        match self {
+            Event::Kill(k) => [Some(k.victim), k.killer, k.assistant].into_iter().flatten().collect(),
+            Event::Medal(m) => one(m.player),
+            Event::Shot(s) => one(s.player),
+            Event::Hit(h) => [h.attacker, Some(h.victim)].into_iter().flatten().collect(),
+            Event::Pickup(p) => one(p.player),
+            Event::Throw(t) => one(t.player),
+            Event::Action(a) => one(a.player),
+            Event::Teleport(t) => one(t.player),
+            Event::VehicleExit(x) => one(x.player),
+            Event::EquipmentUse(u) => one(u.player),
+            Event::Chatter(c) => c.speaker.into_iter().collect(),
+            Event::GameEvent(g) => g.players.iter().collect(),
+            Event::Flag(f) => one(f.player),
+            Event::Zone(z) => z.player.into_iter().collect(),
+            Event::RespawnCountdown(r) => one(r.player),
+            Event::Headshot(p) => one(*p),
+            Event::Detonation(_) | Event::VoiceLine(_) | Event::HudMessage(_) => Vec::new(),
+        }
+    }
+
+    /// Whether the event is about `player`, as [`Event::players`] counts.
+    pub fn involves(&self, player: PlayerId) -> bool {
+        match self {
+            Event::GameEvent(g) => g.players.contains(player),
+            _ => self.players().contains(&player),
+        }
+    }
 }
 
 /// A kill: the game's PlayerKilledEvent, with what dealt the fatal hit.
@@ -250,8 +365,9 @@ pub struct Teleport {
 pub struct VehicleExit {
     /// Who.
     pub player: PlayerId,
-    /// The vehicle's entity id.
-    pub vehicle: u16,
+    /// The vehicle: [`Film::vehicle_at`](crate::Film::vehicle_at) finds its
+    /// track.
+    pub vehicle: EntityId,
     /// The seat, counted from the driver's.
     pub seat: u32,
 }

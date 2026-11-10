@@ -339,7 +339,7 @@ impl Bits<'_> {
 /// them: a 4-bit mask of clauses, one bit (`narrow`) or 32, then per clause
 /// a 4-bit kind, a negation bit and the kind's value. None at a kind whose
 /// width isn't known.
-fn filter(r: &mut Bits, narrow: bool) -> Option<Vec<(u32, bool, u32)>> {
+fn filter(r: &mut Bits<'_>, narrow: bool) -> Option<Vec<(u32, bool, u32)>> {
     let mask = r.bits(4);
     r.bits(if narrow { 1 } else { 32 });
     let mut out = Vec::new();
@@ -365,7 +365,7 @@ fn filter(r: &mut Bits, narrow: bool) -> Option<Vec<(u32, bool, u32)>> {
 
 /// A visual state group: its filter's clauses and its state, or None when
 /// the group isn't set.
-fn state_group(r: &mut Bits) -> Option<(u32, Vec<(u32, bool, u32)>, u32)> {
+fn state_group(r: &mut Bits<'_>) -> Option<(u32, Vec<(u32, bool, u32)>, u32)> {
     if !r.flag() {
         return None;
     }
@@ -616,7 +616,7 @@ pub struct ZoneObject {
 
 /// What [`objects_reader`] gathers: each zone's object, and the crates'
 /// angles.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct ObjectsSeen {
     out: BTreeMap<u32, ZoneObject>,
     angles: std::collections::HashMap<u32, f64>,
@@ -626,7 +626,7 @@ pub struct ObjectsSeen {
 pub fn objects_reader<'a>(
     zones: &[u32],
     seen: &'a mut ObjectsSeen,
-) -> impl FnMut(usize, &[u8], &crate::payload::Payload) + 'a {
+) -> impl FnMut(usize, &[u8], &crate::payload::Payload) + use<'a> {
     use crate::payload::OpKind;
     use std::collections::HashMap;
     seen.out = zones.iter().map(|&z| (z, ZoneObject::default())).collect();

@@ -168,6 +168,7 @@ fn non_object_width(entity_type: u32, component: u32) -> Option<u32> {
 
 /// Reads payloads in film order, keeping each entity's type from the
 /// creates it has seen.
+#[derive(Debug)]
 pub struct Walker {
     /// Component tables by entity type (registry block).
     tables: Vec<Table>,
@@ -502,7 +503,7 @@ fn create_fits(index: u32, t: u32) -> bool {
 
 /// A list of components: `[form:1]`; 0: a 3-bit count and that
 /// many 6-bit indices; 1: a 64-bit mask, bit i for component i.
-fn listed_components(r: &mut Bits) -> Vec<u32> {
+fn listed_components(r: &mut Bits<'_>) -> Vec<u32> {
     if r.flag() {
         let mask = ((r.bits(32) as u64) << 32) | r.bits(32) as u64;
         (0..64).filter(|i| mask >> i & 1 == 1).collect()
@@ -514,7 +515,7 @@ fn listed_components(r: &mut Bits) -> Vec<u32> {
 
 /// An update's component list after its index and generation: `[baseline:1]`
 /// (7 more bits when set), then the list, strictly increasing and not empty.
-fn component_list(r: &mut Bits) -> Result<Vec<u32>, Stop> {
+fn component_list(r: &mut Bits<'_>) -> Result<Vec<u32>, Stop> {
     if r.flag() {
         r.bits(7);
     }
