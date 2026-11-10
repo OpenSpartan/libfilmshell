@@ -96,9 +96,11 @@ pub struct LifeSlot {
     pub y: Option<f64>,
 }
 
-/// Ticks before an uncounted bot's first listing that its first life may
-/// start.
+/// Ticks before a player's first listing that their first life may start.
+/// A human is listed when they join and spawns later; a bot can be listed
+/// after it spawns, by up to 463 ticks on the test films.
 const LISTED_EARLY_TICKS: f64 = 120.0;
+const BOT_LISTED_EARLY_TICKS: f64 = 600.0;
 
 #[derive(Clone, Debug)]
 pub struct LifePlayer {
@@ -120,7 +122,8 @@ impl LifePlayer {
     /// Whether a life starting at `start` can be the player's: not before
     /// they joined, nor after they left.
     fn can_start(&self, start: f64) -> bool {
-        self.in_match.is_none_or(|(a, b)| start >= a - LISTED_EARLY_TICKS && start <= b)
+        let early = if self.is_bot { BOT_LISTED_EARLY_TICKS } else { LISTED_EARLY_TICKS };
+        self.in_match.is_none_or(|(a, b)| start >= a - early && start <= b)
     }
 }
 
@@ -608,7 +611,7 @@ pub fn assign_lives(slots: &[LifeSlot], players: &[LifePlayer]) -> Option<LifeAs
                 continue;
             }
             // An uncounted bot's lives start while it is listed.
-            if p.listed.is_some_and(|(a, b)| s.start < a - LISTED_EARLY_TICKS || s.start > b) || !p.can_start(s.start) {
+            if p.listed.is_some_and(|(a, b)| s.start < a - BOT_LISTED_EARLY_TICKS || s.start > b) || !p.can_start(s.start) {
                 continue;
             }
             let mut c;
