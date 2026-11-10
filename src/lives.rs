@@ -87,6 +87,9 @@ fn tick_clock(game_ticks: &[u32]) -> Vec<u32> {
 pub struct LifeSlot {
     pub slot_id: i32,
     pub is_bot: bool,
+    /// The roster index of the player the film names as the life's owner,
+    /// when it does: the life can only be theirs.
+    pub player: Option<usize>,
     pub start: f64,
     pub end: f64,
     pub x: Option<f64>,
@@ -411,9 +414,15 @@ pub fn assign_lives(slots: &[LifeSlot], players: &[LifePlayer]) -> Option<LifeAs
         if s.is_bot != by_index.get(&q.player).map(|p| p.is_bot).unwrap_or(false) {
             return FORBIDDEN;
         }
+        if s.player.is_some_and(|p| p != q.player) {
+            return FORBIDDEN;
+        }
+        // A slot whose player the film names needs no prior on who it is:
+        // only which of their lives.
+        let named = s.player.is_some();
         let team = team_of(q.player);
         let wrong_side = match (side, team) {
-            (Some(sd), Some(tm)) => sd.of(s) != team_bit(tm),
+            (Some(sd), Some(tm)) => !named && sd.of(s) != team_bit(tm),
             _ => false,
         };
         let mut c = 0.0f64;
@@ -424,10 +433,12 @@ pub fn assign_lives(slots: &[LifeSlot], players: &[LifePlayer]) -> Option<LifeAs
                         return FORBIDDEN;
                     }
                 }
-                if s.slot_id as i64 != q.player as i64 {
-                    c += t.id_prior;
+                if !named {
+                    if s.slot_id as i64 != q.player as i64 {
+                        c += t.id_prior;
+                    }
+                    c += f64::min(t.late_cap, 0.5 * f64::max(0.0, s.start - t0 - t.initial_window));
                 }
-                c += f64::min(t.late_cap, 0.5 * f64::max(0.0, s.start - t0 - t.initial_window));
                 if wrong_side && s.start <= t0 + t.initial_window {
                     c += t.side_cost;
                 }
@@ -571,7 +582,7 @@ pub fn assign_lives(slots: &[LifeSlot], players: &[LifePlayer]) -> Option<LifeAs
         let mut best: Option<usize> = None;
         let mut best_c = f64::INFINITY;
         for p in &untimed {
-            if p.is_bot != s.is_bot {
+            if p.is_bot != s.is_bot || s.player.is_some_and(|o| o != p.index) {
                 continue;
             }
             let chain = &chains[&p.index];

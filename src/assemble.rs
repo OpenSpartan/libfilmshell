@@ -590,6 +590,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let mut thrown = grenades::Flights::default();
     let mut deploys_seen = crate::deploys::Seen::default();
     let mut attach_seen = crate::attach::Seen::default();
+    let mut controls = crate::owners::Controls::new();
     if let Some(p) = walk {
         let actor_control = crate::registry::Schema::read(&film.chunks[0]).biped.actor_control;
         vitals_marks = Vitals::start(&film, &p, level);
@@ -606,6 +607,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 &mut grenades::reader(&mut thrown),
                 &mut crate::deploys::reader(&mut deploys_seen),
                 &mut crate::attach::reader(actor_control, &mut attach_seen),
+                &mut crate::owners::reader(&mut controls),
             ],
         );
         crate::statlog::finish(&mut stat_log);
@@ -617,6 +619,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let attachments = walk.map(|_| crate::attach::finish(attach_seen));
     let entries = roster_entries(&roster, &stat_log, &film.highlight_ticks());
     let xuids: Vec<String> = roster.players.iter().map(|p| p.xuid.map(|x| x.to_string()).unwrap_or_default()).collect();
+    let owners = crate::owners::owners(&controls, &holders);
     let ex = extract_all_player_positions(
         &film,
         layout,
@@ -626,6 +629,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         level,
         walk.map(|_| vehicle_ident),
         attachments,
+        &owners,
     );
     let paths = &ex.paths;
 
