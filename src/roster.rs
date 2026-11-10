@@ -98,18 +98,20 @@ fn shifts(p: &[u8]) -> [Vec<u8>; 8] {
     })
 }
 
-/// The players in a type-8 payload, (engine player id, XUID), in record
-/// order. The payload is `[count:32]`, then per player its participant
+/// The players in a type-8 payload, (engine player id, XUID, gamertag), in
+/// record order. The payload is `[count:32]`, then per player its participant
 /// handle `[none:1][index:5]` and the player struct, which opens with the
 /// XUID little-endian and holds it again inside, where fields of 10, 14, 6,
 /// 8 and 7 bits follow it that read 183 and zeros (reader `142987bd4`; the
 /// handle's reader `1407f2058` is the one the kill events' players use, so
 /// the index is the engine player id the events and the scoreboard name). A
 /// XUID counts when its inner copy is there; its handle is the 6 bits before
-/// its first copy. A record whose handle is none is left out.
-fn struct_players(p: &[u8]) -> Vec<(u32, u64)> {
-    // Each XUID's first bit and whether its inner copy was seen.
-    let mut found: Vec<(u64, i64, bool)> = Vec::new();
+/// its first copy. A record whose handle is none is left out. The gamertag
+/// sits before the inner copy as it does in chunk 0's roster: UTF-16LE, then
+/// 21 zero bytes.
+fn struct_players(p: &[u8]) -> Vec<(u32, u64, Option<String>)> {
+    // Each XUID's first bit and its inner copy's.
+    let mut found: Vec<(u64, i64, Option<i64>)> = Vec::new();
     for (s, b) in shifts(p).iter().enumerate() {
         for (i, w) in b.windows(8).enumerate() {
             let x = u64::from_le_bytes(w.try_into().unwrap_or([0; 8]));
@@ -118,22 +120,24 @@ fn struct_players(p: &[u8]) -> Vec<(u32, u64)> {
             }
             let at = 8 * i as i64 + s as i64;
             let inner = bits_at(p, at + 64, 10) == INNER_MARK && bits_at(p, at + 74, 32) >> 3 == 0;
+            let inner = inner.then_some(at);
             match found.iter_mut().find(|f| f.0 == x) {
                 Some(f) => {
                     f.1 = f.1.min(at);
-                    f.2 |= inner;
+                    f.2 = f.2.or(inner);
                 }
                 None => found.push((x, at, inner)),
             }
         }
     }
-    found.retain(|f| f.2 && f.1 >= PLAYER_ID_BITS);
+    found.retain(|f| f.2.is_some() && f.1 >= PLAYER_ID_BITS);
     found.sort_by_key(|f| f.1);
     found
         .iter()
-        .filter_map(|&(x, at, _)| {
+        .filter_map(|&(x, at, inner)| {
             let handle = bits_at(p, at - PLAYER_ID_BITS, PLAYER_ID_BITS as u32);
-            (handle & 0x20 == 0).then_some((handle, x))
+            let gamertag = inner.map(|i| crate::identity::read_gamertag(p, i)).filter(|g| !g.trim().is_empty());
+            (handle & 0x20 == 0).then_some((handle, x, gamertag))
         })
         .collect()
 }
@@ -214,7 +218,7 @@ pub fn read(film: &Film, highlights: &[HighlightEvent]) -> Roster {
                 last8 = body;
                 let listed = struct_players(body);
                 for p in players.iter_mut().filter(|p| p.bot.is_none()) {
-                    let on = p.xuid.is_some_and(|x| listed.iter().any(|l| l.1 == x));
+                        let on = p.xuid.is_some_and(|x| listed.iter().any(|l| l.1 == x));
                     if on {
                         p.first.get_or_insert(frame);
                         p.last = Some(frame);
@@ -223,12 +227,12 @@ pub fn read(film: &Film, highlights: &[HighlightEvent]) -> Roster {
                         p.left = Some(frame);
                     }
                 }
-                for &(id, x) in &listed {
-                    let i = match players.iter().position(|p| p.xuid == Some(x)) {
+                for (id, x, gamertag) in &listed {
+                    let i = match players.iter().position(|p| p.xuid == Some(*x)) {
                         Some(i) => i,
                         None => {
                             players.push(RosterPlayer {
-                                xuid: Some(x),
+                                xuid: Some(*x),
                                 present_at_start: first_listing,
                                 first: Some(frame),
                                 last: Some(frame),
@@ -237,7 +241,10 @@ pub fn read(film: &Film, highlights: &[HighlightEvent]) -> Roster {
                             players.len() - 1
                         }
                     };
-                    assign(i, id, frame);
+                    if players[i].gamertag.is_none() {
+                        players[i].gamertag = gamertag.clone();
+                    }
+                    assign(i, *id, frame);
                 }
                 first_listing = false;
             }
@@ -281,7 +288,10 @@ pub fn read(film: &Film, highlights: &[HighlightEvent]) -> Roster {
         let mine = highlights.iter().filter(|h| h.xuid == x);
         let mut votes: HashMap<u32, usize> = HashMap::new();
         for h in mine {
-            *votes.entry(h.team).or_default() += 1;
+            // 255 (and anything past the eight teams) is no team.
+            if h.team < 8 {
+                *votes.entry(h.team).or_default() += 1;
+            }
             if p.gamertag.is_none() && !h.gamertag.is_empty() {
                 p.gamertag = Some(h.gamertag.clone());
             }

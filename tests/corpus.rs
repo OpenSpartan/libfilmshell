@@ -423,6 +423,18 @@ fn teams_agree_with_the_match_stats() {
     assert!(bots_with_team * 100 >= bots * 90, "{bots_with_team} of {bots} bots have a team");
 }
 
+/// Every person has a gamertag (chunk 0's roster, a player struct, or their
+/// HighlightEvents records) and every team is one of the eight.
+#[test]
+fn players_have_names_and_real_teams() {
+    for (name, f) in corpus() {
+        for p in f.players() {
+            assert!(p.name().is_some_and(|n| !n.is_empty()), "{name}: {} has no name", p.id);
+            assert!(p.team.is_none_or(|t| t.0 < 8), "{name}: {} has team {:?}", p.id, p.team);
+        }
+    }
+}
+
 /// A shot on foot comes from the weapon in the shooter's hands: the fire
 /// event's weapon is the weapon in the slot the biped holds.
 #[test]

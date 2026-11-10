@@ -67,8 +67,9 @@ fn bit_find_le(buf: &[u8], xuid: u64, bp: i64) -> Option<i64> {
 }
 
 /// Gamertag: UTF-16LE units walking back from the 21 zero bytes before the
-/// LE XUID, until a non-printable.
-fn read_gamertag(buf: &[u8], le_pos: i64) -> String {
+/// LE XUID, until a non-printable. The player structs of type-8 packets
+/// hold it the same way.
+pub(crate) fn read_gamertag(buf: &[u8], le_pos: i64) -> String {
     let mut p = le_pos - 21 * 8;
     let mut units: Vec<u16> = Vec::new();
     while p >= 16 {
