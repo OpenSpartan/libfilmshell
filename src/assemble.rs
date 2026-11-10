@@ -1083,9 +1083,11 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         }
         // Vehicles and the rides in them: the runs of a path's samples
         // spliced from one vehicle. With the parent state read a run is cut
-        // where the life changes seat or moves into a part, and its seat is
-        // the one the parent state names; otherwise the seat is that of the
-        // exit that ends the run.
+        // where the life changes seat or moves into a part, its seat is the
+        // one the parent state names, and the run that ends its attachment
+        // lasts as long as the attachment: a vehicle can stop sending its
+        // position with the rider still seated. Otherwise the seat is that of
+        // the exit that ends the run.
         let tracks = vehicle_tracks(&ex, c);
         for (k, wp) in world.iter().enumerate() {
             let Some(player) = pid(wp.player) else { continue };
@@ -1110,7 +1112,12 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 {
                     j += 1;
                 }
-                let (from, to) = (pos[i].frame, pos[j].frame);
+                let last_of_span = at.is_some() && (j + 1 == pos.len() || span_at(pos[j + 1].frame) != at);
+                let to = match at {
+                    Some(at) if last_of_span => spans[at].to.max(pos[j].frame),
+                    _ => pos[j].frame,
+                };
+                let from = pos[i].frame;
                 let track =
                     tracks.iter().position(|t| t.0 == v && t.2[0].frame <= from && from <= t.2[t.2.len() - 1].frame);
                 let seat = match at {
