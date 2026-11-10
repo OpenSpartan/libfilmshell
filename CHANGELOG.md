@@ -32,3 +32,4 @@ First release.
 - Without HighlightEvents to time them (a human against bots, a human who never dies), lives go to
   the player the film names as controlling them and end in a death where that player let go,
   which agrees with the match stats' deaths; calibration falls back on bots' paths.
+- `GameVariant::icon`: the mode's icon, an index into the game's sheet of mode icons.

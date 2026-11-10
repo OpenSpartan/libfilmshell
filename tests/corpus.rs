@@ -50,6 +50,28 @@ fn every_film_has_a_header_and_players() {
     }
 }
 
+/// The mode icon is in the sheet's 20, and the modes with an icon of their
+/// own carry it. Slayer's scripts also run minigames (Grifball), which have
+/// another.
+#[test]
+fn every_variant_has_its_mode_icon() {
+    for (name, f) in corpus() {
+        let v = f.variant().unwrap();
+        let icon = v.icon.unwrap_or_else(|| panic!("{name}: no icon"));
+        assert!(icon < 20, "{name}: {icon}");
+        let want = match v.mode() {
+            GameMode::CaptureTheFlag => Some(1),
+            GameMode::Oddball => Some(2),
+            GameMode::Extraction => Some(7),
+            GameMode::Strongholds => Some(8),
+            GameMode::KingOfTheHill => Some(12),
+            GameMode::Firefight | GameMode::FirefightKingOfTheHill => Some(19),
+            _ => None,
+        };
+        assert!(want.is_none_or(|w| w == icon), "{name}: {:?} has {icon}", v.mode());
+    }
+}
+
 #[test]
 fn every_known_level_converts_exactly() {
     for (name, f) in corpus() {
