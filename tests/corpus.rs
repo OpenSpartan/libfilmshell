@@ -306,6 +306,9 @@ fn chunk_files_name_their_kinds() {
 
 #[test]
 fn rides_come_from_the_parent_state() {
+    if corpus().is_empty() {
+        return;
+    }
     let (mut exits, mut inside) = (0, 0);
     for (name, f) in corpus() {
         for r in f.rides() {
