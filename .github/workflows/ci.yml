@@ -16,7 +16,7 @@ jobs:
   check:
     runs-on: ${{ (github.event.pull_request.head.repo.fork || vars.RUNNER == '') && 'ubuntu-latest' || vars.RUNNER }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Toolchain
         run: rustup show
       - name: Format
@@ -51,7 +51,7 @@ jobs:
   msrv:
     runs-on: ${{ (github.event.pull_request.head.repo.fork || vars.RUNNER == '') && 'ubuntu-latest' || vars.RUNNER }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Toolchain
         run: |
           version=$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)
@@ -66,9 +66,9 @@ jobs:
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Test films
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: OpenSpartan/libfilmshell-test-films
           ssh-key: ${{ secrets.TEST_FILMS_KEY }}
