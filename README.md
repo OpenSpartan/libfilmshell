@@ -17,6 +17,8 @@ parsing them in [Extracting Match Stats From Halo Infinite Film
 Files](https://den.dev/blog/extracting-stats-film-files-halo-infinite/), and this library is me
 actually wrapping a lot of the investigations into one, easy-to-consume package.
 
+This is the library that powers [OpenSpartan Films](https://films.openspartan.com).
+
 ## Install
 
 ```toml
