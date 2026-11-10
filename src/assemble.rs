@@ -497,6 +497,12 @@ fn medal_clock(medals: &[(i32, f64)], events: &[(i64, u32)], hl_ticks: &[u32]) -
 /// Ticks between a kill and the headshot event sent with it.
 const HEADSHOT_TICKS: u32 = 2;
 
+/// The game ends a match by killing everyone still alive (cause World), and
+/// the film runs on for this many ticks after: 6 s, on every one of the 76
+/// test films that record those deaths (the scoreboard counts none of them).
+const MATCH_END_TICKS: i64 = 362;
+const MATCH_END_SLACK: i64 = 3;
+
 /// Frames after a death that its kill event, or the fatal hit, can come.
 const INFERRED_KILL_FRAMES: i64 = 60;
 
@@ -844,6 +850,9 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             let kk = killer.and_then(|c| path_of(c as i32));
             let (cause, weapon) = cause_and_weapon(ff, vk, kk, frame);
             let (killer, assistant) = (killer.and_then(|k| pid(k as i32)), assistant.and_then(|a| pid(a as i32)));
+            // Without a scoreboard, the match's end is told by its deaths.
+            let at_end = cause == Some(Cause::World)
+                && (clock.end().0 as i64 - tick(frame).0 as i64 - MATCH_END_TICKS).abs() <= MATCH_END_SLACK;
             let kill = Kill {
                 victim,
                 killer,
@@ -852,7 +861,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 assistant_damage_percent: assistant.map(|_| d.assistant_percent),
                 suicide: d.suicide,
                 headshot: None,
-                scored: scored(victim, frame),
+                scored: scored(victim, frame).or(at_end.then_some(false)),
                 cause,
                 weapon,
                 position: vk.and_then(|k| at_frame(k, frame)),

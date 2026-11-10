@@ -530,6 +530,23 @@ fn kills_count_as_the_match_stats_do() {
     assert!(corpus().is_empty() || agree * 100 >= players * 95, "{agree} of {players} players");
 }
 
+/// The deaths the game deals everyone alive at a match's end are never
+/// counted, also in films whose scoreboard isn't read.
+#[test]
+fn deaths_at_the_match_end_are_not_scored() {
+    let mut seen = 0;
+    for (name, f) in corpus() {
+        let end = f.clock().end().0 as i64;
+        for (t, k) in f.kills().filter(|(t, _)| (end - t.0 as i64 - 362).abs() <= 3) {
+            if k.cause == Some(game::DamageCause::World) {
+                seen += 1;
+                assert_eq!(k.scored, Some(false), "{name}: {t}");
+            }
+        }
+    }
+    assert!(corpus().is_empty() || seen > 0);
+}
+
 /// A team's score over the match, every round's added up, is the one the
 /// match stats give: rounds won in Attrition, Elimination and Grifball,
 /// points in Oddball.

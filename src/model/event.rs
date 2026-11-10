@@ -221,8 +221,9 @@ pub struct Kill {
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub headshot: Option<bool>,
     /// Whether the scoreboard counted the death: false for the deaths the
-    /// game deals everyone still alive when a match ends. None when the
-    /// film's scoreboard isn't read.
+    /// game deals everyone still alive when a match ends. In a film whose
+    /// scoreboard isn't read (a small lobby) those are told by their time,
+    /// 6 s before the film ends with cause World, and the rest are None.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub scored: Option<bool>,
     /// What the last hit on the victim in the 2 s before was.
@@ -252,8 +253,7 @@ impl Kill {
     }
 
     /// Whether the scoreboard counted the death: false only for the deaths
-    /// the game deals everyone still alive when a match ends. True when the
-    /// film's scoreboard isn't read.
+    /// the game deals everyone still alive when a match ends ([`Kill::scored`]).
     pub fn is_scored(&self) -> bool {
         self.scored != Some(false)
     }
