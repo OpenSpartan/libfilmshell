@@ -104,7 +104,7 @@ pub use error::Error;
 pub use film::Film;
 pub use hints::{Hints, LevelBounds, SpawnPad};
 pub use model::*;
-pub use tag::TagId;
+pub use tag::{StringId, TagId};
 pub use text::ParseIdError;
 
 // The README's code compiles as a doc test.

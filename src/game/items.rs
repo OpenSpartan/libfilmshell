@@ -202,8 +202,8 @@ impl Grenade {
 
 /// The internal name of a weapon variant ("default", "plasma", ...), by the
 /// string id weapon events carry.
-pub fn weapon_variant_name(id: u32) -> Option<&'static str> {
-    VARIANTS.binary_search_by_key(&id, |v| v.0).ok().map(|i| VARIANTS[i].1)
+pub fn weapon_variant_name(id: crate::StringId) -> Option<&'static str> {
+    VARIANTS.binary_search_by_key(&id.0, |v| v.0).ok().map(|i| VARIANTS[i].1)
 }
 
 #[cfg(test)]
@@ -217,7 +217,7 @@ mod tests {
         assert_eq!(Weapon::Br75BattleRifle.name(), "BR75 Battle Rifle");
         assert_eq!(Vehicle::from_tag(TagId(0x0000254b)), Some(Vehicle::Falcon));
         assert_eq!(tag_info(TagId(1)), None);
-        assert_eq!(weapon_variant_name(0x42c9679f), Some("default"));
+        assert_eq!(weapon_variant_name(crate::StringId(0x42c9679f)), Some("default"));
         assert_eq!(Grenade::from_type(3).map(Grenade::type_index), Some(3));
     }
 }

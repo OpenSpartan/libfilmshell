@@ -1,5 +1,5 @@
-use crate::TagId;
 use crate::game::{self, OptionValue};
+use crate::{StringId, TagId};
 
 /// The mode a game variant runs, from the mode scripts chunk 0 names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -108,8 +108,8 @@ pub struct Loadout {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct VariantOption {
-    /// The murmur3 hash of the option's lower-cased name.
-    pub hash: u32,
+    /// The option's lower-cased name, as the game hashes it.
+    pub hash: StringId,
     /// The option's name, when the game's option scripts name it.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub name: Option<String>,
@@ -148,8 +148,8 @@ impl Rule {
 pub struct StatDefinition {
     /// The statistic's identifier ("AccuracyPercentage").
     pub name: String,
-    /// The murmur3 hash of `name`.
-    pub id: u32,
+    /// `name`, as the game hashes it.
+    pub id: StringId,
     /// The base entry type (2 a best-of, 3 computed).
     pub base: i64,
     /// How a match's value comes from its rounds, as the game numbers it;
@@ -292,7 +292,7 @@ impl GameVariant {
 
     /// The stored value of option `name`.
     pub fn option(&self, name: &str) -> Option<OptionValue> {
-        let h = game::murmur3(name.to_ascii_lowercase().as_bytes());
+        let h = StringId::of(&name.to_ascii_lowercase());
         self.options.iter().find(|o| o.hash == h).map(|o| o.value)
     }
 

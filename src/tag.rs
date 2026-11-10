@@ -61,3 +61,61 @@ impl From<u32> for TagId {
         TagId(v)
     }
 }
+/// A string id: the 32-bit murmur3 hash (x86, seed 0) the game names a
+/// string by, such as a localization key, a game event's property, an
+/// option's or a statistic's name. Like [`TagId`]s they print, serialize and
+/// parse as eight hex digits.
+#[derive(Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct StringId(pub u32);
+
+serde_as_text!(StringId);
+
+impl StringId {
+    /// The raw id.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+
+    /// The id of `name`, hashed as given: the game lower-cases some names
+    /// before hashing them (a variant option's), so pass those lower-cased.
+    ///
+    /// ```
+    /// use filmshell::StringId;
+    ///
+    /// assert_eq!(StringId::of("default"), StringId(0x42c9679f));
+    /// ```
+    pub fn of(name: &str) -> StringId {
+        StringId(crate::game::murmur3(name.as_bytes()))
+    }
+}
+
+impl FromStr for StringId {
+    type Err = ParseIdError;
+
+    /// Up to eight hex digits, with or without `0x`: `42c9679f`.
+    fn from_str(s: &str) -> Result<StringId, ParseIdError> {
+        let hex = s.strip_prefix("0x").unwrap_or(s);
+        if hex.is_empty() || hex.len() > 8 {
+            return Err(ParseIdError { kind: "string id" });
+        }
+        u32::from_str_radix(hex, 16).map(StringId).map_err(|_| ParseIdError { kind: "string id" })
+    }
+}
+
+impl fmt::Debug for StringId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "StringId({:08x})", self.0)
+    }
+}
+
+impl fmt::Display for StringId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:08x}", self.0)
+    }
+}
+
+impl From<u32> for StringId {
+    fn from(v: u32) -> StringId {
+        StringId(v)
+    }
+}

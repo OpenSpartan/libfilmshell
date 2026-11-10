@@ -54,8 +54,8 @@ pub struct ModeOptions {
 }
 
 /// The option whose lower-cased name hashes to `hash`.
-pub fn option_name(hash: u32) -> Option<&'static str> {
-    OPTION_NAMES.binary_search_by_key(&hash, |o| o.0).ok().map(|i| OPTION_NAMES[i].1)
+pub fn option_name(hash: crate::StringId) -> Option<&'static str> {
+    OPTION_NAMES.binary_search_by_key(&hash.0, |o| o.0).ok().map(|i| OPTION_NAMES[i].1)
 }
 
 /// Every mode's options.

@@ -25,7 +25,7 @@ use crate::roster::{self, Roster};
 use crate::types::*;
 use crate::vitals::Vitals;
 use crate::zones;
-use crate::TagId;
+use crate::{StringId, TagId};
 use std::collections::{BTreeMap, HashMap};
 
 /// A player's latest sample may be this old and still place them at a deploy.
@@ -419,7 +419,7 @@ fn game_events(film: &Container, p: &Params, c: Option<&Calibration>, holders: &
                         })),
                         Value::None => GameEventValue::Empty,
                     };
-                    (k, v)
+                    (StringId(k), v)
                 })
                 .collect();
             let players = players_mask(holders, g.last, frame as i64);
@@ -439,7 +439,7 @@ fn game_events(film: &Container, p: &Params, c: Option<&Calibration>, holders: &
                 id: g.id,
                 small: g.small,
                 values,
-                text: g.extra.map(|x| x.0),
+                text: g.extra.map(|x| StringId(x.0)),
                 arguments,
                 players: PlayerMask(players),
             };
@@ -1215,11 +1215,11 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             .map(|(&p, v)| match (u32::try_from(p), v) {
                 (Ok(p), _) => pid(holders.api(p, s.frame) as i32).map(HudArgument::Player),
                 (Err(_), Some(crate::splash::Arg::Number(n))) => Some(HudArgument::Number(*n)),
-                (Err(_), Some(crate::splash::Arg::Key(k))) => Some(HudArgument::Text(*k)),
+                (Err(_), Some(crate::splash::Arg::Key(k))) => Some(HudArgument::Text(StringId(*k))),
                 (Err(_), None) => None,
             })
             .collect();
-        events.push((s.frame, Event::HudMessage(HudMessage { key: s.key, arguments, viewers: s.seen_by })));
+        events.push((s.frame, Event::HudMessage(HudMessage { key: StringId(s.key), arguments, viewers: s.seen_by })));
     }
     for (frame, g) in script_events {
         events.push((frame, Event::GameEvent(g)));
@@ -1571,7 +1571,10 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         options: v
             .options
             .iter()
-            .map(|&(hash, value)| VariantOption { hash, name: game::option_name(hash).map(str::to_string), value })
+            .map(|&(hash, value)| {
+                let hash = StringId(hash);
+                VariantOption { hash, name: game::option_name(hash).map(str::to_string), value }
+            })
             .collect(),
         scripts: scripts.iter().cloned().collect(),
         stat_settings: crate::variant_stats::read(&film.chunks[0]).map(|d| StatSettings {
@@ -1580,7 +1583,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 .into_iter()
                 .map(|s| StatDefinition {
                     name: s.name,
-                    id: s.id,
+                    id: StringId(s.id),
                     base: s.base,
                     aggregation: s.aggregation,
                     lower_is_better: s.sort == -1,

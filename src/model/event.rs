@@ -1,6 +1,6 @@
 use super::{EntityId, PlayerId, PlayerMask, Position, TeamId, Tick};
-use crate::TagId;
 use crate::game::{DamageCause, Grenade, Medal};
+use crate::{StringId, TagId};
 
 /// One event and when it happened.
 #[derive(Clone, Debug, PartialEq)]
@@ -487,7 +487,7 @@ pub enum HudArgument {
     /// A number.
     Number(f64),
     /// A string, as its localization key.
-    Text(u32),
+    Text(StringId),
     /// A player.
     Player(PlayerId),
 }
@@ -498,7 +498,7 @@ pub enum HudArgument {
 #[non_exhaustive]
 pub struct HudMessage {
     /// The message's localization key.
-    pub key: u32,
+    pub key: StringId,
     /// Its arguments, in order; None where an argument's kind isn't read.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub arguments: Vec<Option<HudArgument>>,
@@ -561,12 +561,12 @@ pub struct GameEvent {
     pub id: u32,
     /// The 8 bits after the id; what they mean isn't known.
     pub small: u32,
-    /// Its values, each under a key (the murmur3 of the property's name).
+    /// Its values, each under its property's name.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
-    pub values: Vec<(u32, GameEventValue)>,
-    /// The string id of the event's own text, when it has one.
+    pub values: Vec<(StringId, GameEventValue)>,
+    /// The event's own text, when it has one.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
-    pub text: Option<u32>,
+    pub text: Option<StringId>,
     /// The text's arguments, in order.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub arguments: Vec<GameEventArgument>,
