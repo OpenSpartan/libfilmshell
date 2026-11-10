@@ -1,7 +1,7 @@
 //! Draws every life's path and every kill as an SVG map, coloured by team.
 //!
 //! ```text
-//! cargo run --release --example trails -- path/to/film > trails.svg
+//! cargo run --release --example trails -- path/to/film > map.svg
 //! ```
 
 mod common;

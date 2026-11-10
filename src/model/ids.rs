@@ -118,6 +118,25 @@ impl FromIterator<PlayerId> for PlayerMask {
     }
 }
 
+/// `get` and `From` for the id newtypes, as [`TagId`](crate::TagId) has.
+macro_rules! raw_id {
+    ($($t:ident($raw:ty)),*) => {$(
+        impl $t {
+            /// The raw value.
+            pub const fn get(self) -> $raw {
+                self.0
+            }
+        }
+
+        impl From<$raw> for $t {
+            fn from(v: $raw) -> $t {
+                $t(v)
+            }
+        }
+    )*};
+}
+
+raw_id!(PlayerId(u8), TeamId(u8), EntityId(u16), Xuid(u64), PlayerMask(u32));
 /// A GUID as the Halo services write it, such as a map variant's asset id.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Guid(pub [u8; 16]);

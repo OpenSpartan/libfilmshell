@@ -9,7 +9,8 @@ use crate::{Film, TagId};
 /// The scoreboard's accuracy slots are zero in films, so accuracy is
 /// counted: shots are [`Event::Shot`]s plus the non-grenade projectiles the
 /// player created (the two don't overlap), hits are damage events whose
-/// effect belongs to a weapon, once per attacker, victim and frame. Measured
+/// effect belongs to a weapon, once per attacker, victim and frame of the
+/// film (one or two ticks: [`Clock`](crate::Clock)). Measured
 /// against the match stats, shots and hits are a median 1.00 of the game's
 /// counts, and accuracy is off by a median of 4.4 points (90th percentile 38).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -18,7 +19,7 @@ use crate::{Film, TagId};
 pub struct Accuracy {
     /// Rounds fired.
     pub shots: u32,
-    /// Frames in which the player's weapon damage landed on another player,
+    /// Frames of the film in which the player's weapon damage landed on another player,
     /// counted once per victim: a shotgun blast counts once, a blast that
     /// hits two players twice.
     pub hits: u32,

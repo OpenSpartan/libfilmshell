@@ -16,7 +16,7 @@ pub struct Header {
     /// When the film starts on the wall clock, Unix seconds. The only wall
     /// clock time a film holds.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
-    pub started_at: Option<u32>,
+    pub started_at: Option<u64>,
     /// The map variant's asset id.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub map_asset_id: Option<Guid>,
@@ -27,5 +27,5 @@ pub struct Header {
     /// [`Hints::level`](crate::Hints::level) when given, else the one chunk 0
     /// names.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
-    pub level: Option<TagId>,
+    pub level_id: Option<TagId>,
 }

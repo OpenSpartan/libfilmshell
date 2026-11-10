@@ -315,7 +315,8 @@ pub struct Hit {
     /// Points off the body (a Spartan's full health is 90).
     pub body: f64,
     /// `shield` and `body` come from the victim's vitals around the hit
-    /// rather than the effect's numbers.
+    /// rather than the effect's numbers: 8-bit readings, so within about 2
+    /// points.
     pub from_vitals: bool,
 }
 

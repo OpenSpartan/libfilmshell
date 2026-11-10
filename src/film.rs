@@ -289,8 +289,14 @@ impl Film {
         let ride = self.ride_at(player, tick);
         let vehicle =
             ride.and_then(|r| self.ride_vehicle(r)).or_else(|| sample.vehicle.and_then(|v| self.vehicle_at(v, tick)));
-        let weapon = (!sample.in_vehicle).then(|| self.state(player)?.weapon_at(tick)).flatten();
-        Some(PlayerAt { player: self.player(player)?, life, sample, weapon, ride, vehicle })
+        let state = self.player_state(player);
+        let on_foot = state.filter(|_| !sample.in_vehicle);
+        let weapon = on_foot.and_then(|s| s.weapon_at(tick));
+        let ammo = on_foot.and_then(|s| s.ammo_in(s.held_slot(tick)?, tick));
+        // Counts from before this life's spawn are an earlier life's.
+        let start = life.start().unwrap_or(tick);
+        let grenades = state.and_then(|s| s.grenades_at(tick)).filter(|g| g.tick >= start);
+        Some(PlayerAt { player: self.player(player)?, life, sample, weapon, ammo, grenades, ride, vehicle })
     }
 
     /// [`Film::player_at`] for every player alive at `tick`, in id order:
@@ -300,7 +306,7 @@ impl Film {
     }
 
     /// The players of `team`, in id order.
-    pub fn team(&self, team: TeamId) -> impl Iterator<Item = &Player> + '_ {
+    pub fn players_on(&self, team: TeamId) -> impl Iterator<Item = &Player> + '_ {
         self.players.iter().filter(move |p| p.team == Some(team))
     }
 
@@ -427,7 +433,7 @@ impl Film {
     /// What `player` pressed and carried over the match. None for a player
     /// whose biped updates the library doesn't read: in small lobbies (four
     /// players or fewer), and for a player who never spawned.
-    pub fn state(&self, player: PlayerId) -> Option<&PlayerState> {
+    pub fn player_state(&self, player: PlayerId) -> Option<&PlayerState> {
         self.states.iter().find(|s| s.0 == player).map(|s| &s.1)
     }
 
@@ -440,7 +446,7 @@ impl Film {
         if self.sample_at(player, tick)?.in_vehicle {
             return None;
         }
-        self.state(player)?.weapon_at(tick)
+        self.player_state(player)?.weapon_at(tick)
     }
 
     /// The film's raw layers: chunks, packets, frames.
@@ -463,6 +469,10 @@ pub struct PlayerAt<'a> {
     /// The weapon in their hands: None in a vehicle, where they fire its
     /// weapons, and in small lobbies, whose weapon state isn't read.
     pub weapon: Option<TagId>,
+    /// The rounds in that weapon and in reserve, as last sent.
+    pub ammo: Option<&'a Ammo>,
+    /// The grenades they carry, as sent since they spawned.
+    pub grenades: Option<&'a GrenadeCount>,
     /// The ride they are on.
     pub ride: Option<&'a Ride>,
     /// The track of the vehicle they are in.

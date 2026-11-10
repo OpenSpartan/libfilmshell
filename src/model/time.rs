@@ -26,6 +26,11 @@ impl Tick {
     /// Ticks in a second of game time.
     pub const PER_SECOND: u32 = 60;
 
+    /// The raw tick count.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+
     /// The tick `seconds` of game time after the film's first frame, to the
     /// nearest tick. Negative and NaN times give tick 0.
     pub fn from_seconds(seconds: f64) -> Tick {
@@ -54,6 +59,12 @@ impl Tick {
     #[must_use]
     pub fn saturating_sub(self, ticks: u32) -> Tick {
         Tick(self.0.saturating_sub(ticks))
+    }
+}
+
+impl From<u32> for Tick {
+    fn from(v: u32) -> Tick {
+        Tick(v)
     }
 }
 

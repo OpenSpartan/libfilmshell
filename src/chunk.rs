@@ -76,8 +76,9 @@ const HIGHLIGHTS_FIRST: u16 = 9;
 pub const MAX_CHUNK_BYTES: usize = 256 << 20;
 
 /// The most bytes a film's chunks may hold together once inflated: 1 GiB,
-/// about ten times the largest real film. Reading a film takes several
-/// times its inflated size in memory.
+/// fourteen times the largest of the test films (72 MB, 35 players over 18
+/// minutes). Reading a film takes about four times its inflated size in
+/// memory at its peak: 300 MB for that one.
 pub const MAX_FILM_BYTES: usize = 1 << 30;
 
 /// One chunk of a film: its index in the manifest, its kind, and its bytes,

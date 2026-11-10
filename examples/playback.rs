@@ -1,5 +1,5 @@
 //! The match at one moment: where everyone was, their shield and health,
-//! and what they held or rode.
+//! and what they held, with its rounds, or rode.
 //!
 //! ```text
 //! cargo run --release --example playback -- path/to/film 90
@@ -27,7 +27,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let percent = |v: Option<f64>| v.map_or("   ".to_string(), |v| format!("{:>3.0}", v * 100.0));
         let doing = match (now.vehicle, now.weapon) {
             (Some(v), _) => format!("in {}", v.vehicle().map_or("a vehicle", |v| v.name())),
-            (None, Some(w)) => w.name().unwrap_or("").to_string(),
+            (None, Some(w)) => {
+                let rounds = now.ammo.map_or(String::new(), |a| format!(" {}/{}", a.loaded, a.reserve));
+                format!("{}{rounds}", w.name().unwrap_or("a weapon"))
+            }
             (None, None) => String::new(),
         };
         println!("{name:<16} {place}  shield {}  health {}  {doing}", percent(s.shield), percent(s.health));

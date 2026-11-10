@@ -1675,10 +1675,10 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let header = Header {
         build: raw_header.build.clone().unwrap_or_default(),
         branch: raw_header.branch.clone(),
-        started_at: raw_header.start,
+        started_at: raw_header.start.map(u64::from),
         map_asset_id: raw_header.map_asset_id.map(Guid),
         map_version_id: raw_header.map_version_id.map(Guid),
-        level: hints.level.or(raw_header.level.map(TagId)),
+        level_id: hints.level.or(raw_header.level.map(TagId)),
     };
 
     Ok(crate::Film {

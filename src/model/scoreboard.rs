@@ -184,6 +184,11 @@ impl Scoreboard {
         self.changes[..upto].iter().rfind(|c| c.owner == owner && c.slot == slot).map_or(0, |c| c.value)
     }
 
+    /// The value of a named statistic at `tick`: see [`Scoreboard::value_at`].
+    pub fn value_at_stat(&self, owner: StatOwner, stat: Stat, tick: Tick) -> i32 {
+        self.value_at(owner, stat.slot(), tick)
+    }
+
     /// How many rounds the match had, by the rounds the scoreboard's values
     /// are for: 1 for a match of one round, or a film without a scoreboard
     /// (whose [`Scoreboard::round_starts`] can still find rounds by the match
