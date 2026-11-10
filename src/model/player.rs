@@ -7,6 +7,7 @@ use super::{PlayerId, TeamId, Tick, Xuid};
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum PlayerKind {
     /// A person signed in with an Xbox account.
+    #[non_exhaustive]
     Human {
         /// The account.
         xuid: Xuid,
@@ -16,6 +17,7 @@ pub enum PlayerKind {
         gamertag: Option<String>,
     },
     /// A bot.
+    #[non_exhaustive]
     Bot {
         /// The bot's profile, which picks its appearance: the bot id the
         /// Halo services list it under (`bid(N)`).

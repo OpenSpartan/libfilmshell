@@ -98,7 +98,7 @@ pub fn stats(ff: &FilmFire, hit_weapons: &[Option<usize>], shieldless: bool) -> 
                 .or(row_projectile)
                 .and_then(sandbox::projectile);
             let amount =
-                tag.or(proj.and_then(|p| p.impact.map(|i| i.0))).and_then(damage::amount).filter(|a| a.fixed());
+                tag.or(proj.and_then(|p| p.impact.map(|i| i.0))).and_then(damage::amount).filter(|a| a.is_fixed());
             Some(WeaponStats {
                 rounds_per_second: row.rounds_per_second,
                 burst: row.burst,

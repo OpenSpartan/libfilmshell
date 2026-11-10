@@ -511,7 +511,7 @@ fn mark_headshots(events: &mut [TimedEvent]) {
     let shots: Vec<(Tick, PlayerId)> = events
         .iter()
         .filter_map(|e| match e.event {
-            Event::Headshot { player } => Some((e.tick, player)),
+            Event::Headshot(h) => Some((e.tick, h.player)),
             _ => None,
         })
         .collect();
@@ -932,7 +932,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         }
         for &(frame, pi) in &a.headshots {
             if let Some(p) = pid(pi) {
-                events.push((frame, Event::Headshot { player: p }));
+                events.push((frame, Event::Headshot(Headshot { player: p })));
             }
         }
     }
@@ -1499,7 +1499,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 Some(StatChange { tick: tick(c.frame), owner, slot: c.slot, value: c.value, round: c.round })
             })
             .collect(),
-        clock: stat_log
+        match_clock: stat_log
             .clock
             .iter()
             .map(|c| MatchClock { tick: tick(c.frame), limit: c.limit, left: c.left, state: c.state })
@@ -1669,7 +1669,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     };
 
     let header = Header {
-        build: raw_header.build.clone(),
+        build: raw_header.build.clone().unwrap_or_default(),
         branch: raw_header.branch.clone(),
         started_at: raw_header.start,
         map_asset_id: raw_header.map_asset_id.map(Guid),
@@ -1748,11 +1748,11 @@ mod tests {
         let at = |t: u32, event: Event| TimedEvent { tick: Tick(t), event };
         let mut events = vec![
             at(100, kill(1)),
-            at(101, Event::Headshot { player: PlayerId(1) }),
-            at(200, Event::Headshot { player: PlayerId(2) }),
+            at(101, Event::Headshot(Headshot { player: PlayerId(1) })),
+            at(200, Event::Headshot(Headshot { player: PlayerId(2) })),
             at(200, kill(1)),
             at(300, kill(3)),
-            at(400, Event::Headshot { player: PlayerId(4) }),
+            at(400, Event::Headshot(Headshot { player: PlayerId(4) })),
         ];
         mark_headshots(&mut events);
         let marks: Vec<Option<bool>> = events

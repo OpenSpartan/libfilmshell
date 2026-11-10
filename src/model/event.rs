@@ -55,14 +55,19 @@ pub enum Event {
     Zone(ZoneEvent),
     /// A player's respawn countdown started.
     RespawnCountdown(RespawnCountdown),
-    /// The game counted a headshot kill for the player: the mode script's
-    /// headshot event, which the scoreboard's headshot kills count. Sent on
-    /// the tick of the kill, which [`Kill::headshot`] marks, inferred kills
-    /// included. PvP modes only.
-    Headshot {
-        /// Who.
-        player: PlayerId,
-    },
+    /// The game counted a headshot kill for a player.
+    Headshot(Headshot),
+}
+
+/// A headshot kill the game counted: the mode script's headshot event, which
+/// the scoreboard's headshot kills count. Sent on the tick of the kill, which
+/// [`Kill::headshot`] marks, inferred kills included. PvP modes only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct Headshot {
+    /// Who.
+    pub player: PlayerId,
 }
 
 /// The kind of an [`Event`], without its data: for filtering and counting.
@@ -141,7 +146,7 @@ impl Event {
             Event::Flag(_) => EventKind::Flag,
             Event::Zone(_) => EventKind::Zone,
             Event::RespawnCountdown(_) => EventKind::RespawnCountdown,
-            Event::Headshot { .. } => EventKind::Headshot,
+            Event::Headshot(_) => EventKind::Headshot,
         }
     }
 
@@ -149,35 +154,36 @@ impl Event {
     /// assistant, a hit's attacker and victim, a game event's players, the
     /// player who acted for the rest. A voice line's or a HUD message's
     /// audience isn't counted.
-    pub fn players(&self) -> Vec<PlayerId> {
-        let one = |p: PlayerId| vec![p];
-        match self {
-            Event::Kill(k) => [Some(k.victim), k.killer, k.assistant].into_iter().flatten().collect(),
+    pub fn players(&self) -> impl Iterator<Item = PlayerId> + use<> {
+        let one = |p: PlayerId| [Some(p), None, None];
+        let few = match self {
+            Event::Kill(k) => [Some(k.victim), k.killer, k.assistant],
             Event::Medal(m) => one(m.player),
             Event::Shot(s) => one(s.player),
-            Event::Hit(h) => [h.attacker, Some(h.victim)].into_iter().flatten().collect(),
+            Event::Hit(h) => [h.attacker, Some(h.victim), None],
             Event::Pickup(p) => one(p.player),
             Event::Throw(t) => one(t.player),
             Event::Action(a) => one(a.player),
             Event::Teleport(t) => one(t.player),
             Event::VehicleExit(x) => one(x.player),
             Event::EquipmentUse(u) => one(u.player),
-            Event::Chatter(c) => c.speaker.into_iter().collect(),
-            Event::GameEvent(g) => g.players.iter().collect(),
+            Event::Chatter(c) => [c.speaker, None, None],
             Event::Flag(f) => one(f.player),
-            Event::Zone(z) => z.player.into_iter().collect(),
+            Event::Zone(z) => [z.player, None, None],
             Event::RespawnCountdown(r) => one(r.player),
-            Event::Headshot { player } => one(*player),
-            Event::Detonation(_) | Event::VoiceLine(_) | Event::HudMessage(_) => Vec::new(),
-        }
+            Event::Headshot(h) => one(h.player),
+            Event::GameEvent(_) | Event::Detonation(_) | Event::VoiceLine(_) | Event::HudMessage(_) => [None; 3],
+        };
+        let mask = match self {
+            Event::GameEvent(g) => g.players,
+            _ => PlayerMask::default(),
+        };
+        few.into_iter().flatten().chain(mask.iter())
     }
 
     /// Whether the event is about `player`, as [`Event::players`] counts.
     pub fn involves(&self, player: PlayerId) -> bool {
-        match self {
-            Event::GameEvent(g) => g.players.contains(player),
-            _ => self.players().contains(&player),
-        }
+        self.players().any(|p| p == player)
     }
 }
 
@@ -370,12 +376,14 @@ pub enum ActionKind {
     /// A reload.
     Reload,
     /// A melee swing, with the player it lunged at.
+    #[non_exhaustive]
     Melee {
         /// The lunge's target.
         #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
         target: Option<PlayerId>,
     },
     /// A zoom level change (0 unzoomed).
+    #[non_exhaustive]
     Zoom {
         /// The new level.
         level: u32,
@@ -393,6 +401,7 @@ pub enum ActionKind {
     /// A jump's take-off.
     Jump,
     /// A switch to another weapon slot.
+    #[non_exhaustive]
     WeaponSwitch {
         /// The slot now held.
         slot: u32,
@@ -504,6 +513,7 @@ pub struct HudMessage {
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum GameEventValue {
     /// A word, with its 3-bit type.
+    #[non_exhaustive]
     Word {
         /// The type.
         kind: u32,
@@ -532,6 +542,7 @@ pub enum GameEventArgument {
     Player(Option<PlayerId>),
     /// A value with its type: 3 a string id (`%s`), 4 an integer (`%i`),
     /// the others not told apart.
+    #[non_exhaustive]
     Word {
         /// The type, 2 to 7.
         kind: u32,

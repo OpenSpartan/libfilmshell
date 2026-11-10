@@ -75,7 +75,7 @@ impl DamageAmount {
 
     /// One amount whatever the distance or the roll: a direct hit with
     /// equal bounds.
-    pub fn fixed(&self) -> bool {
+    pub fn is_fixed(&self) -> bool {
         self.radius == 0.0 && self.lower == self.upper[0] && self.lower == self.upper[1]
     }
 
@@ -164,7 +164,7 @@ mod tests {
         assert_eq!(br.cause, DamageCause::Weapon);
         assert_eq!(br.weapon.and_then(Weapon::from_tag), Some(Weapon::Br75BattleRifle));
         let a = br.amount.unwrap();
-        assert!(a.fixed() && a.lower == 12.73 && a.shield_scale == 1.0 && a.has(DamageAmount::NO_SPILL));
+        assert!(a.is_fixed() && a.lower == 12.73 && a.shield_scale == 1.0 && a.has(DamageAmount::NO_SPILL));
         assert_eq!(damage_effect(TagId(0xd9dbf765)).map(|d| (d.cause, d.amount)), Some((DamageCause::Collision, None)));
         assert_eq!(damage_effect(TagId(0x00403594)).map(|d| d.cause), Some(DamageCause::World));
         let hammer = damage_effect(TagId(0x877da252)).unwrap();

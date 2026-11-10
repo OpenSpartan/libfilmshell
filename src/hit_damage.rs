@@ -73,7 +73,7 @@ pub fn read(ff: &FilmFire, vitals: &Vitals) -> Vec<HitDamage> {
         for &i in group {
             let (_, tag, scale) = ff.hit_details[i];
             let hit = match tag.and_then(damage::amount) {
-                Some(a) if a.fixed() && scale == FULL => {
+                Some(a) if a.is_fixed() && scale == FULL => {
                     let (s, mut b) = apply(&a, a.lower, shield, body);
                     if h1 <= 0.0 && a.flags & CAN_HEADSHOT != 0 && seen.1 > b + 1.0 && shield - s < 1.0 {
                         b = body;

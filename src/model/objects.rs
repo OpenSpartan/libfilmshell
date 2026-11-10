@@ -159,11 +159,13 @@ pub struct GrenadeFlight {
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum ZoneArea {
     /// A circle.
+    #[non_exhaustive]
     Cylinder {
         /// Its radius.
         radius: f64,
     },
     /// A rectangle, turned by the shape's `angle`.
+    #[non_exhaustive]
     Box {
         /// Its whole length along its forward axis.
         length: f64,

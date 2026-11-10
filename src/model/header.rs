@@ -9,8 +9,7 @@ pub struct Header {
     /// The game build that recorded the film ("6.10026.18411.0"). Always
     /// set on a [`Film`](crate::Film): a header without one is refused with
     /// [`Error::UnknownHeader`](crate::Error::UnknownHeader).
-    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
-    pub build: Option<String>,
+    pub build: String,
     /// The build's branch ("HI_1_13_0").
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub branch: Option<String>,

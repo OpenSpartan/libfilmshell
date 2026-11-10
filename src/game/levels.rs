@@ -58,6 +58,12 @@ pub struct Level {
 }
 
 impl Level {
+    /// The name to show: the English name where the game gives one, else
+    /// the file name.
+    pub fn title(&self) -> &'static str {
+        self.display_name.unwrap_or(self.name)
+    }
+
     /// The box with index `index`.
     pub fn level_box(&self, index: u32) -> Option<&LevelBox> {
         if index == self.play.index {

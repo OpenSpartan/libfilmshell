@@ -40,7 +40,7 @@ fn corpus() -> &'static [(String, Film)] {
 fn every_film_has_a_header_and_players() {
     for (name, f) in corpus() {
         let h = f.header();
-        assert!(h.build.as_deref().is_some_and(|b| b.starts_with("6.")), "{name}: {:?}", h.build);
+        assert!(h.build.starts_with("6."), "{name}: {:?}", h.build);
         assert!(h.started_at.is_some() && h.map_asset_id.is_some() && h.level.is_some(), "{name}");
         assert!(!f.players().is_empty(), "{name}");
         let mut ids: Vec<PlayerId> = f.players().iter().map(|p| p.id).collect();
@@ -262,7 +262,7 @@ fn every_medal_is_kept() {
 fn headshots_mark_their_kills() {
     let (mut events, mut marked) = (0usize, 0usize);
     for (name, f) in corpus() {
-        let n = f.events().iter().filter(|e| matches!(e.event, Event::Headshot { .. })).count();
+        let n = f.events().iter().filter(|e| matches!(e.event, Event::Headshot(_))).count();
         let m = f.kills().filter(|(_, k)| k.headshot == Some(true)).count();
         assert!(m <= n, "{name}");
         if n == 0 {

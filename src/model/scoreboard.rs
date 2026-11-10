@@ -51,7 +51,7 @@ pub enum Stat {
 
 impl Stat {
     /// Every named statistic.
-    pub const ALL: [Stat; 14] = [
+    pub const ALL: &'static [Stat] = &[
         Stat::Score,
         Stat::PersonalScore,
         Stat::Kills,
@@ -170,7 +170,7 @@ pub struct Scoreboard {
     pub changes: Vec<StatChange>,
     /// The match clock at each change of its limit or state.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
-    pub clock: Vec<MatchClock>,
+    pub match_clock: Vec<MatchClock>,
     /// The engine's state at each seek snapshot.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub engine: Vec<EngineState>,
@@ -263,7 +263,7 @@ impl Scoreboard {
         }
         let mut out = Vec::new();
         let mut ran_down = false;
-        for c in &self.clock {
+        for c in &self.match_clock {
             if c.limit > 0.0 && c.left >= c.limit - 0.5 {
                 if ran_down {
                     out.push(c.tick);
