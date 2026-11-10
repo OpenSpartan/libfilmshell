@@ -361,3 +361,19 @@ pub fn read(chunk0: &[u8]) -> Option<Variant> {
     }
     Some(v)
 }
+
+/// Every integer of the settings struct, with its path of field ids, for
+/// surveys.
+#[cfg(feature = "research")]
+pub fn settings(chunk0: &[u8]) -> Vec<(Vec<u32>, i64)> {
+    let mut out = Vec::new();
+    let Some(r) = chunk0.get(START..) else { return out };
+    let Some(b) = (0..8).map(|s| shifted(r, s)).find(|b| b.windows(ANCHOR.len()).any(|w| w == ANCHOR)) else {
+        return out;
+    };
+    let Some(at) = b.windows(MODE_PATH.len()).position(|w| w == MODE_PATH) else { return out };
+    let Some(end) = b[at..].iter().position(|&c| c == 0) else { return out };
+    let mut p = at + end + 1;
+    let _ = fields(&b, &mut p, &mut Vec::new(), &mut |path: &[u32], x: i64| out.push((path.to_vec(), x)));
+    out
+}

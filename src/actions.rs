@@ -53,7 +53,7 @@ const ABILITY_GRAPPLE: u32 = 3;
 
 #[derive(Debug, Default)]
 pub struct FilmActions {
-    /// Per path (parallel to the paths given to [`read`]): frame, kind and
+    /// Per path (parallel to the paths given to `read`): frame, kind and
     /// argument (-1: none), in frame order.
     pub actions: Vec<Vec<(i64, u8, i32)>>,
     /// Teleports: frame, path, and the level codes left and arrived at.

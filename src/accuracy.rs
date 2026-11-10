@@ -19,7 +19,7 @@ use std::collections::{HashMap, HashSet};
 /// Registry block of projectile objects.
 const PROJECTILE: u32 = 41;
 
-/// Per path (parallel to the paths given to [`read`]), in frame order.
+/// Per path (parallel to the paths given to `read`), in frame order.
 #[derive(Debug, Default)]
 pub struct Aim {
     /// The frames of the player's projectiles, grenades left out.

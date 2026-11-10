@@ -70,13 +70,69 @@ pub struct SpawnFactor {
     /// The pad's score.
     pub score: f64,
     /// Respawn pads open to the player that scored better, the same, worse.
+    /// Pads are compared by `floor(score / step)` ([`SpawnModel::step`]).
     pub better: u32,
     /// See `better`.
     pub same: u32,
     /// See `better`.
     pub worse: u32,
-    /// Per influencer region, how many sources were inside.
+    /// Per region of [`spawn_model`], how many sources were inside.
     pub sources: Vec<u32>,
+}
+
+/// Whose presence a spawn influencer region is around.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Influencer {
+    /// A living teammate.
+    Ally,
+    /// A living opponent.
+    Enemy,
+    /// A teammate who died within [`SpawnModel::dead_seconds`].
+    DeadAlly,
+}
+
+/// One influencer region of the spawn model: a cylinder around each source,
+/// which adds its weight to a spawn point inside it.
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct SpawnRegion {
+    /// Around whom.
+    pub around: Influencer,
+    /// The cylinder's radius, world units.
+    pub radius: f64,
+    /// Its whole height, world units.
+    pub height: f64,
+    /// What a point inside gets.
+    pub weight: f64,
+    /// Every source inside counts; else only the strongest.
+    pub stacks: bool,
+    /// The weight's falloff with distance over radius, piecewise linear:
+    /// each piece up to `x` is `slope * d + intercept`, clamped to 0..1.
+    /// Empty when the weight is flat.
+    pub falloff: Vec<[f64; 3]>,
+}
+
+/// The game's default spawn weights as [`spawn_factors`] models them.
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct SpawnModel {
+    /// Scores are compared in steps of this.
+    pub step: f64,
+    /// A death counts this many seconds.
+    pub dead_seconds: f64,
+    /// The modelled regions, as [`SpawnFactor::sources`] counts them.
+    pub regions: Vec<SpawnRegion>,
+}
+
+/// One player's projectiles and hits, as their accuracy counts them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AccuracyTicks<'a> {
+    /// When the player created a non-grenade projectile.
+    pub projectiles: &'a [Tick],
+    /// When one of their weapon hits landed on a player.
+    pub hits: &'a [Tick],
 }
 
 /// One player's projectile and hit ticks.
@@ -115,6 +171,16 @@ pub fn accuracy_at(film: &Film, player: PlayerId, tick: Tick) -> Accuracy {
     Accuracy { shots: fired as u32 + upto(&d.projectiles), hits: upto(&d.landed) }
 }
 
+/// The projectile and hit ticks [`accuracy_at`] counts for `player`, beside
+/// their shot events.
+pub fn accuracy_ticks(film: &Film, player: PlayerId) -> AccuracyTicks<'_> {
+    film.analysis
+        .accuracy
+        .iter()
+        .find(|a| a.player == player)
+        .map_or(AccuracyTicks::default(), |d| AccuracyTicks { projectiles: &d.projectiles, hits: &d.landed })
+}
+
 /// The numbers of every weapon fired in the film that the catalogue has.
 pub fn weapon_profiles(film: &Film) -> &[WeaponProfile] {
     &film.analysis.weapons
@@ -123,4 +189,30 @@ pub fn weapon_profiles(film: &Film) -> &[WeaponProfile] {
 /// Every respawn of a timed life that started on a hinted spawn pad.
 pub fn spawn_factors(film: &Film) -> &[SpawnFactor] {
     &film.analysis.spawn_factors
+}
+
+/// The spawn weights [`spawn_factors`] scores pads with: the game's default
+/// spawn settings (`ssdf:08dccda1`), its unit and dead-unit regions.
+pub fn spawn_model() -> SpawnModel {
+    let m = crate::spawns::model();
+    SpawnModel {
+        step: m.step,
+        dead_seconds: m.dead_seconds,
+        regions: m
+            .terms
+            .into_iter()
+            .map(|t| SpawnRegion {
+                around: match t.who {
+                    crate::spawns::Who::Ally => Influencer::Ally,
+                    crate::spawns::Who::Enemy => Influencer::Enemy,
+                    crate::spawns::Who::DeadAlly => Influencer::DeadAlly,
+                },
+                radius: t.radius,
+                height: t.height,
+                weight: t.weight,
+                stacks: t.stacks,
+                falloff: t.falloff,
+            })
+            .collect(),
+    }
 }

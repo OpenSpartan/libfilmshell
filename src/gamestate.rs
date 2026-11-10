@@ -1,6 +1,6 @@
 //! The game's own running state, from the snapshots (a seek point every 20 s):
-//! each player's lives and whether they're in the game, and the engine's
-//! phase.
+//! the scoreboard, each player's lives and whether they're in the game, and
+//! the engine's phase.
 //!
 //! The statborg is the game's scoreboard: one entity per player and per team,
 //! 28 rows of two values each, 56 slots.
@@ -31,9 +31,30 @@ pub struct GameState {
     pub frames: Vec<i64>,
     /// The engine's phase per snapshot: 1 in play, 2 over.
     pub phase: Vec<u32>,
+    /// Player index to the statborg's 56 slots per snapshot.
+    pub players: BTreeMap<u32, Vec<Row>>,
+    /// Team id to the statborg's 56 slots per snapshot.
+    pub teams: BTreeMap<u32, Vec<Row>>,
     /// Player index to lives left per snapshot (-1: unlimited; absent: not in
     /// the game then).
     pub lives: BTreeMap<u32, Vec<Option<i32>>>,
+}
+
+/// One player's or team's statborg slots.
+pub type Row = [i32; 2 * ROWS as usize];
+
+/// A statborg entity's slots: each of its rows holds two 5-bit round counts,
+/// then its two values. None unless every row is there.
+fn row(c: &[u8], rows: &[(u32, i64)]) -> Option<Row> {
+    let mut slots = [0i32; 2 * ROWS as usize];
+    for r in 0..ROWS {
+        let at = rows.iter().find(|x| x.0 == r)?.1;
+        let (a, p) = stat_value(c, at + 10);
+        let (b, _) = stat_value(c, p);
+        slots[2 * r as usize] = a;
+        slots[2 * r as usize + 1] = b;
+    }
+    Some(slots)
 }
 
 /// The statistic at `p`: `[size:2]`, then `8 << size` bits,
@@ -70,6 +91,18 @@ pub fn read(film: &Film, widths: [u32; 3], box_bits: u32, holders: &Holders) -> 
                             g.phase[at] = bits_at(chunk, p, 3);
                         }
                     }
+                    STATBORG => {
+                        let Some(entry) = block(ENTRY_ROW) else { continue };
+                        let (id, kind) = (bits_at(chunk, entry, 32), bits_at(chunk, entry + 32, 8));
+                        let Some(r) = row(chunk, rows) else { continue };
+                        let series = match kind {
+                            0 => g.players.entry(holders.api(id >> 16, frame)).or_default(),
+                            1 => g.teams.entry(id & 0xffff).or_default(),
+                            _ => continue,
+                        };
+                        series.resize(at + 1, [0; 2 * ROWS as usize]);
+                        series[at] = r;
+                    }
                     ENGINE_PLAYER => {
                         let Some(active) = block(ACTIVE_ROW) else { continue };
                         if bits_at(chunk, active, 1) == 0 {
@@ -87,7 +120,17 @@ pub fn read(film: &Film, widths: [u32; 3], box_bits: u32, holders: &Holders) -> 
             }
         }
     }
+    // A read that stopped lost a snapshot's later entities: carry the last
+    // values, so a counter never drops to zero.
     let n = g.frames.len();
+    for s in g.players.values_mut().chain(g.teams.values_mut()) {
+        s.resize(n, [0; 2 * ROWS as usize]);
+        for k in 1..n {
+            if s[k] == [0; 2 * ROWS as usize] {
+                s[k] = s[k - 1];
+            }
+        }
+    }
     for s in g.lives.values_mut() {
         s.resize(n, None);
     }

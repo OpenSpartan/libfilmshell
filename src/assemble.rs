@@ -8,7 +8,7 @@ use crate::calibrate::{apply_calibration, level_matches, scale_paths_to_world, P
 use crate::components::{self, Params, SlotStates};
 use crate::container::{Film as Container, Framing};
 use crate::damage::{self, Cause};
-use crate::events::{Body, Value};
+use crate::events::{Body, Param, Value};
 use crate::fire::{self, FilmFire};
 use crate::game::{self, Grenade, Level};
 use crate::grenades;
@@ -321,25 +321,43 @@ fn pair_grenades(
     out
 }
 
+/// A bot's spawns when the scoreboard has no row of its: high enough that
+/// nothing caps its lives (one fewer deaths, so its last life can survive).
+const UNCOUNTED: f64 = 1e9;
+
 /// What life assignment needs of each player, from the film: the roster, and
-/// each player's final deaths and spawns on the scoreboard.
-fn roster_entries(roster: &Roster, log: &crate::statlog::Log) -> Vec<RosterEntry> {
-    let last = |id: usize, slot: u32| {
-        log.changes.iter().rfind(|c| c.kind == 0 && c.id as usize == id && c.slot == slot).map(|c| c.value as f64)
+/// each player's deaths and spawns on the scoreboard. A player who leaves
+/// has their row cleared, so a count is its highest value. A bot that took
+/// a leaver's place can have no row at all; its lives are chained by time
+/// without a count.
+fn roster_entries(roster: &Roster, log: &crate::statlog::Log, hl_ticks: &[u32]) -> Vec<RosterEntry> {
+    let at = |f: i64| usize::try_from(f).ok().and_then(|f| hl_ticks.get(f)).map_or(0.0, |&t| t as f64);
+    let most = |id: usize, slot: u32| {
+        log.changes
+            .iter()
+            .filter(|c| c.kind == 0 && c.id as usize == id && c.slot == slot)
+            .map(|c| c.value)
+            .max()
+            .map(|v| v as f64)
     };
     let known = !log.changes.is_empty();
     roster
         .players
         .iter()
         .enumerate()
-        .map(|(i, p)| RosterEntry {
-            bot: p.bot.is_some(),
-            last_team_id: p.team.map(|t| t as f64),
-            xuid: p.xuid.map(|x| x.to_string()),
-            present_at_beginning: Some(p.present_at_start),
-            left_in_progress: Some(p.left.is_some()),
-            deaths: last(i, DEATHS_SLOT).or(known.then_some(0.0)),
-            spawns: last(i, SPAWNS_SLOT).or(known.then_some(0.0)),
+        .map(|(i, p)| {
+            let has_row = log.changes.iter().any(|c| c.kind == 0 && c.id as usize == i);
+            let uncounted = known && p.bot.is_some() && !has_row;
+            RosterEntry {
+                bot: p.bot.is_some(),
+                last_team_id: p.team.map(|t| t as f64),
+                xuid: p.xuid.map(|x| x.to_string()),
+                present_at_beginning: Some(p.present_at_start),
+                left_in_progress: Some(p.left.is_some()),
+                deaths: if uncounted { Some(UNCOUNTED - 1.0) } else { most(i, DEATHS_SLOT).or(known.then_some(0.0)) },
+                spawns: if uncounted { Some(UNCOUNTED) } else { most(i, SPAWNS_SLOT).or(known.then_some(0.0)) },
+                listed: uncounted.then(|| (p.first.map_or(0.0, at), p.left.map_or(f64::INFINITY, at))),
+            }
         })
         .collect()
 }
@@ -372,11 +390,24 @@ fn game_events(film: &Container, w: [u32; 3], c: Option<&Calibration>, holders: 
             let players = (0..32)
                 .filter(|p| g.last & (0x8000_0000u32 >> p) != 0)
                 .fold(0u32, |m, p| m | 0x8000_0000u32 >> (holders.api(p, frame as i64) & 31));
+            let arguments = g
+                .extra
+                .iter()
+                .flat_map(|x| x.1.iter().flatten())
+                .map(|&a| match a {
+                    Param::None => GameEventArgument::Empty,
+                    Param::Player(p) => GameEventArgument::Player(
+                        p.and_then(|p| u8::try_from(holders.api(p, frame as i64)).ok()).map(PlayerId),
+                    ),
+                    Param::Word(kind, value) => GameEventArgument::Word { kind, value },
+                })
+                .collect();
             let event = GameEvent {
                 id: g.id,
                 small: g.small,
                 values,
                 text: g.extra.map(|x| x.0),
+                arguments,
                 players: PlayerMask(players),
             };
             out.push((frame as i64, event));
@@ -558,7 +589,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let splashes = walk.map(|_| crate::splash::finish(splash_seen)).unwrap_or_default();
     let deploys = walk.map(|_| crate::deploys::finish(deploys_seen)).unwrap_or_default();
     let attachments = walk.map(|_| crate::attach::finish(attach_seen));
-    let entries = roster_entries(&roster, &stat_log);
+    let entries = roster_entries(&roster, &stat_log, &crate::lives::highlight_ticks(film.frame_ticks()));
     let xuids: Vec<String> = roster.players.iter().map(|p| p.xuid.map(|x| x.to_string()).unwrap_or_default()).collect();
     let ex = extract_all_player_positions(
         &film,
@@ -1278,6 +1309,14 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                             .iter()
                             .filter_map(|(&p, series)| Some((pid(p as i32)?, series.get(k).copied().flatten()?)))
                             .collect(),
+                        rows: g
+                            .players
+                            .iter()
+                            .filter_map(|(&p, series)| Some((StatOwner::Player(pid(p as i32)?), series.get(k)?.to_vec())))
+                            .chain(g.teams.iter().filter_map(|(&t, series)| {
+                                Some((StatOwner::Team(TeamId(u8::try_from(t).ok()?)), series.get(k)?.to_vec()))
+                            }))
+                            .collect(),
                     })
                     .collect()
             }
@@ -1431,6 +1470,11 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         raw: film,
         params,
         has_highlights,
+        encoding: match layout.mode {
+            EncodingMode::PerEntity => crate::format::Encoding::PerEntity,
+            EncodingMode::BotComposite => crate::format::Encoding::BotComposite,
+            EncodingMode::MultiplayerComposite => crate::format::Encoding::Composite,
+        },
         header,
         clock,
         players,

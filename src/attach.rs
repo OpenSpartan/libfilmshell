@@ -38,10 +38,23 @@ pub struct Span {
     pub vehicle: i32,
     /// The seat, when the parent state names one.
     pub seat: Option<u32>,
+    /// How the span ended (read by surveys only).
+    #[cfg_attr(not(feature = "research"), allow(dead_code))]
+    pub end: End,
     /// A biped any of whose updates lists actor control: AI (a bot,
     /// Firefight AI, a dropship's pilot). Seated, AI sends stubs like a
     /// player, so one update is the test.
     pub ai: bool,
+}
+
+/// How a span ended: detached, attached to another parent or seat,
+/// deleted, or the film ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum End {
+    Detach,
+    Change,
+    Delete,
+    Film,
 }
 
 #[derive(Debug, Default)]
@@ -72,11 +85,11 @@ fn slot(index: u32, generation: u32) -> Option<i32> {
 }
 
 impl Seen {
-    fn close(&mut self, key: (u32, u32), o: (i64, i32, Option<u32>), to: i64) {
+    fn close(&mut self, key: (u32, u32), o: (i64, i32, Option<u32>), to: i64, end: End) {
         let biped = BIPEDS.contains(&key.0);
         let id = if biped { slot(key.0, key.1) } else { crate::vehicles::id(key.0, key.1) };
         let Some(id) = id else { return };
-        let s = Span { id, from: o.0, to, vehicle: o.1, seat: o.2, ai: false };
+        let s = Span { id, from: o.0, to, vehicle: o.1, seat: o.2, end, ai: false };
         if biped {
             self.out.bipeds.push(s);
         } else {
@@ -112,7 +125,7 @@ pub fn reader(actor_control: u32, seen: &mut Seen) -> impl FnMut(usize, &[u8], &
                 },
                 OpKind::Delete => {
                     if let Some(o) = seen.open.remove(&key) {
-                        seen.close(key, o, frame);
+                        seen.close(key, o, frame, End::Delete);
                     }
                     continue;
                 }
@@ -129,7 +142,7 @@ pub fn reader(actor_control: u32, seen: &mut Seen) -> impl FnMut(usize, &[u8], &
                 continue;
             }
             if let Some(o) = seen.open.remove(&key) {
-                seen.close(key, o, frame - 1);
+                seen.close(key, o, frame - 1, if now.is_some() { End::Change } else { End::Detach });
             }
             if let Some((v, seat)) = now {
                 seen.open.insert(key, (frame, v, seat));
@@ -144,7 +157,7 @@ pub fn finish(mut seen: Seen) -> Attachments {
     rest.sort_by_key(|x| x.0);
     let last = seen.last;
     for (key, o) in rest {
-        seen.close(key, o, last);
+        seen.close(key, o, last, End::Film);
     }
     let mut out = seen.out;
     for s in out.bipeds.iter_mut() {
@@ -180,7 +193,7 @@ mod tests {
     use super::*;
 
     fn span(id: i32, from: i64, to: i64, vehicle: i32) -> Span {
-        Span { id, from, to, vehicle, seat: None, ai: false }
+        Span { id, from, to, vehicle, seat: None, end: End::Detach, ai: false }
     }
 
     #[test]

@@ -336,3 +336,23 @@ fn rides_come_from_the_parent_state() {
     }
     assert!(exits > 0 && inside == exits, "{inside} of {exits} exits end a ride");
 }
+
+/// Every death a player's HighlightEvents records is a life of theirs that
+/// ended in one, players who left included (their scoreboard row is cleared).
+#[test]
+fn lives_end_in_the_recorded_deaths() {
+    let (mut players, mut agree) = (0usize, 0usize);
+    for (_, f) in corpus() {
+        if f.scoreboard().changes.is_empty() {
+            continue;
+        }
+        for p in f.players().iter().filter(|p| !p.is_bot()) {
+            let recorded =
+                f.highlights().iter().filter(|h| h.player == Some(p.id) && h.kind == HighlightKind::Death).count();
+            let died = f.lives_of(p.id).filter(|l| l.died).count();
+            players += 1;
+            agree += usize::from(died == recorded);
+        }
+    }
+    assert!(agree * 100 >= players * 97, "{agree} of {players} players");
+}

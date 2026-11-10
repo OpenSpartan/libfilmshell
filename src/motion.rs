@@ -1019,13 +1019,18 @@ fn stitch_small_lobby(
         if samples.is_empty() {
             continue;
         }
+        // Each linked life is one life of the player's, so its deaths
+        // (`deaths`, by slot) end them.
+        let positions = sort_to_motion_points(samples);
+        let frames: Vec<&Vec<RawSample>> = st.lives.iter().map(|&li| &lives[li].samples).collect();
+        let life_starts = life_start_indexes(&positions, &frames);
         out.push(PlayerPath {
             player_index: ri as i32,
             is_bot: is_bot_entry(ri),
             team_id: roster[ri].last_team_id,
-            positions: sort_to_motion_points(samples),
-            life_slots: None,
-            life_starts: None,
+            positions,
+            life_slots: Some(st.lives.iter().map(|&li| lives[li].id).collect()),
+            life_starts: Some(life_starts),
         });
     }
     out
@@ -1064,6 +1069,7 @@ fn life_players_of(roster: &[RosterEntry], highlights: &[HighlightEvent], xuids:
             present_at_start: r.present_at_beginning.unwrap_or(true),
             left: r.left_in_progress.unwrap_or(false),
             death_ms: times.filter(|t| t.len() as f64 == deaths),
+            listed: r.listed,
         });
     }
     Some(out)

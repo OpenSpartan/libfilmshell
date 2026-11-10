@@ -12,6 +12,7 @@ pub struct Film {
     pub(crate) raw: crate::container::Film,
     pub(crate) params: Option<crate::components::Params>,
     pub(crate) has_highlights: bool,
+    pub(crate) encoding: crate::format::Encoding,
     pub(crate) header: Header,
     pub(crate) clock: Clock,
     pub(crate) players: Vec<Player>,
@@ -272,6 +273,6 @@ impl Film {
 
     /// The film's raw layers: chunks, packets, frames.
     pub fn raw(&self) -> crate::format::Raw<'_> {
-        crate::format::Raw::new(&self.raw, self.has_highlights, self.params)
+        crate::format::Raw::new(&self.raw, self.has_highlights, self.params, self.encoding)
     }
 }
