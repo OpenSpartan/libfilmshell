@@ -55,14 +55,29 @@ impl ChunkKind {
     }
 }
 
+impl std::fmt::Display for ChunkKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ChunkKind::Header => "header",
+            ChunkKind::Replay => "replay",
+            ChunkKind::Highlights => "highlights",
+        })
+    }
+}
+
 /// The type of a replay chunk's first packet.
 const REPLAY_FIRST: u16 = 1;
 /// The type of the highlights chunk's first packet.
 const HIGHLIGHTS_FIRST: u16 = 9;
 
-/// The most bytes a compressed chunk may inflate to: 256 MiB, about a
-/// hundred times the largest real chunk.
+/// The most bytes one chunk may hold once inflated: 256 MiB, about a hundred
+/// times the largest real chunk.
 pub const MAX_CHUNK_BYTES: usize = 256 << 20;
+
+/// The most bytes a film's chunks may hold together once inflated: 1 GiB,
+/// about ten times the largest real film. Reading a film takes several
+/// times its inflated size in memory.
+pub const MAX_FILM_BYTES: usize = 1 << 30;
 
 /// One chunk of a film: its index in the manifest, its kind, and its bytes,
 /// either as downloaded (zlib) or already inflated.
@@ -86,7 +101,25 @@ impl<'a> Chunk<'a> {
     /// `filmChunk{N}_dec` inflated, `name` the file's name without its
     /// folder. The index comes from the name and the kind from the bytes
     /// ([`ChunkKind::detect`]); compressed bytes are inflated here. None
-    /// when the name isn't a chunk's or the bytes are no chunk of a film.
+    /// when the name isn't a chunk's, the bytes don't inflate or inflate past
+    /// [`MAX_CHUNK_BYTES`], or they are no chunk of a film.
+    ///
+    /// Reading a film saved as a folder of chunk files:
+    ///
+    /// ```no_run
+    /// use filmshell::{Chunk, Film};
+    ///
+    /// let mut chunks = Vec::new();
+    /// for entry in std::fs::read_dir("path/to/film")? {
+    ///     let path = entry?.path();
+    ///     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+    ///     if name.starts_with("filmChunk") {
+    ///         chunks.extend(Chunk::from_file(name, std::fs::read(&path)?));
+    ///     }
+    /// }
+    /// let film = Film::from_chunks(chunks)?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn from_file(name: &str, data: impl Into<Cow<'a, [u8]>>) -> Option<Chunk<'a>> {
         let digits = name.strip_prefix("filmChunk")?;
         let digits = digits.strip_suffix("_dec").unwrap_or(digits);

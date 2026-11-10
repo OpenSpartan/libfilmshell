@@ -21,7 +21,7 @@ pub struct Creation {
 }
 
 /// `[1]` and an 8-bit version, else `default`.
-fn version(r: &mut Bits, default: u32) -> u32 {
+fn version(r: &mut Bits<'_>, default: u32) -> u32 {
     if r.flag() {
         r.bits(8)
     } else {
@@ -29,21 +29,21 @@ fn version(r: &mut Bits, default: u32) -> u32 {
     }
 }
 
-fn opt_tag(r: &mut Bits) {
+fn opt_tag(r: &mut Bits<'_>) {
     if r.flag() {
         r.bits(32);
     }
 }
 
 /// `[1]` none, else a 5-bit player index.
-fn player(r: &mut Bits) {
+fn player(r: &mut Bits<'_>) {
     if !r.flag() {
         r.bits(5);
     }
 }
 
 /// The block every object opens with.
-fn common(r: &mut Bits, c: &mut Creation) -> Option<()> {
+fn common(r: &mut Bits<'_>, c: &mut Creation) -> Option<()> {
     r.bits(9);
     c.tag = r.bits(32);
     if !r.flag() {
@@ -82,7 +82,7 @@ fn common(r: &mut Bits, c: &mut Creation) -> Option<()> {
 }
 
 /// The item reader, which weapons and equipment open with.
-fn item(r: &mut Bits, c: &mut Creation) -> Option<()> {
+fn item(r: &mut Bits<'_>, c: &mut Creation) -> Option<()> {
     version(r, 0);
     common(r, c)
 }
@@ -95,7 +95,7 @@ pub enum Form {
     Tick(crate::events::Layout),
 }
 
-fn position(r: &mut Bits, form: Form) {
+fn position(r: &mut Bits<'_>, form: Form) {
     match form {
         Form::Snapshot => r.at += 96,
         Form::Tick(widths) => r.pos(widths, 16),
@@ -103,7 +103,7 @@ fn position(r: &mut Bits, form: Form) {
 }
 
 /// `[1]` a count (4 bits) of optional tags, else one optional tag.
-fn tag_list(r: &mut Bits) {
+fn tag_list(r: &mut Bits<'_>) {
     if r.flag() {
         for _ in 0..r.bits(4) {
             opt_tag(r);
@@ -121,6 +121,15 @@ pub fn property_bits(kind: u32) -> u32 {
         3 | 7 => 24,
         _ => 32,
     }
+}
+
+/// The participant (engine player id) a managed player's creation data at
+/// `at` names: `[version][participant:6][6][1]`, the participant below 32
+/// (reader `1410d7540`).
+pub fn managed_player_participant(data: &[u8], at: i64) -> Option<u32> {
+    let mut r = Bits { c: data, at };
+    version(&mut r, 0);
+    Some(r.bits(6)).filter(|&p| p < 32)
 }
 
 /// The bit after a non-object entity's creation data; None for an object

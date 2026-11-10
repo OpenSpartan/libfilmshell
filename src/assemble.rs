@@ -89,6 +89,16 @@ fn place(bx: u32, q: [u32; 3], w: [u32; 3], c: &Calibration, level: Option<&Leve
     Some((-c.scale_x * raw2 + c.offset_x, c.scale_y * raw1 + c.offset_y))
 }
 
+/// A mask of engine player ids (bit 31 - id) as a mask of the player indices
+/// that held them at `frame`.
+fn players_mask(holders: &Holders, mask: u32, frame: i64) -> u32 {
+    (0..32u32)
+        .filter(|p| mask & (0x8000_0000 >> p) != 0)
+        .map(|p| holders.api(p, frame))
+        .filter(|&i| i < 32)
+        .fold(0, |m, i| m | 0x8000_0000 >> i)
+}
+
 fn window_to_world(q: [u32; 3], w: [u32; 3], c: &Calibration) -> (f64, f64) {
     let raw1 = q[0] as f64 * 2f64.powi(15 - w[0] as i32);
     let raw2 = q[1] as f64 * 2f64.powi(15 - w[1] as i32);
@@ -135,6 +145,8 @@ fn level_box(header: &crate::header::Header, hints: &Hints) -> (Option<LevelBox>
         let level = Level {
             id: TagId(id.unwrap_or(0)),
             name: "",
+            display_name: None,
+            api_id: None,
             structure: TagId(0),
             play: game::LevelBox { index: 0, min: b.min, max: b.max, widths },
             index_bits: 1,
@@ -413,9 +425,7 @@ fn game_events(film: &Container, p: &Params, c: Option<&Calibration>, holders: &
                     (k, v)
                 })
                 .collect();
-            let players = (0..32)
-                .filter(|p| g.last & (0x8000_0000u32 >> p) != 0)
-                .fold(0u32, |m, p| m | 0x8000_0000u32 >> (holders.api(p, frame as i64) & 31));
+            let players = players_mask(holders, g.last, frame as i64);
             let arguments = g
                 .extra
                 .iter()
@@ -469,7 +479,7 @@ fn medal_clock(medals: &[(i32, f64)], events: &[(i64, u32)], hl_ticks: &[u32]) -
         d.sort_by(f64::total_cmp);
         offsets.push(d);
     }
-    let (&peak, &n) = votes.iter().max_by_key(|(&b, &n)| (n, std::cmp::Reverse(b)))?;
+    let (&peak, &n) = votes.iter().max_by_key(|&(&b, &n)| (n, std::cmp::Reverse(b)))?;
     if n < 3 || 2 * n < medals.len() {
         return None;
     }
@@ -497,7 +507,7 @@ fn mark_headshots(events: &mut [TimedEvent]) {
     let shots: Vec<(Tick, PlayerId)> = events
         .iter()
         .filter_map(|e| match e.event {
-            Event::Headshot(p) => Some((e.tick, p)),
+            Event::Headshot { player } => Some((e.tick, player)),
             _ => None,
         })
         .collect();
@@ -591,6 +601,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let mut deploys_seen = crate::deploys::Seen::default();
     let mut attach_seen = crate::attach::Seen::default();
     let mut controls = crate::owners::Controls::new();
+    let mut designators = crate::teams::Designators::default();
     if let Some(p) = walk {
         let actor_control = crate::registry::Schema::read(&film.chunks[0]).biped.actor_control;
         vitals_marks = Vitals::start(&film, &p, level);
@@ -608,10 +619,14 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 &mut crate::deploys::reader(&mut deploys_seen),
                 &mut crate::attach::reader(actor_control, &mut attach_seen),
                 &mut crate::owners::reader(&mut controls),
+                &mut crate::teams::reader(&mut designators),
             ],
         );
         crate::statlog::finish(&mut stat_log);
         vehicle_ident.finish(&film, p);
+        // Teams for the players HighlightEvents doesn't give one: bots, and
+        // people without records.
+        crate::teams::assign(&mut roster, &crate::teams::finish(&film, designators));
     }
     let vitals = walk.map(|_| Vitals::finish(vitals_marks));
     let splashes = walk.map(|_| crate::splash::finish(splash_seen)).unwrap_or_default();
@@ -634,7 +649,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let paths = &ex.paths;
 
     // Spawn pads from the hints anchor fitted coordinates.
-    let pads: Vec<Pad> = hints.spawn_pads.iter().map(|p| Pad { x: p.position.x, y: p.position.y }).collect();
+    let pads: Vec<Pad> = hints.usable_pads().map(|(_, p)| Pad { x: p.position.x, y: p.position.y }).collect();
     let bounds = (!pads.is_empty()).then(|| {
         let (mut min_x, mut max_x, mut min_y, mut max_y) =
             (f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY);
@@ -803,12 +818,13 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 }
                 _ => named,
             };
+            let (killer, assistant) = (killer.and_then(|k| pid(k as i32)), assistant.and_then(|a| pid(a as i32)));
             let kill = Kill {
                 victim,
-                killer: killer.and_then(|k| pid(k as i32)),
-                killer_damage_percent: d.killer_percent,
-                assistant: assistant.and_then(|a| pid(a as i32)),
-                assistant_damage_percent: d.assistant_percent,
+                killer,
+                killer_damage_percent: killer.map(|_| d.killer_percent),
+                assistant,
+                assistant_damage_percent: assistant.map(|_| d.assistant_percent),
                 suicide: d.suicide,
                 headshot: None,
                 scored: scored(victim, frame),
@@ -849,11 +865,12 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         for (k, exits) in ff.exits.iter().enumerate() {
             let Some(player) = pid(paths[k].player_index) else { continue };
             for &(frame, v, seat) in exits {
-                events.push((frame, Event::VehicleExit(VehicleExit { player, vehicle: v as u16, seat })));
+                events.push((frame, Event::VehicleExit(VehicleExit { player, vehicle: EntityId(v as u16), seat })));
             }
         }
         for &(frame, sound, mask) in &ff.voice {
-            events.push((frame, Event::VoiceLine(VoiceLine { sound: TagId(sound), recipients: PlayerMask(mask) })));
+            let recipients = PlayerMask(players_mask(&holders, mask, frame));
+            events.push((frame, Event::VoiceLine(VoiceLine { sound: TagId(sound), recipients })));
         }
         for &(frame, k, sound, priority, line) in &ff.chatter {
             let speaker = usize::try_from(k).ok().and_then(|k| pid(paths[k].player_index));
@@ -889,7 +906,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         }
         for &(frame, pi) in &a.headshots {
             if let Some(p) = pid(pi) {
-                events.push((frame, Event::Headshot(p)));
+                events.push((frame, Event::Headshot { player: p }));
             }
         }
     }
@@ -1038,7 +1055,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                         capturing: team(s.capturing),
                         progress: s.progress,
                         contested: s.contested,
-                        inside: PlayerMask(s.inside & on_roster),
+                        inside: PlayerMask(players_mask(&holders, s.inside, s.frame) & on_roster),
                     })
                     .collect();
                 states.dedup_by(|b, a| {
@@ -1046,9 +1063,11 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                         == (b.owner, b.capturing, b.progress, b.contested, b.inside)
                 });
                 let shape = o.shape.map(|s| ZoneShape {
-                    cylinder: s.cylinder,
-                    a: s.a,
-                    b: s.b,
+                    area: if s.cylinder {
+                        ZoneArea::Cylinder { radius: s.a }
+                    } else {
+                        ZoneArea::Box { length: s.a, width: s.b }
+                    },
                     top: s.top,
                     bottom: s.bottom,
                     angle: s.angle,
@@ -1137,7 +1156,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         vehicles = tracks
             .into_iter()
             .map(|(id, tag, pts)| Vehicle {
-                entity: id as u16,
+                entity: EntityId(id as u16),
                 tag: TagId(tag),
                 track: pts.iter().map(|p| (tick(p.frame), Position::new(p.x, p.y))).collect(),
             })
@@ -1224,7 +1243,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         health: st.and_then(|s| s.health),
         shield: st.and_then(|s| s.shield),
         in_vehicle: p.in_vehicle,
-        vehicle: u16::try_from(p.vehicle).ok(),
+        vehicle: u16::try_from(p.vehicle).ok().map(EntityId),
     };
     let deaths = match &ex.deaths {
         Some(d) => d.clone(),
@@ -1242,7 +1261,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 .map(|i| sample(&p.positions[i], calib.as_ref().and(wp.positions.get(i)), wp.states.get(i)))
                 .collect();
             let slot = p.life_slots.as_ref().and_then(|s| s.get(k)).copied();
-            let entity = slot.and_then(|s| u16::try_from(s).ok());
+            let entity = slot.and_then(|s| u16::try_from(s).ok()).map(EntityId);
             let died = slot.is_some_and(|s| deaths.iter().any(|d| d.slot_id == s));
             lives.push(Life { player: pid(p.player_index), entity, died, death: None, samples });
         }
@@ -1313,6 +1332,12 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             .iter()
             .map(|&(f, percent, recharge_delay)| EquipmentCharge { tick: tick(f), percent, recharge_delay })
             .collect();
+        s.weapons = a
+            .weapons
+            .iter()
+            .map(|&(f, slot, w)| WeaponSlot { tick: tick(f), slot, weapon: w.map(TagId) })
+            .collect();
+        s.held = a.held.iter().map(|&(f, slot)| HeldSlot { tick: tick(f), slot }).collect();
     }
 
     let scoreboard = Scoreboard {
@@ -1391,12 +1416,12 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             random: v.loadout_random,
             equipment: v.equipment.map(TagId),
         },
-        settings: v.rules,
-        flags: v.flags,
+        settings: v.rules.into_iter().map(|(k, x)| (k.to_string(), x)).collect(),
+        flags: v.flags.into_iter().map(str::to_string).collect(),
         options: v
             .options
             .iter()
-            .map(|&(hash, value)| VariantOption { hash, name: game::option_name(hash), value })
+            .map(|&(hash, value)| VariantOption { hash, name: game::option_name(hash).map(str::to_string), value })
             .collect(),
         scripts: scripts.iter().cloned().collect(),
         stat_settings: crate::variant_stats::read(&film.chunks[0]).map(|d| StatSettings {
@@ -1408,8 +1433,8 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                     id: s.id,
                     base: s.base,
                     aggregation: s.aggregation,
-                    sort: s.sort,
-                    display: s.display,
+                    lower_is_better: s.sort == -1,
+                    display: StatDisplay::from_game(s.display),
                     precision: s.precision,
                 })
                 .collect(),
@@ -1449,19 +1474,18 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                     rounds_per_second: s.rounds_per_second,
                     burst: s.burst,
                     magazine: s.magazine,
-                    velocity: s.velocity,
-                    range: s.range,
+                    // Engine units to world units, as positions are.
+                    velocity: s.velocity.map(|v| v * 10.0),
+                    range: s.range.map(|r| r * 10.0),
                     damage: s.damage,
                     hits_to_kill: s.hits_to_kill,
                 })
             })
             .collect()
     });
-    let spawn_factors = if composite && calib.is_some() && !hints.spawn_pads.is_empty() {
+    let spawn_factors = if composite && calib.is_some() && hints.usable_pads().next().is_some() {
         let pads: Vec<crate::spawns::Pad> = hints
-            .spawn_pads
-            .iter()
-            .enumerate()
+            .usable_pads()
             .map(|(index, p)| crate::spawns::Pad {
                 index,
                 x: p.position.x,
@@ -1471,7 +1495,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 team: p.team.map(|t| t.0 as i64),
             })
             .collect();
-        let tracks: Vec<crate::spawns::WorldTrack> = world
+        let tracks: Vec<crate::spawns::WorldTrack<'_>> = world
             .iter()
             .map(|w| crate::spawns::WorldTrack { positions: &w.positions, z: w.states.iter().map(|s| s.z).collect() })
             .collect();
@@ -1559,9 +1583,9 @@ mod tests {
             Event::Kill(Kill {
                 victim: PlayerId(9),
                 killer: Some(PlayerId(killer)),
-                killer_damage_percent: 100,
+                killer_damage_percent: Some(100),
                 assistant: None,
-                assistant_damage_percent: 0,
+                assistant_damage_percent: None,
                 suicide: false,
                 headshot: None,
                 scored: None,
@@ -1573,11 +1597,11 @@ mod tests {
         let at = |t: u32, event: Event| TimedEvent { tick: Tick(t), event };
         let mut events = vec![
             at(100, kill(1)),
-            at(101, Event::Headshot(PlayerId(1))),
-            at(200, Event::Headshot(PlayerId(2))),
+            at(101, Event::Headshot { player: PlayerId(1) }),
+            at(200, Event::Headshot { player: PlayerId(2) }),
             at(200, kill(1)),
             at(300, kill(3)),
-            at(400, Event::Headshot(PlayerId(4))),
+            at(400, Event::Headshot { player: PlayerId(4) }),
         ];
         mark_headshots(&mut events);
         let marks: Vec<Option<bool>> = events

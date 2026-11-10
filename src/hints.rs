@@ -2,7 +2,7 @@ use crate::{Position, TagId, TeamId};
 
 /// A spawn point of the map variant, which the film doesn't carry. Spawn
 /// points let the library fit coordinates on a level it has no box for, and
-/// explain respawns (`analysis::spawn_factors`).
+/// explain respawns ([`analysis::spawn_factors`](crate::analysis::spawn_factors)).
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct SpawnPad {
@@ -15,9 +15,19 @@ pub struct SpawnPad {
 }
 
 impl SpawnPad {
-    /// A spawn point at `position`.
+    /// A spawn point at `position`: a respawn point, else an initial one.
     pub fn new(position: Position, respawn: bool) -> SpawnPad {
         SpawnPad { position, respawn, team: None }
+    }
+
+    /// An initial spawn point at `position`.
+    pub fn initial(position: Position) -> SpawnPad {
+        SpawnPad::new(position, false)
+    }
+
+    /// A respawn point at `position`.
+    pub fn respawn(position: Position) -> SpawnPad {
+        SpawnPad::new(position, true)
     }
 
     /// The same point reserved for `team`.
@@ -27,8 +37,12 @@ impl SpawnPad {
     }
 }
 
-/// A level's play-space box in engine units, for a level the catalogue
-/// lacks.
+/// A level's play-space box for a level not in
+/// [`game::levels`](crate::game::levels), as the game's files hold it: in
+/// engine units, `[x, y, z]` with `z` up. World positions are ten times
+/// engine units with the horizontal axes turned: world x is `-10 * y`,
+/// world y is `10 * x`. The widths of the film's position fields follow
+/// from the box.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LevelBounds {
     /// The low corner.
@@ -39,12 +53,21 @@ pub struct LevelBounds {
 
 /// What the film can't tell the library, when the caller knows it.
 ///
-/// ```
-/// use filmshell::{Hints, Position, SpawnPad, TagId};
+/// A film on a Forge map built on a level the catalogue lacks has no
+/// quantization box; the map variant's spawn points let the library fit
+/// one, and explain each respawn:
 ///
-/// let hints = Hints::new()
-///     .level(TagId(0xa0bf5c4a))
-///     .spawn_pads([SpawnPad::new(Position::new(12.0, -40.5), false)]);
+/// ```no_run
+/// use filmshell::{Chunk, Film, Hints, Position, SpawnPad};
+///
+/// # let chunks: Vec<Chunk> = Vec::new();
+/// // Spawn points from the map variant, in world units.
+/// let pads = [
+///     SpawnPad::initial(Position::new(12.0, -40.5)),
+///     SpawnPad::respawn(Position::new(-30.2, 18.0)),
+/// ];
+/// let film = Film::from_chunks_with(chunks, &Hints::new().spawn_pads(pads))?;
+/// # Ok::<(), filmshell::Error>(())
 /// ```
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Hints {
@@ -66,15 +89,33 @@ impl Hints {
         self
     }
 
-    /// The level's play-space box, in place of the catalogue's.
+    /// The level's play-space box, in place of the catalogue's. A box whose
+    /// corners aren't finite, or whose low corner isn't below its high one,
+    /// is ignored.
     pub fn level_bounds(mut self, bounds: LevelBounds) -> Hints {
-        self.level_bounds = Some(bounds);
+        let ok = (0..3).all(|i| {
+            let (lo, hi) = (bounds.min[i], bounds.max[i]);
+            lo.is_finite() && hi.is_finite() && lo < hi && hi - lo < 1e6
+        });
+        self.level_bounds = ok.then_some(bounds);
         self
     }
 
-    /// The map variant's spawn points.
+    /// The map variant's spawn points, in an order of the caller's:
+    /// [`SpawnFactor::pad`](crate::analysis::SpawnFactor::pad) indexes them.
+    /// Points whose coordinates aren't finite or lie more than a million
+    /// world units out are kept in the order but never used.
     pub fn spawn_pads(mut self, pads: impl IntoIterator<Item = SpawnPad>) -> Hints {
         self.spawn_pads = pads.into_iter().collect();
         self
+    }
+
+    /// The spawn points the library uses, with their indices in the hints.
+    pub(crate) fn usable_pads(&self) -> impl Iterator<Item = (usize, &SpawnPad)> + '_ {
+        let sane = |v: f64| v.is_finite() && v.abs() <= 1e6;
+        self.spawn_pads
+            .iter()
+            .enumerate()
+            .filter(move |(_, p)| sane(p.position.x) && sane(p.position.y) && p.position.z.is_none_or(sane))
     }
 }

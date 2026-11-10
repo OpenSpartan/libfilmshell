@@ -266,6 +266,10 @@ fn pad_coverage(pts: &[Sample], pads: &[Pad], f: &WindowCalibration) -> f64 {
     }
     let mut ds: Vec<f64> = Vec::new();
     for p in pads {
+        // Coordinates past any map's would overflow the cell arithmetic.
+        if !(p.x.abs() < 1e9 && p.y.abs() < 1e9) {
+            continue;
+        }
         let (ci, cj) = ((p.x / cell).floor() as i64, (p.y / cell).floor() as i64);
         let mut best = 60.0f64;
         let mut r = 0i64;

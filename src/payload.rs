@@ -37,6 +37,7 @@ use std::collections::HashMap;
 
 /// Entity types (registry blocks) the walker names.
 pub const HIGH_FREQUENCY: u32 = 4;
+pub const MANAGED_PLAYER: u32 = 9;
 pub const BIPED: u32 = 35;
 pub const VEHICLE: u32 = 40;
 /// First and last registry block of an object type.
@@ -109,6 +110,8 @@ pub struct EntityOp {
     /// A projectile create's player index and shooter's unit, when it names
     /// them.
     pub shooter: (Option<u32>, Option<Handle>),
+    /// A managed player's create: the participant it stands for.
+    pub participant: Option<u32>,
 }
 
 /// One payload as far as it could be read.
@@ -168,6 +171,7 @@ fn non_object_width(entity_type: u32, component: u32) -> Option<u32> {
 
 /// Reads payloads in film order, keeping each entity's type from the
 /// creates it has seen.
+#[derive(Debug)]
 pub struct Walker {
     /// Component tables by entity type (registry block).
     tables: Vec<Table>,
@@ -290,6 +294,7 @@ impl Walker {
         let index = r.bits(INDEX_BITS);
         let generation = r.bits(2);
         let shooter = std::cell::Cell::new((None, None));
+        let participant = std::cell::Cell::new(None);
         let mut push = |entity_type, kind| {
             ops.push(EntityOp {
                 at: index_at,
@@ -299,6 +304,7 @@ impl Walker {
                 kind,
                 init: None,
                 shooter: shooter.get(),
+                participant: participant.get(),
             })
         };
         match op {
@@ -314,6 +320,9 @@ impl Walker {
                 }
                 self.types.insert(index, t);
                 if !(FIRST_OBJECT..=LAST_OBJECT).contains(&t) {
+                    if t == MANAGED_PLAYER {
+                        participant.set(creation::managed_player_participant(c, r.at));
+                    }
                     push(Some(t), OpKind::Create { tag: None });
                     let Some(end) = creation::manager_end(c, r.at, t) else {
                         return Err(Stop::CreateTail(t));
@@ -502,7 +511,7 @@ fn create_fits(index: u32, t: u32) -> bool {
 
 /// A list of components: `[form:1]`; 0: a 3-bit count and that
 /// many 6-bit indices; 1: a 64-bit mask, bit i for component i.
-fn listed_components(r: &mut Bits) -> Vec<u32> {
+fn listed_components(r: &mut Bits<'_>) -> Vec<u32> {
     if r.flag() {
         let mask = ((r.bits(32) as u64) << 32) | r.bits(32) as u64;
         (0..64).filter(|i| mask >> i & 1 == 1).collect()
@@ -514,7 +523,7 @@ fn listed_components(r: &mut Bits) -> Vec<u32> {
 
 /// An update's component list after its index and generation: `[baseline:1]`
 /// (7 more bits when set), then the list, strictly increasing and not empty.
-fn component_list(r: &mut Bits) -> Result<Vec<u32>, Stop> {
+fn component_list(r: &mut Bits<'_>) -> Result<Vec<u32>, Stop> {
     if r.flag() {
         r.bits(7);
     }
@@ -779,6 +788,32 @@ mod tests {
         let frames = film.frames().count();
         assert!(ticks * 100 >= frames * 99, "{ticks} of {frames}");
         assert_eq!(fire, 2854);
+    }
+
+    /// A grapple whose target is an object reads on to the payload's end:
+    /// the object's handle is 13 bits and the generation.
+    #[test]
+    fn grapples_at_objects_read_through() {
+        let mut grapples = 0;
+        for prefix in ["c3790060", "de65111b", "f0eca791"] {
+            let Some(chunks) = crate::testing::chunks(prefix) else { continue };
+            let film = Film::new(chunks, crate::container::Framing::Packets);
+            let level = crate::header::read(&film.chunks[0]).level.and_then(crate::levels::level).unwrap();
+            let mut params = Params::new(level.widths);
+            params.set_level(Some(level));
+            let mut w = Walker::new(&film.chunks[0], params);
+            for_each_payload(&film, &mut w, |frame, p| {
+                let grapple = |o: &EntityOp| match &o.kind {
+                    OpKind::Update { fields, .. } => fields.grapple_object,
+                    _ => false,
+                };
+                if p.ops.iter().any(grapple) {
+                    grapples += 1;
+                    assert_eq!(p.stop, None, "{prefix} frame {frame}");
+                }
+            });
+        }
+        assert!(crate::testing::film_dirs().is_empty() || grapples > 0);
     }
 
     #[test]

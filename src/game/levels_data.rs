@@ -1,7 +1,7 @@
 // Generated from the game's files. Do not edit by hand.
 
 use super::levels::{Level, LevelBox};
-use crate::TagId;
+use crate::{Guid, TagId};
 
 /// The game build the table was read from.
 pub(crate) const BUILD: &str = "269225.26.04.08.1618 HI_1_13_0";
@@ -11,6 +11,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0x054c5f41),
         name: "fo08_wetland",
+        display_name: None,
+        api_id: Some(Guid([0xc5, 0x5b, 0x56, 0xa2, 0xf4, 0xd4, 0x6c, 0x46, 0xac, 0x4a, 0x02, 0x4d, 0x97, 0xdb, 0x26, 0x7b])),
         structure: TagId(0xc4788676),
         play: LevelBox { index: 0, min: [-231.00145, -227.08232, -946.215], max: [231.63503, 226.34886, 242.32658], widths: [15, 15, 17] },
         index_bits: 1,
@@ -19,6 +21,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0x196b6b69),
         name: "fo11_blank",
+        display_name: None,
+        api_id: Some(Guid([0x7c, 0x24, 0x16, 0x12, 0x6d, 0xbf, 0x40, 0x47, 0x82, 0x70, 0xe8, 0x00, 0xa1, 0x14, 0xf2, 0x31])),
         structure: TagId(0x41e70245),
         play: LevelBox { index: 0, min: [-231.00145, -227.08232, -946.215], max: [231.63503, 226.34886, 242.32658], widths: [15, 15, 17] },
         index_bits: 1,
@@ -27,6 +31,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0x2faaa022),
         name: "btb_engine",
+        display_name: None,
+        api_id: Some(Guid([0x3b, 0x31, 0x7b, 0xf5, 0x12, 0x63, 0x7b, 0x40, 0xa2, 0x78, 0x67, 0xac, 0x3e, 0xd2, 0xa0, 0x13])),
         structure: TagId(0x03a36c15),
         play: LevelBox { index: 0, min: [-70.57142, -48.46288, -2.5e+02], max: [68.996315, 41.17087, 63.835415], widths: [14, 13, 15] },
         index_bits: 1,
@@ -35,6 +41,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0x309118e4),
         name: "academy_tutorial",
+        display_name: None,
+        api_id: Some(Guid([0x36, 0x2a, 0x22, 0x46, 0x6d, 0xf9, 0x47, 0x4c, 0xbc, 0xfb, 0xa8, 0x58, 0x61, 0x53, 0x17, 0x13])),
         structure: TagId(0xd88e1d88),
         play: LevelBox { index: 1, min: [-16.719454, -10.102863, -9.330649], max: [46.513535, 53.67172, 13.5679], widths: [12, 12, 11] },
         index_bits: 2,
@@ -43,6 +51,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0x3284b20e),
         name: "ctf_breaker",
+        display_name: None,
+        api_id: Some(Guid([0xb5, 0x80, 0xd8, 0xd4, 0xa2, 0x59, 0xbd, 0x41, 0x9c, 0x72, 0x70, 0xfd, 0xe4, 0xaa, 0xaf, 0x35])),
         structure: TagId(0x972c1649),
         play: LevelBox { index: 0, min: [-50.430653, -59.508266, -27.030104], max: [46.284206, 72.88043, 30.20305], widths: [13, 13, 12] },
         index_bits: 1,
@@ -51,6 +61,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0x4ab52f9b),
         name: "sgh_interlock",
+        display_name: Some("Live Fire"),
+        api_id: Some(Guid([0x2a, 0x5b, 0x3a, 0xdc, 0x0a, 0x18, 0x44, 0x45, 0x8b, 0xc1, 0xee, 0x4e, 0xa1, 0x33, 0x89, 0x00])),
         structure: TagId(0xd88e1d88),
         play: LevelBox { index: 1, min: [-16.719454, -10.102863, -9.330649], max: [46.513535, 53.67172, 13.5679], widths: [12, 12, 11] },
         index_bits: 2,
@@ -59,6 +71,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0x4bd5add2),
         name: "academy_weapon_drills",
+        display_name: None,
+        api_id: Some(Guid([0x1b, 0x63, 0x21, 0x19, 0xf2, 0x5c, 0xb3, 0x40, 0xb5, 0x0b, 0x20, 0xc1, 0xc8, 0x77, 0x11, 0x7d])),
         structure: TagId(0x2df7cb24),
         play: LevelBox { index: 0, min: [-7861.304, -7861.304, -7861.304], max: [7861.304, 7861.304, 7861.304], widths: [20, 20, 20] },
         index_bits: 1,
@@ -67,6 +81,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0x4c2a2491),
         name: "ctf_bazaar",
+        display_name: Some("Bazaar"),
+        api_id: Some(Guid([0x73, 0xa1, 0xdf, 0x1d, 0x44, 0xa5, 0xe6, 0x46, 0x9d, 0xae, 0x67, 0x1e, 0x7e, 0x36, 0x9a, 0x0c])),
         structure: TagId(0xc9e070a4),
         play: LevelBox { index: 0, min: [-973.866, -361.43918, -86.55155], max: [179.37695, 1047.0077, 489.09164], widths: [17, 17, 16] },
         index_bits: 1,
@@ -75,6 +91,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0x55b13968),
         name: "fo09_academy",
+        display_name: None,
+        api_id: Some(Guid([0x98, 0xfb, 0xba, 0xd3, 0x0b, 0x57, 0x71, 0x44, 0x87, 0x10, 0xf4, 0xc9, 0x2b, 0xe2, 0x3d, 0xf2])),
         structure: TagId(0x1add591b),
         play: LevelBox { index: 0, min: [-231.00145, -227.08232, -946.215], max: [231.63503, 226.34886, 242.32658], widths: [15, 15, 17] },
         index_bits: 1,
@@ -83,6 +101,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0x6b93fb9c),
         name: "fo05_desert",
+        display_name: None,
+        api_id: Some(Guid([0xed, 0xa5, 0x63, 0xb9, 0xd0, 0xa8, 0x75, 0x44, 0xa4, 0x7e, 0x67, 0x43, 0x0c, 0x56, 0xb3, 0xbd])),
         structure: TagId(0x49a5d986),
         play: LevelBox { index: 0, min: [-231.00145, -227.08232, -946.215], max: [231.63503, 226.34886, 242.32658], widths: [15, 15, 17] },
         index_bits: 1,
@@ -91,6 +111,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0x75430787),
         name: "chasm",
+        display_name: None,
+        api_id: Some(Guid([0x42, 0x3a, 0xac, 0xde, 0x05, 0x26, 0xdb, 0x47, 0xa7, 0xee, 0x06, 0xf3, 0x57, 0xd2, 0x4a, 0xcb])),
         structure: TagId(0xc9800178),
         play: LevelBox { index: 0, min: [-1233.902, -1130.1733, -2.5e+02], max: [1233.902, 1130.1733, 1015.4839], widths: [18, 18, 17] },
         index_bits: 1,
@@ -99,6 +121,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0x7b4ed9e6),
         name: "sgh_crystalcaves",
+        display_name: None,
+        api_id: Some(Guid([0x06, 0x2e, 0x9e, 0x3e, 0xf3, 0x55, 0x25, 0x42, 0xa4, 0x54, 0xff, 0x7c, 0x39, 0x5b, 0xec, 0xcf])),
         structure: TagId(0xa57e19f1),
         play: LevelBox { index: 0, min: [-114.45093, -27.205103, -2.5e+02], max: [28.68396, 68.92768, 61.703808], widths: [14, 13, 15] },
         index_bits: 1,
@@ -107,6 +131,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0x7dc9f292),
         name: "forest",
+        display_name: None,
+        api_id: Some(Guid([0x5a, 0xa6, 0x21, 0x05, 0x24, 0x9f, 0xca, 0x45, 0xbf, 0x2a, 0x2f, 0x0d, 0x24, 0x92, 0x6a, 0xb6])),
         structure: TagId(0xf67a168d),
         play: LevelBox { index: 0, min: [-59.680088, -42.27246, -59.00115], max: [25.232569, 51.440674, 18.694605], widths: [13, 13, 13] },
         index_bits: 1,
@@ -115,6 +141,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0x7e97b303),
         name: "fo06_deepsea",
+        display_name: None,
+        api_id: Some(Guid([0x0b, 0x58, 0x75, 0x58, 0xaa, 0x14, 0xda, 0x4c, 0xbc, 0x1f, 0xa4, 0x27, 0x32, 0x58, 0x53, 0x64])),
         structure: TagId(0xe4475b1e),
         play: LevelBox { index: 0, min: [-231.00145, -227.08232, -946.215], max: [231.63503, 226.34886, 242.32658], widths: [15, 15, 17] },
         index_bits: 1,
@@ -123,6 +151,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0x82285aba),
         name: "pve_house",
+        display_name: None,
+        api_id: Some(Guid([0x0c, 0x0a, 0xeb, 0x97, 0x70, 0xab, 0x41, 0x4d, 0xa6, 0xdc, 0x31, 0xa9, 0xe0, 0x8f, 0xd0, 0x84])),
         structure: TagId(0x0eca1f57),
         play: LevelBox { index: 0, min: [-2.5e+02, -2.5e+02, -2.5e+02], max: [2.5e+02, 2.5e+02, 2.5e+02], widths: [15, 15, 15] },
         index_bits: 2,
@@ -131,6 +161,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0x823c61a6),
         name: "btb_highpower",
+        display_name: Some("Highpower"),
+        api_id: Some(Guid([0x39, 0x18, 0x7d, 0xa1, 0xb3, 0xca, 0x77, 0x44, 0xac, 0x36, 0x8c, 0xbb, 0xfa, 0xed, 0x80, 0xcb])),
         structure: TagId(0x8ec36beb),
         play: LevelBox { index: 0, min: [-1753.5928, -2474.1824, -901.7554], max: [2287.1992, 3033.661, 901.7554], widths: [18, 19, 17] },
         index_bits: 1,
@@ -139,6 +171,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0x8cae8a6d),
         name: "mainmenu_sn05",
+        display_name: None,
+        api_id: Some(Guid([0xf9, 0x19, 0x45, 0xa4, 0xd0, 0x4b, 0xfe, 0x45, 0x91, 0xce, 0x5f, 0x76, 0xd3, 0xf3, 0xa8, 0x54])),
         structure: TagId(0x23101635),
         play: LevelBox { index: 0, min: [-394.73056, -261.11652, -5e+01], max: [427.25977, 516.21747, 92.115555], widths: [16, 16, 14] },
         index_bits: 1,
@@ -147,6 +181,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0xa0bf5c4a),
         name: "ctf_aquarius",
+        display_name: Some("Aquarius"),
+        api_id: Some(Guid([0x57, 0x88, 0x87, 0xfc, 0x78, 0xe7, 0xaf, 0x4d, 0xb0, 0xef, 0x5d, 0x82, 0x6b, 0x92, 0x2f, 0x3f])),
         structure: TagId(0x9ef5277f),
         play: LevelBox { index: 0, min: [-39.014282, -27.861597, -2.8262208], max: [38.79729, 18.353075, 15.290748], widths: [13, 12, 11] },
         index_bits: 1,
@@ -155,6 +191,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0xa839cfd7),
         name: "ctf_illusion",
+        display_name: None,
+        api_id: Some(Guid([0xef, 0x1d, 0xb4, 0x42, 0x92, 0xee, 0xb3, 0x4f, 0xac, 0x51, 0xe0, 0x10, 0x50, 0xff, 0xed, 0xfd])),
         structure: TagId(0xab9f24c0),
         play: LevelBox { index: 0, min: [-1233.902, -1130.1733, -2.5e+02], max: [1233.902, 1130.1733, 1015.4839], widths: [18, 18, 17] },
         index_bits: 1,
@@ -163,6 +201,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0xa9a09b0d),
         name: "va_behemoth",
+        display_name: Some("Behemoth"),
+        api_id: Some(Guid([0x90, 0xeb, 0xb0, 0x6c, 0x19, 0x28, 0x6f, 0x4b, 0xa3, 0x8a, 0x89, 0x13, 0xa8, 0xb9, 0x1c, 0x3e])),
         structure: TagId(0x161812f6),
         play: LevelBox { index: 0, min: [-621.9919, -664.6657, -123.74587], max: [510.3757, 566.11115, 376.25412], widths: [17, 17, 15] },
         index_bits: 1,
@@ -171,6 +211,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0xab750980),
         name: "ctf_forbidden",
+        display_name: None,
+        api_id: Some(Guid([0x6f, 0xc4, 0xd9, 0x56, 0x10, 0x3c, 0x96, 0x48, 0x84, 0xc4, 0x23, 0xf6, 0xfe, 0x54, 0xa7, 0x63])),
         structure: TagId(0x8b936c17),
         play: LevelBox { index: 0, min: [-41.11919, -32.20354, -2.5e+02], max: [41.348022, 30.58435, 18.519018], widths: [13, 12, 14] },
         index_bits: 1,
@@ -179,6 +221,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0xbdd56715),
         name: "fo10_deadland",
+        display_name: None,
+        api_id: Some(Guid([0x0c, 0xf1, 0x6b, 0x4f, 0x28, 0x76, 0xed, 0x49, 0xb3, 0xbd, 0xec, 0x0c, 0xef, 0xd9, 0x2a, 0xc5])),
         structure: TagId(0xeb4a8055),
         play: LevelBox { index: 0, min: [-231.00145, -227.08232, -946.215], max: [231.63503, 226.34886, 242.32658], widths: [15, 15, 17] },
         index_bits: 1,
@@ -187,6 +231,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0xc1c4db7d),
         name: "catalyst",
+        display_name: None,
+        api_id: Some(Guid([0xba, 0xdc, 0x94, 0xdd, 0xe9, 0x08, 0x7d, 0x47, 0x91, 0xb7, 0x33, 0x8e, 0x88, 0x93, 0x05, 0xf3])),
         structure: TagId(0xa89501cb),
         play: LevelBox { index: 0, min: [-2.5e+02, -2.5e+02, -2.5e+02], max: [47.489002, 158.4008, 153.23], widths: [15, 15, 15] },
         index_bits: 1,
@@ -195,6 +241,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0xc3d5d614),
         name: "ridgeline",
+        display_name: None,
+        api_id: Some(Guid([0xbd, 0xb9, 0xe4, 0x48, 0x17, 0x4b, 0xed, 0x4e, 0x8d, 0xee, 0x12, 0x76, 0x29, 0x4b, 0x88, 0xf1])),
         structure: TagId(0x5f388668),
         play: LevelBox { index: 0, min: [-41.102932, -56.606728, -84.37054], max: [72.109375, 57.211975, 53.179653], widths: [13, 13, 14] },
         index_bits: 1,
@@ -203,6 +251,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0xc4d9cdb7),
         name: "fo13_frost",
+        display_name: None,
+        api_id: Some(Guid([0x04, 0x0e, 0x49, 0x67, 0x6c, 0x92, 0x7c, 0x4e, 0xa7, 0x64, 0x07, 0x1f, 0x26, 0xe0, 0xc2, 0x4c])),
         structure: TagId(0xad6e0e9b),
         play: LevelBox { index: 0, min: [-231.00145, -227.08232, -946.215], max: [231.63503, 226.34886, 242.32658], widths: [15, 15, 17] },
         index_bits: 1,
@@ -211,6 +261,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0xc7d52145),
         name: "sgh_streets",
+        display_name: None,
+        api_id: Some(Guid([0xde, 0xce, 0xdf, 0x19, 0xd1, 0xdc, 0xa8, 0x45, 0x8a, 0x77, 0x2b, 0x58, 0xce, 0x65, 0x48, 0x4f])),
         structure: TagId(0x296cff1c),
         play: LevelBox { index: 0, min: [-24.32224, -23.018236, -51.375183], max: [27.407486, 29.866623, 16.546118], widths: [12, 12, 12] },
         index_bits: 1,
@@ -219,6 +271,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0xd12e29df),
         name: "btb_drydock",
+        display_name: Some("Deadlock"),
+        api_id: Some(Guid([0x77, 0x06, 0x8f, 0x1a, 0x55, 0x70, 0x58, 0x43, 0x8c, 0x1e, 0x93, 0x4d, 0xb9, 0x88, 0x59, 0x7d])),
         structure: TagId(0x2ee806dc),
         play: LevelBox { index: 0, min: [-2.5e+02, -2.5e+02, -2.5e+02], max: [2.5e+02, 2.5e+02, 2.5e+02], widths: [15, 15, 15] },
         index_bits: 1,
@@ -227,6 +281,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0xd377a4ff),
         name: "fo03_space",
+        display_name: None,
+        api_id: Some(Guid([0xf0, 0xba, 0xb7, 0xc7, 0x06, 0xf2, 0xe4, 0x11, 0xae, 0x9a, 0x24, 0xbe, 0x05, 0xe2, 0x4f, 0x7e])),
         structure: TagId(0xd4dc8819),
         play: LevelBox { index: 0, min: [-231.00145, -227.08232, -946.215], max: [231.63503, 226.34886, 242.32658], widths: [15, 15, 17] },
         index_bits: 1,
@@ -235,6 +291,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0xd3fc89fe),
         name: "va_launchsite",
+        display_name: Some("Launch Site"),
+        api_id: Some(Guid([0xa8, 0xc3, 0x55, 0x97, 0x3c, 0x5e, 0x52, 0x43, 0xa7, 0x8e, 0x37, 0x06, 0x07, 0xdb, 0x66, 0x0d])),
         structure: TagId(0x9f2c8eae),
         play: LevelBox { index: 0, min: [-631.04297, -642.97345, -53.24063], max: [631.04297, 642.97345, 446.75937], widths: [17, 17, 15] },
         index_bits: 1,
@@ -243,6 +301,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0xd5b4d285),
         name: "mp_02",
+        display_name: None,
+        api_id: Some(Guid([0xab, 0xdd, 0x3f, 0x63, 0x25, 0x24, 0x2c, 0x4d, 0xbc, 0x40, 0xe4, 0x11, 0xa3, 0x7a, 0xfe, 0x49])),
         structure: TagId(0x7b015284),
         play: LevelBox { index: 3, min: [11.947608, 88.50098, -9.308301], max: [32.073635, 105.39801, 7.6641355], widths: [11, 10, 10] },
         index_bits: 3,
@@ -251,6 +311,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0xd7014717),
         name: "sgh_blueprint",
+        display_name: Some("Recharge"),
+        api_id: Some(Guid([0x85, 0x47, 0x26, 0xc0, 0xc8, 0x90, 0x46, 0x49, 0xbf, 0x16, 0x06, 0xdb, 0xfd, 0x05, 0x6b, 0xff])),
         structure: TagId(0x68e3bf66),
         play: LevelBox { index: 0, min: [-993.9214, -1320.3536, -2.5e+02], max: [1713.4697, 1320.3536, 2.5e+02], widths: [18, 18, 15] },
         index_bits: 1,
@@ -259,6 +321,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0xdb8f1b23),
         name: "btb_exiled",
+        display_name: None,
+        api_id: Some(Guid([0x1b, 0xe0, 0x77, 0x4a, 0x53, 0x56, 0x90, 0x47, 0x9c, 0xb6, 0x5e, 0x0b, 0x62, 0xb8, 0x70, 0x76])),
         structure: TagId(0x1a48c67a),
         play: LevelBox { index: 0, min: [-191.43637, -151.62828, -78.3619], max: [146.81325, 140.49544, 112.80506], widths: [15, 15, 14] },
         index_bits: 1,
@@ -267,6 +331,8 @@ pub(crate) static LEVELS: &[Level] = &[
     Level {
         id: TagId(0xebb24fd4),
         name: "btb_fragmentation",
+        display_name: Some("Fragmentation"),
+        api_id: Some(Guid([0x38, 0x48, 0xad, 0xbe, 0xff, 0x0c, 0x37, 0x48, 0xbc, 0xf4, 0x5e, 0x51, 0x6d, 0x56, 0xd8, 0x37])),
         structure: TagId(0x69d4b9ed),
         play: LevelBox { index: 0, min: [-1136.2743, -702.29663, -2.5e+02], max: [543.44055, 784.0803, 2.5e+02], widths: [17, 17, 15] },
         index_bits: 1,

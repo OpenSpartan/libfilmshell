@@ -9,12 +9,24 @@ use super::options_data::{MODES, OPTION_NAMES};
 
 /// An option's value.
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum OptionValue {
     /// A number.
     Number(f64),
     /// A flag.
     Bool(bool),
+}
+
+impl std::fmt::Display for OptionValue {
+    /// A number as it is (`3`, `0.5`), a flag as `true` or `false`.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OptionValue::Number(n) => write!(f, "{n}"),
+            OptionValue::Bool(b) => write!(f, "{b}"),
+        }
+    }
 }
 
 /// One option of a mode's Options script.

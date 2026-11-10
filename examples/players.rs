@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let film = Film::from_chunks(common::load_folder(dir.as_ref())?)?;
 
     let variant = film.variant().map_or("unknown variant", |v| v.name.as_str());
-    let level = film.level().map_or("unknown level", |l| l.name);
+    let level = film.level().map_or("unknown level", |l| l.display_name.unwrap_or(l.name));
     println!("{variant} on {level}, {:.0} s", film.clock().end().seconds());
 
     let board = film.scoreboard();
@@ -23,9 +23,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for p in film.players() {
         let row = StatOwner::Player(p.id);
         println!(
-            "{:>3}  {:<16} {:<8} kills {:>3}  deaths {:>3}",
+            "{:>3}  {:<16} {:<4} {:<7} kills {:>3}  deaths {:>3}",
             p.id.0,
-            p.name().unwrap_or("?"),
+            p.name().unwrap_or("unnamed"),
+            if p.is_bot() { "bot" } else { "" },
             p.team.map_or(String::new(), |t| t.to_string()),
             board.final_stat(row, Stat::Kills),
             board.final_stat(row, Stat::Deaths),

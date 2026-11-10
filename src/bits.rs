@@ -24,7 +24,7 @@ pub fn bits_at(c: &[u8], bp: i64, width: u32) -> u32 {
 /// The byte stream seen from byte `q` at bit shift `sh`: `get(k)` is the
 /// byte that starts `sh` bits into byte `q + k`. A record found at bit
 /// `8q + sh` reads its header as `get(0)`, `get(1)` and on.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Shifted<'a> {
     pub c: &'a [u8],
     pub q: usize,

@@ -1,7 +1,8 @@
 //! The film's raw layers, for reading the bytes the model is built from.
 //!
-//! A replay chunk is a sequence of packets: `[kind:16][...]` headers with a
-//! microsecond timestamp and a payload. Kind 0 is a tick packet, one frame
+//! A replay chunk is a sequence of packets, each a 16-byte head (a 16-bit
+//! kind, a 32-bit payload size, a microsecond timestamp) and its payload,
+//! little-endian. Kind 0 is a tick packet, one frame
 //! of the film; its payload is bit-packed (MSB first) and holds two views:
 //!
 //! - the **event view**: one-off events (weapon fire, kills, pickups, voice
@@ -14,20 +15,25 @@
 //! for objects, its tag and position. Kind 8 holds the players' structs and
 //! kind 12 the bots' records.
 //!
+//! This layer follows the format as far as it is understood, so it changes
+//! more often than the model: expect breaking changes here in minor
+//! releases.
+//!
 //! ```no_run
 //! # fn run(film: &filmshell::Film) {
 //! let raw = film.raw();
 //! for frame in raw.frames().take(10) {
 //!     for e in raw.events(&frame) {
-//!         println!("{} event {} at bit {}", frame.tick, e.kind, e.bit);
+//!         let name = filmshell::format::event_name(e.kind).unwrap_or("?");
+//!         println!("{} {name} at bit {}", frame.tick, e.bit);
 //!     }
 //! }
 //! # }
 //! ```
 
-use crate::container::{Film as Container, Framing};
-use crate::model::Tick;
 use crate::TagId;
+use crate::container::{Film as Container, Framing};
+use crate::model::{EntityId, Tick};
 
 /// MSB-first bit reads over a byte slice. Reads past the end give zero bits.
 #[derive(Clone, Copy, Debug)]
@@ -59,6 +65,10 @@ impl<'a> BitReader<'a> {
 
     /// Reads `n` bits (at most 32) as an unsigned number, the first bit
     /// most significant.
+    ///
+    /// # Panics
+    ///
+    /// If `n` is over 32.
     pub fn read(&mut self, n: u32) -> u32 {
         assert!(n <= 32, "read at most 32 bits at a time");
         let v = crate::bits::bits_at(self.data, self.pos as i64, n);
@@ -72,6 +82,10 @@ impl<'a> BitReader<'a> {
     }
 
     /// Reads `n` bits (at most 64).
+    ///
+    /// # Panics
+    ///
+    /// If `n` is over 64.
     pub fn read_u64(&mut self, n: u32) -> u64 {
         assert!(n <= 64, "read at most 64 bits at a time");
         let hi = n.saturating_sub(32);
@@ -139,6 +153,28 @@ pub struct Handle {
     pub unit: bool,
 }
 
+impl Handle {
+    /// The biped's or vehicle's id in the model ([`entity_id`]).
+    pub fn entity_id(&self) -> Option<EntityId> {
+        entity_id(self.index, self.generation)
+    }
+}
+
+/// The model's [`EntityId`] of a biped (index 512 to 767) or vehicle (768 to
+/// 1023) with its generation, the id [`Life::entity`](crate::Life::entity),
+/// [`Vehicle::entity`](crate::Vehicle::entity) and
+/// [`Sample::vehicle`](crate::Sample::vehicle) use. None for other entities
+/// and generation 0.
+pub fn entity_id(index: u32, generation: u32) -> Option<EntityId> {
+    let base = match index {
+        512..=767 => 512,
+        768..=1023 => 768,
+        _ => return None,
+    };
+    let id = generation.checked_sub(1)? * 256 + index - base;
+    u16::try_from(id).ok().map(EntityId)
+}
+
 /// One event of a tick packet's event view.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -186,6 +222,13 @@ pub struct EntityEntry {
     pub bit: i64,
 }
 
+impl EntityEntry {
+    /// The biped's or vehicle's id in the model ([`entity_id`]).
+    pub fn entity_id(&self) -> Option<EntityId> {
+        entity_id(self.index, self.generation)
+    }
+}
+
 /// One entity of a seek snapshot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -211,7 +254,7 @@ pub struct Snapshot {
 }
 
 /// The film's raw layers. See [`crate::Film::raw`].
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Raw<'a> {
     film: &'a Container,
     has_highlights: bool,
@@ -255,7 +298,7 @@ impl<'a> Raw<'a> {
     }
 
     /// The replay chunks, inflated, with their indices.
-    pub fn replay_chunks(&self) -> impl Iterator<Item = (u32, &'a [u8])> + 'a {
+    pub fn replay_chunks(&self) -> impl Iterator<Item = (u32, &'a [u8])> + use<'a> {
         let n = self.film.chunks.len() - usize::from(self.has_highlights);
         self.film.chunks[..n].iter().enumerate().skip(1).map(|(i, c)| (i as u32, c.as_slice()))
     }
@@ -267,7 +310,7 @@ impl<'a> Raw<'a> {
 
     /// Every packet of the replay chunks, in order. A chunk whose packets
     /// don't walk to its last byte has none.
-    pub fn packets(&self) -> impl Iterator<Item = Packet<'a>> + 'a {
+    pub fn packets(&self) -> impl Iterator<Item = Packet<'a>> + use<'a> {
         let film = self.film;
         self.replay_chunks().flat_map(move |(ci, c)| {
             film.packets(ci as usize).unwrap_or(&[]).iter().map(move |p| Packet {
@@ -281,7 +324,7 @@ impl<'a> Raw<'a> {
     }
 
     /// Every frame, in order.
-    pub fn frames(&self) -> impl Iterator<Item = Frame<'a>> + 'a {
+    pub fn frames(&self) -> impl Iterator<Item = Frame<'a>> + use<'a> {
         let film = self.film;
         let chunk_of = move |c: &[u8]| film.chunks.iter().position(|x| x.as_ptr() == c.as_ptr()).unwrap_or(0) as u32;
         film.frames().map(move |f| Frame {
@@ -366,6 +409,200 @@ impl<'a> Raw<'a> {
         crate::registry::blocks(&self.film.chunks[0])
     }
 }
+
+/// The game's name of event type `kind`, from the executable's event
+/// definitions ("action_weapon_fire", "PlayerKilledEvent"). The names are
+/// the game's own, spelling included.
+pub fn event_name(kind: u32) -> Option<&'static str> {
+    EVENT_NAMES.get(kind as usize).copied()
+}
+
+/// The game's name of entity type `entity_type`, a block of chunk 0's
+/// component registry ("biped", "weapon", "game-engine-statborg"), from the
+/// executable's entity definitions.
+pub fn entity_type_name(entity_type: u32) -> Option<&'static str> {
+    ENTITY_TYPE_NAMES.get(entity_type as usize).copied().filter(|n| !n.is_empty())
+}
+/// The game's name of each event type, by type.
+const EVENT_NAMES: [&str; 123] = [
+    "damage_aftermath",
+    "damage_section_response",
+    "restore_damage_section",
+    "item_detonate",
+    "item_detonate_countdown",
+    "projectile_detonate",
+    "projectile_impact_effect",
+    "projectile_object_impact_effect",
+    "biped_board_vehicle",
+    "biped_pickup",
+    "weapon_effect",
+    "weapon_empty_click",
+    "biped_melee_clang",
+    "motor_system_interruption",
+    "PlayEffectOnObject",
+    "Script",
+    "ShowDebugText",
+    "Allegiance",
+    "MusicTrigger",
+    "CollectibleUnlockEvent",
+    "incident",
+    "unit_zoom",
+    "unit_exit_vehicle",
+    "authority_ignored_predicted_position",
+    "trade_weapon",
+    "device_touch",
+    "deviceRelease",
+    "controlToggleResponse",
+    "biped_debug_teleport",
+    "prediction_determinism_msg",
+    "biped_equipment_activation",
+    "equipment_teleport_request",
+    "unit_teleported",
+    "vehicle_auto_turret_choose_target",
+    "PromptToBootGriefer",
+    "request_weapon_fire",
+    "action_weapon_fire",
+    "weapon_overheat",
+    "weapon_reload",
+    "biped_throw_initiate",
+    "biped_melee_initiate",
+    "vehicle_trick",
+    "biped_dodge",
+    "initiate_mobility_action",
+    "weapon_pickup",
+    "weapon_put_away",
+    "weapon_drop",
+    "weapon_throw",
+    "weapon_tether_request",
+    "vehicle_flip",
+    "request_ai_mount_exit",
+    "biped_throw_release",
+    "biped_melee_damage",
+    "unit_enter_vehicle",
+    "unit_switch_seat",
+    "game_engine_request_boot_player",
+    "request_projectile_attach",
+    "biped_pickup_item_request",
+    "projectile_supercombine_request",
+    "object_refresh",
+    "RequestChangeFrameConfiguration",
+    "player_forge_action",
+    "player_loadout_request",
+    "biped_laser_designation",
+    "player_set_respawn_target_transform",
+    "player_set_orbiting_camera_target",
+    "PlayerEmote",
+    "player_force_base_respawn",
+    "supply_request",
+    "CampaignMapStateUpdate",
+    "AIPhase",
+    "AIRequestIdleTransitionTime",
+    "AILand",
+    "AIJuke",
+    "AISetMotorProgram",
+    "AIDialog",
+    "Dialogue2D",
+    "DebugSendCameraPosition",
+    "ai_jump",
+    "networked_ai_action",
+    "networked_ai_effect",
+    "PlayerGameEvent",
+    "PlayerGameEventSmall",
+    "TeamGameEvent",
+    "TeamGameEventSmall",
+    "PlayerKilledEvent",
+    "EngineClientEvent",
+    "SaveGame",
+    "RevertMap",
+    "CancelCinematic",
+    "ClientOnlyShowComplete",
+    "ClientResourcesLoadComplete",
+    "BetrayResponse",
+    "activate_spartan_ability",
+    "CrewSetTargetObject",
+    "CrewOrderPositionAdd",
+    "NetworkedCrewEventType",
+    "SaveToUGCService",
+    "Equipment",
+    "SelectedSpawnZoneChangedEvent",
+    "PowerUpApplied",
+    "LoadForgeObjectGroup",
+    "NetworkedActionRequest",
+    "EquipmentSpawnedObject",
+    "EquipmentKnockbackPlayer",
+    "EquipmentObjectKnockedBack",
+    "ObjectCollisionDamage",
+    "player_forge_user_string_action",
+    "NavpointRequest",
+    "PersonalAILifceycleEffect",
+    "ObjectDeterministicDamageAcceleration",
+    "QueueNextShow",
+    "SetDifficultyAndSkulls",
+    "FOBClientInput",
+    "MusicMarker",
+    "synchronized_teleport",
+    "teleport_effects",
+    "EquipmentTranslocatorTeleportEffects",
+    "repair_complete",
+    "EquipmentKnockbackRequest",
+    "PlayerCalloutRequest",
+    "PlayerForgeableCustomAction",
+    "PlayerTriggerRadialMenu",
+];
+
+/// The game's name of each entity type, by type; empty where the game has none.
+const ENTITY_TYPE_NAMES: [&str; 50] = [
+    "forge-engine-globals",
+    "campaign_engine_globals",
+    "managed-engine-object",
+    "game-keyframing-system",
+    "game-time-system",
+    "game-engine-player",
+    "game-engine-statborg",
+    "ForgeSimEntity",
+    "",
+    "managed-engine-player",
+    "managed-engine-object",
+    "managed-engine-objective",
+    "managed-engine-navpoint",
+    "managed-engine-networked-property",
+    "engine-crew",
+    "nav_point_scripting",
+    "game_composer",
+    "game_music",
+    "scripted_effects",
+    "scripted_sound_placements",
+    "spawn-filter",
+    "game_flock",
+    "game_physics",
+    "selectable-spawn-filter-manager",
+    "persistence",
+    "game_powerframe",
+    "supply_lines_blocked",
+    "supply_lines_items",
+    "game_narrative_moment",
+    "managed-engine-respawn-manager",
+    "tac_map_icon",
+    "tac_map_mission",
+    "tac_map_areaofinterest",
+    "tac_map_display_asset",
+    "tac_map_settings",
+    "biped",
+    "item",
+    "equipment",
+    "generic",
+    "generic-garbage",
+    "vehicle",
+    "projectile",
+    "weapon",
+    "device",
+    "asset",
+    "game_matchflow",
+    "StateBroker",
+    "managed-engine-participant",
+    "forge-engine-player-data",
+    "managed-engine-radialmenu",
+];
 
 #[cfg(test)]
 mod tests {

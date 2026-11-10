@@ -33,6 +33,10 @@ pub struct PlayerAmmo {
     pub grenades: Vec<(i64, [u32; 4])>,
     /// (frame, equipment energy percent, ticks before it recharges).
     pub equipment: Vec<(i64, i32, i32)>,
+    /// (frame, slot, the weapon's tag; None for an empty slot).
+    pub weapons: Vec<(i64, u32, Option<u32>)>,
+    /// (frame, the weapon slot the biped holds).
+    pub held: Vec<(i64, u32)>,
 }
 
 /// A biped's weapon state as of its last update.
@@ -42,6 +46,9 @@ struct Slots {
     energy: [i32; 4],
     heat: [(i32, u32); 4],
 }
+
+/// The unarmed weapon a biped holds before it spawns.
+const UNARMED: u32 = 0x0000_7ca9;
 
 fn slot_of(index: u32, generation: u32) -> i32 {
     (generation as i32 - 1) * 256 + (index as i32 - 512)
@@ -80,6 +87,8 @@ pub fn reader<'a>(paths: &'a [PlayerPath], out: &'a mut Vec<PlayerAmmo>) -> impl
     let mut last_heat = HashMap::new();
     let mut last_grenades = HashMap::new();
     let mut last_equipment = HashMap::new();
+    let mut last_weapon = HashMap::new();
+    let mut last_held = HashMap::new();
     move |frame, _, p| {
         let frame = frame as i64;
         for op in &p.ops {
@@ -130,6 +139,15 @@ pub fn reader<'a>(paths: &'a [PlayerPath], out: &'a mut Vec<PlayerAmmo>) -> impl
                     }
                     if let Some(g) = f.grenades {
                         push_change(&mut last_grenades, who, g, &mut o.grenades, (frame, g));
+                    }
+                    for (k, w) in f.weapons.iter().enumerate() {
+                        let Some(w) = w else { continue };
+                        let tag = w.map(|(tag, _)| tag).filter(|&t| t != UNARMED);
+                        push_change(&mut last_weapon, (who, k), tag, &mut o.weapons, (frame, k as u32, tag));
+                    }
+                    // The desired weapon set's first slot is the slot held.
+                    if let Some((Some(h), _)) = f.weapon_slots {
+                        push_change(&mut last_held, who, h, &mut o.held, (frame, h));
                     }
                 }
                 Some(EQUIPMENT) => {

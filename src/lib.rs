@@ -28,14 +28,25 @@
 //! });
 //! let film = Film::from_chunks(chunks)?;
 //!
-//! for p in film.players() {
-//!     println!("{} {}", p.id, p.name().unwrap_or("?"));
-//! }
-//! for (tick, kill) in film.kills() {
-//!     println!("{tick} {:?} killed {}", kill.killer, kill.victim);
+//! let name = |id| film.player(id).and_then(|p| p.name()).unwrap_or("someone");
+//! for e in film.events() {
+//!     if let Event::Kill(kill) = &e.event {
+//!         let killer = kill.killer.map_or("the environment", name);
+//!         println!("{} {killer} killed {}", e.tick, name(kill.victim));
+//!     }
 //! }
 //! # Ok::<(), filmshell::Error>(())
 //! ```
+//!
+//! # Playback
+//!
+//! Everything is read up front, so playback can seek to any tick: at any
+//! [`Tick`], [`Film::samples_at`] gives every living player's sample (where
+//! they were, their aim, health and shield, the vehicle they rode),
+//! [`Film::weapon_at`] what they held, [`Film::vehicle_at`] the track of the
+//! vehicle a sample or an exit names, and [`Film::events_between`] what
+//! happened in a stretch of time.
+//! [`Clock`] maps the film's frames to ticks.
 //!
 //! # Layout
 //!
@@ -52,19 +63,26 @@
 //! # Time and space
 //!
 //! Times are [`Tick`]s, 1/60 s of game time from the film's first frame.
-//! Positions are world units ([`Position`]). A film doesn't carry the box
-//! its positions are quantized over; the library knows it for the levels in
-//! its catalogue, and otherwise fits it to the spawn pads given in the
+//! Positions are world units ([`Position`]), ten to the game's engine unit.
+//! The model and [`analysis`] use world units; the [`game`] tables keep the
+//! engine units of the game's files. A film doesn't carry the box its
+//! positions are quantized over; the library knows it for the levels in its
+//! catalogue, and otherwise fits it to the spawn pads given in the
 //! [`Hints`], or leaves positions unconverted ([`Sample::raw`]).
 //!
 //! # Features
 //!
-//! - `serde`: derives `serde::Serialize` on the model types.
+//! - `serde`: derives `Serialize` and `Deserialize` on the types at the
+//!   crate root and the `game` enums. An [`Event`] is an object with a
+//!   `type` (`{"type": "kill", "victim": 3, ...}`), enum variants are
+//!   snake_case, [`TagId`]s, [`Xuid`]s and [`Guid`]s are strings, and empty
+//!   `Option` and `Vec` fields are left out. With `serde_json`, turn on its
+//!   `float_roundtrip` feature for floats to read back exactly.
 //! - `research`: makes the internal readers public under a hidden
 //!   `research` module, for studying the format; they are outside the API's
 //!   stability guarantees.
 
-#![deny(missing_docs)]
+#![warn(clippy::print_stdout, clippy::print_stderr, clippy::dbg_macro)]
 
 pub mod analysis;
 mod chunk;
@@ -75,13 +93,20 @@ pub mod game;
 mod hints;
 mod model;
 mod tag;
+mod text;
 
-pub use chunk::{Chunk, ChunkKind, MAX_CHUNK_BYTES};
+pub use chunk::{Chunk, ChunkKind, MAX_CHUNK_BYTES, MAX_FILM_BYTES};
 pub use error::Error;
 pub use film::Film;
 pub use hints::{Hints, LevelBounds, SpawnPad};
 pub use model::*;
 pub use tag::TagId;
+pub use text::ParseIdError;
+
+// The README's code compiles as a doc test.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
 
 // The internal readers: private, or public and hidden from the docs with the
 // `research` feature.
@@ -145,6 +170,7 @@ internal!(
     spawns,
     splash,
     statlog,
+    teams,
     types,
     variant,
     variant_stats,

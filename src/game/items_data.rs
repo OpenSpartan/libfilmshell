@@ -5,8 +5,9 @@ use super::Grenade;
 
 /// A weapon, by the name the game gives its tags. Vehicles' and turrets' guns are weapons too.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum Weapon {
     /// Auto Turret.
     AutoTurret,
@@ -160,8 +161,9 @@ impl Weapon {
 }
 /// A vehicle or a standalone turret.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum Vehicle {
     /// Auto Turret.
     AutoTurret,
@@ -222,8 +224,9 @@ impl Vehicle {
 }
 /// A piece of equipment or a power-up.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum Equipment {
     /// Active Camo.
     ActiveCamo,

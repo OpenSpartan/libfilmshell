@@ -55,19 +55,19 @@ pub enum Kind {
 }
 
 /// `(generation - 1) * 256 + index` from the object handle.
-fn object_id(g: &Shifted) -> i32 {
+fn object_id(g: &Shifted<'_>) -> i32 {
     ((((g.get(1) >> 3) & 3) as i32) - 1) * 256 + ((((g.get(0) & 0x1f) << 3) | (g.get(1) >> 5)) as i32)
 }
 
 /// The component list of the update `g` dispatched with `off`.
-pub fn components<'g>(g: &'g Shifted, off: i32) -> impl Iterator<Item = u32> + 'g {
+pub fn components<'g>(g: &'g Shifted<'_>, off: i32) -> impl Iterator<Item = u32> + 'g {
     let count = (off + 24) / 6;
     (0..count).map(move |m| g.read(6 * m - 22, 6))
 }
 
 /// The component list of the update at `g`, if its indices are strictly
 /// increasing rows of `arch`: (count, the list as a bitmask).
-fn component_list(g: &Shifted, count: u32, arch: &Archetype) -> Option<u64> {
+fn component_list(g: &Shifted<'_>, count: u32, arch: &Archetype) -> Option<u64> {
     let mut mask = 0u64;
     let mut prev: i64 = -1;
     for m in 0..count as i32 {
@@ -132,14 +132,14 @@ fn scan_object_updates(film: &Film) -> Vec<Found> {
                     continue;
                 }
                 let g1 = g.get(1);
-                let gen = ((g1 >> 3) & 3) as usize;
-                if gen == 0 {
+                let generation = ((g1 >> 3) & 3) as usize;
+                if generation == 0 {
                     continue;
                 }
                 let is_biped = g0 < 0x60;
                 let index = (((g0 & 0x1f) << 3) | (g1 >> 5)) as i32;
                 // Generation g starts only after g - 1 has used its indexes up.
-                if is_biped && gen > 1 && biped_max[gen - 1] < 248 {
+                if is_biped && generation > 1 && biped_max[generation - 1] < 248 {
                     continue;
                 }
                 let count = ((g1 & 7) << 2) | (g.get(2) >> 6);
@@ -170,8 +170,8 @@ fn scan_object_updates(film: &Film) -> Vec<Found> {
                     }
                     off = 6 * count as i32 - 24;
                     kind = if is_biped { Kind::Biped } else { Kind::Vehicle };
-                    if is_biped && index > biped_max[gen] {
-                        biped_max[gen] = index;
+                    if is_biped && index > biped_max[generation] {
+                        biped_max[generation] = index;
                     }
                 } else if is_biped && list == stub_list {
                     kind = Kind::Stub;
@@ -275,10 +275,11 @@ pub fn detect_c2_width(film: &Film, c2_start: i32) -> u32 {
 /// units (field value times 2^(15 - width)): a field wider than 15 bits keeps its
 /// low bits as a fraction, a narrower one reads no bits of the next field.
 #[inline]
-pub fn read_coord(g: &Shifted, at: i32, width: u32) -> f64 {
+pub fn read_coord(g: &Shifted<'_>, at: i32, width: u32) -> f64 {
     g.read(at, width) as f64 * (2.0f64).powi(15 - width as i32)
 }
 
+#[derive(Debug)]
 pub struct CompositeExtraction {
     /// Biped slot_id to samples, in first-seen order.
     pub slots: IndexMap<i32, Vec<RawSample>>,

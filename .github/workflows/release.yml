@@ -1,0 +1,41 @@
+name: Release
+
+# A tag x.y.z (no "v") publishes that version to crates.io. Cargo.toml's
+# version must match the tag. Publishing uses crates.io trusted publishing,
+# so the crate needs this repository and workflow set up as a trusted
+# publisher on crates.io first; see CONTRIBUTING.md.
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: rustup show
+      - name: Version matches the tag
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Cargo.toml says $version, the tag $GITHUB_REF_NAME."
+            exit 1
+          fi
+      - name: Test
+        run: cargo test --release --all-features
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      - name: Publish
+        run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}

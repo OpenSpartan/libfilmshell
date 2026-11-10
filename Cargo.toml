@@ -1,7 +1,7 @@
 [package]
 name = "filmshell"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 rust-version = "1.85"
 description = "Reads Halo Infinite theater films into a typed data model"
 license = "MIT"
@@ -9,12 +9,11 @@ repository = "https://github.com/OpenSpartan/libfilmshell"
 readme = "README.md"
 keywords = ["halo", "halo-infinite", "theater", "replay", "parser"]
 categories = ["parser-implementations", "game-development"]
-publish = false
 # Only these are packaged: never films, test data or images.
-include = ["src/**/*.rs", "examples/**/*.rs", "README.md", "LICENSE"]
+include = ["src/**/*.rs", "examples/**/*.rs", "README.md", "CHANGELOG.md", "LICENSE"]
 
 [features]
-## Derive `serde::Serialize` on the model types.
+## Derive serde's `Serialize` and `Deserialize` on the model types.
 serde = ["dep:serde"]
 ## Makes the internal readers public under `filmshell::research`, for
 ## studying the format. Outside the API's stability guarantees.
@@ -25,8 +24,8 @@ indexmap = "2"
 serde = { version = "1", features = ["derive"], optional = true }
 
 [dev-dependencies]
-# Reads the film manifests in the tests.
-serde_json = "1"
+# Reads the film manifests in the tests, and round-trips the model.
+serde_json = { version = "1", features = ["float_roundtrip"] }
 
 [profile.release]
 opt-level = 3
@@ -36,7 +35,24 @@ codegen-units = 1
 [profile.dev]
 opt-level = 2
 
+[package.metadata.docs.rs]
+features = ["serde"]
+
+[lints.rust]
+missing_docs = "deny"
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[lints.rustdoc]
+broken_intra_doc_links = "deny"
+private_intra_doc_links = "deny"
+bare_urls = "warn"
+unescaped_backticks = "warn"
+
 [lints.clippy]
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
 # Bit layouts read field by field: tuples of fields, binary literals
 # grouped by field, readers that take a layout's parts.
 type_complexity = "allow"

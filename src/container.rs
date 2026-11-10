@@ -48,6 +48,7 @@ pub struct Packet {
     pub end: usize,
 }
 
+#[derive(Debug)]
 pub struct Film {
     pub chunks: Vec<Vec<u8>>,
     pub framing: Framing,
@@ -63,7 +64,7 @@ pub struct Film {
     pub(crate) object_updates: std::sync::OnceLock<Vec<crate::replication::Found>>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct FrameSpan {
     ci: usize,
     /// Start of the frame (marker, or packet payload).
@@ -77,7 +78,7 @@ struct FrameSpan {
 
 /// One frame: records in `chunk[body..end]` share its index and its global
 /// byte position (offset over chunks 1.., the sort key of every sample).
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Frame<'a> {
     pub chunk: &'a [u8],
     pub start: usize,
@@ -213,11 +214,20 @@ impl Film {
     }
 }
 
-/// Walk `buf` as packets; None unless the walk ends exactly at its end.
+/// The most packets a chunk may hold. A 20 s chunk of a 60 Hz film holds
+/// about 2,400; a run of empty packet headers would otherwise turn a chunk
+/// of zeros into millions of frames.
+const MAX_PACKETS: usize = 1 << 16;
+
+/// Walk `buf` as packets; None unless the walk ends exactly at its end, or
+/// with more than `MAX_PACKETS`.
 pub fn walk_packets(buf: &[u8]) -> Option<Vec<Packet>> {
     let mut out = Vec::new();
     let mut p = 0usize;
     while p + 16 <= buf.len() {
+        if out.len() == MAX_PACKETS {
+            return None;
+        }
         let kind = u16::from_le_bytes([buf[p], buf[p + 1]]);
         let size = u32::from_le_bytes(buf[p + 4..p + 8].try_into().ok()?) as usize;
         let ts_us = u64::from_le_bytes(buf[p + 8..p + 16].try_into().ok()?);

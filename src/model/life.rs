@@ -1,16 +1,17 @@
-use super::{PlayerId, Position, Tick};
+use super::{EntityId, PlayerId, Position, Tick};
 
 /// How the film's quantized positions became world units.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum CoordinateSource {
     /// The level's own quantization box, from the level catalogue or the
     /// hints: exact.
     LevelBox,
     /// The box every Forge canvas shares, its offset fitted to spawn pads.
     ForgeCanvas,
-    /// A box fitted earlier for this map variant, its offset refitted.
+    /// A box the library fitted for this map variant beforehand, its offset refitted to the film.
     KnownLayout,
     /// Scale and offset fitted to the hinted spawn pads.
     SpawnFit,
@@ -25,7 +26,7 @@ pub enum CoordinateSource {
 /// The affine map from raw positions to world units:
 /// `x = -scale_x * raw[1] + offset_x`, `y = scale_y * raw[0] + offset_y`.
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Coordinates {
     /// Where the map came from.
@@ -40,6 +41,7 @@ pub struct Coordinates {
     pub offset_y: f64,
     /// For a fit to spawn pads: the life starts checked against the pads,
     /// and how many landed within 5 world units of one.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub spawn_fit: Option<(usize, usize)>,
 }
 
@@ -53,51 +55,70 @@ impl Coordinates {
 /// One sample of a life: where the biped was and its state as of its last
 /// update.
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Sample {
     /// When.
     pub tick: Tick,
     /// The two horizontal position fields as the film stores them, scaled to
     /// a 15-bit window (`field * 2^(15 - width)`; small lobbies' units are 64
-    /// and 8 times smaller). `Coordinates::to_world` converts them.
+    /// and 8 times smaller): `raw[0]` becomes world y, `raw[1]` world x.
+    /// [`Coordinates::to_world`] converts them.
     pub raw: [f64; 2],
     /// The position in world units, when the film's coordinates are known.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
-    /// Aim yaw in radians, in world axes (from +x toward +y).
+    /// Aim yaw in radians, in world axes (from +x toward +y). The aim, speed,
+    /// health and shield are None in small lobbies, whose biped updates
+    /// aren't read field by field.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub yaw: Option<f64>,
     /// On-foot speed, world units a second; None in a vehicle.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub speed: Option<f64>,
     /// Health as a fraction of the maximum.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub health: Option<f64>,
     /// Shield as a fraction of the maximum, above 1 with an overshield; None
     /// in a mode without shields.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub shield: Option<f64>,
     /// In a vehicle: the sample is the vehicle's position.
     pub in_vehicle: bool,
-    /// The vehicle's entity id, when known.
-    pub vehicle: Option<u16>,
+    /// The vehicle, when known: [`Film::vehicle_at`](crate::Film::vehicle_at)
+    /// finds its track.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub vehicle: Option<EntityId>,
 }
 
 /// One life of a biped: from its spawn to its death or the film's end.
 ///
-/// A life is one biped entity. Its owner comes from matching each life's
-/// first and last records against the players' death times in the
-/// HighlightEvents chunk, so a life the matching can't place has no player.
+/// A life is one biped entity. Its owner is the player controlling the unit,
+/// as the biped's own records say; where they don't, the library matches
+/// the life's first and last records against the players' death times in
+/// the HighlightEvents chunk. A life neither places has no player.
+///
+/// For playback, prefer [`Film::sample_at`](crate::Film::sample_at) to
+/// [`Life::at`]: it also ends a life when its player leaves.
 #[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Life {
     /// The player whose life it is.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub player: Option<PlayerId>,
-    /// The biped's per-life entity id: `(generation - 1) * 256 + index`.
-    pub entity: Option<u16>,
-    /// The life ended in a death, as the life assignment counts them.
+    /// The biped's id, unique among the lives under way at the same time.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub entity: Option<EntityId>,
+    /// Whether the life ended in a death, by the HighlightEvents death times
+    /// or, without them, by a respawn following it.
     pub died: bool,
-    /// The tick of the kill that ended the life, when the film's kill
-    /// events name one.
+    /// The tick of the kill event that ended the life. It can be None when
+    /// `died` is true: no kill event names that death.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub death: Option<Tick>,
     /// Its samples, in tick order.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub samples: Vec<Sample>,
 }
 

@@ -2,7 +2,7 @@ use crate::analysis::AnalysisData;
 use crate::chunk::is_zlib;
 use crate::game::Level;
 use crate::model::*;
-use crate::{Chunk, ChunkKind, Error, Hints};
+use crate::{Chunk, ChunkKind, Error, Hints, TagId};
 
 /// A theater film, read whole.
 ///
@@ -34,6 +34,9 @@ pub struct Film {
     pub(crate) analysis: AnalysisData,
 }
 
+/// The most missing chunk indices [`Error::MissingChunks`] lists.
+const MISSING_LISTED: usize = 16;
+
 impl std::fmt::Debug for Film {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Film")
@@ -50,12 +53,28 @@ impl Film {
     /// downloaded or already inflated.
     ///
     /// The chunks must be numbered 0 to n without gaps: chunk 0 the header,
-    /// the rest replay chunks, the last of them optionally the highlights.
+    /// then the replay chunks, then optionally the highlights chunk.
+    /// In a release build reading takes a second or two for a 10-minute
+    /// match, a few seconds for a long one.
+    ///
+    /// # Errors
+    ///
+    /// When the chunks don't make up a film: none given, a gap or a repeat
+    /// in their indices, a kind out of place, a chunk that doesn't inflate,
+    /// one larger than [`MAX_CHUNK_BYTES`](crate::MAX_CHUNK_BYTES) or chunks
+    /// together larger than [`MAX_FILM_BYTES`](crate::MAX_FILM_BYTES), a
+    /// header the library doesn't know, or replay chunks that record no
+    /// tick. The [`Error`] says which.
     pub fn from_chunks<'a>(chunks: impl IntoIterator<Item = Chunk<'a>>) -> Result<Film, Error> {
         Film::from_chunks_with(chunks, &Hints::default())
     }
 
-    /// [`Film::from_chunks`] with what the caller knows beyond the film.
+    /// [`Film::from_chunks`] with what the caller knows beyond the film:
+    /// see [`Hints`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Film::from_chunks`].
     pub fn from_chunks_with<'a>(chunks: impl IntoIterator<Item = Chunk<'a>>, hints: &Hints) -> Result<Film, Error> {
         let mut chunks: Vec<Chunk<'a>> = chunks.into_iter().collect();
         if chunks.is_empty() {
@@ -66,8 +85,20 @@ impl Film {
             return Err(Error::DuplicateChunk(w[0].index));
         }
         let last = chunks[chunks.len() - 1].index;
-        let missing: Vec<u32> = (0..=last).filter(|i| chunks.binary_search_by_key(i, |c| c.index).is_err()).collect();
-        if !missing.is_empty() {
+        if last as usize + 1 != chunks.len() {
+            // The first gaps only: an index near u32::MAX would list billions.
+            let mut missing = Vec::new();
+            let mut next = 0;
+            'gaps: for c in &chunks {
+                while next < c.index {
+                    if missing.len() == MISSING_LISTED {
+                        break 'gaps;
+                    }
+                    missing.push(next);
+                    next += 1;
+                }
+                next = c.index + 1;
+            }
             return Err(Error::MissingChunks(missing));
         }
         for c in &chunks {
@@ -85,15 +116,21 @@ impl Film {
         }
         let has_highlights = chunks[chunks.len() - 1].kind == ChunkKind::Highlights;
         let mut data = Vec::with_capacity(chunks.len());
+        let mut total = 0usize;
         for c in chunks {
-            data.push(if is_zlib(&c.data) {
-                crate::inflate::zlib(&c.data, crate::MAX_CHUNK_BYTES).map_err(|f| match f {
+            let limit = crate::MAX_CHUNK_BYTES.min(crate::MAX_FILM_BYTES - total);
+            let bytes = if is_zlib(&c.data) {
+                crate::inflate::zlib(&c.data, limit).map_err(|f| match f {
                     crate::inflate::Fault::Malformed => Error::Inflate { index: c.index },
                     crate::inflate::Fault::TooLong => Error::TooLarge { index: c.index },
                 })?
+            } else if c.data.len() > limit {
+                return Err(Error::TooLarge { index: c.index });
             } else {
                 c.data.into_owned()
-            });
+            };
+            total += bytes.len();
+            data.push(bytes);
         }
         if crate::header::read(&data[0]).build.is_none() {
             return Err(Error::UnknownHeader);
@@ -106,22 +143,26 @@ impl Film {
         &self.header
     }
 
-    /// Frames and ticks.
+    /// The film's clock: which tick each frame is, and where HighlightEvents
+    /// times fall.
     pub fn clock(&self) -> &Clock {
         &self.clock
     }
 
-    /// Everyone who played, in index order.
+    /// Everyone who played, in id order.
     pub fn players(&self) -> &[Player] {
         &self.players
     }
 
-    /// The player with index `id`.
+    /// The player with id `id`.
     pub fn player(&self, id: PlayerId) -> Option<&Player> {
-        self.players.iter().find(|p| p.id == id)
+        match self.players.get(id.index()) {
+            Some(p) if p.id == id => Some(p),
+            _ => self.players.iter().find(|p| p.id == id),
+        }
     }
 
-    /// The game variant, when chunk 0's variant data reads.
+    /// The game variant; None when chunk 0's variant data doesn't parse.
     pub fn variant(&self) -> Option<&GameVariant> {
         self.variant.as_ref()
     }
@@ -131,7 +172,9 @@ impl Film {
         self.variant.as_ref().map_or(GameMode::Other, GameVariant::mode)
     }
 
-    /// The level, when the catalogue or the hints know it.
+    /// The level, when the catalogue or the hints know it. With
+    /// [`Hints::level_bounds`] it is a level made from the box: no name,
+    /// `structure` 0, and the hinted or header level id, else 0.
     pub fn level(&self) -> Option<&Level> {
         self.level.as_ref()
     }
@@ -154,9 +197,11 @@ impl Film {
 
     /// Where `player` was at `tick`: their last sample at or before it, in
     /// the life under way then. None while the player isn't alive: before
-    /// their first life, between a death and the next spawn, after the last
-    /// sample of a life no kill ended once another has begun, and after a
-    /// player who left was last listed.
+    /// their first life, after a death until the next spawn, and after a
+    /// player who left was last listed. A life no kill ended that another
+    /// life follows ends at its last sample.
+    ///
+    /// Looks through the film's lives, so it costs O(lives) a call.
     pub fn sample_at(&self, player: PlayerId, tick: Tick) -> Option<&Sample> {
         let mut lives = self.lives_of(player).peekable();
         let mut current = None;
@@ -180,9 +225,44 @@ impl Film {
         self.sample_at(player, tick).is_some()
     }
 
+    /// Every player alive at `tick` with their sample then, in player order:
+    /// one frame of playback. O(players × lives).
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film) {
+    /// use filmshell::Tick;
+    ///
+    /// let at = Tick::from_seconds(90.0);
+    /// for (player, sample) in film.samples_at(at) {
+    ///     if let Some(p) = sample.position {
+    ///         println!("{player} at {:.1}, {:.1}", p.x, p.y);
+    ///     }
+    /// }
+    /// # }
+    /// ```
+    pub fn samples_at(&self, tick: Tick) -> impl Iterator<Item = (PlayerId, &Sample)> + '_ {
+        self.players.iter().filter_map(move |p| Some((p.id, self.sample_at(p.id, tick)?)))
+    }
+
+    /// The players of `team`, in index order.
+    pub fn team(&self, team: TeamId) -> impl Iterator<Item = &Player> + '_ {
+        self.players.iter().filter(move |p| p.team == Some(team))
+    }
+
     /// Every vehicle track, in the order of their first record.
     pub fn vehicles(&self) -> &[Vehicle] {
         &self.vehicles
+    }
+
+    /// The track of the vehicle `entity` names at `tick`: of the tracks with
+    /// that id, the last to start at or before `tick`. Ids are reused, so
+    /// the tick picks the vehicle; a vehicle may stop sending positions while
+    /// still in use, so the track can end before `tick`.
+    pub fn vehicle_at(&self, entity: EntityId, tick: Tick) -> Option<&Vehicle> {
+        self.vehicles
+            .iter()
+            .filter(|v| v.entity == entity && v.span().is_some_and(|(from, _)| from <= tick))
+            .max_by_key(|v| v.span().map(|s| s.0))
     }
 
     /// Every ride, in tick order.
@@ -266,9 +346,23 @@ impl Film {
         &self.scoreboard
     }
 
-    /// What `player` pressed and carried over the match.
+    /// What `player` pressed and carried over the match. None for a player
+    /// whose biped updates the library doesn't read: in small lobbies (four
+    /// players or fewer), and for a player who never spawned.
     pub fn state(&self, player: PlayerId) -> Option<&PlayerState> {
         self.states.iter().find(|s| s.0 == player).map(|s| &s.1)
+    }
+
+    /// The weapon in `player`'s hands at `tick`: the weapon in the slot they
+    /// hold. None while they aren't alive ([`Film::sample_at`]), in a
+    /// vehicle, where they fire the vehicle's weapons, and in small lobbies,
+    /// whose weapon state isn't read. Measured on the test films, 99.6% of
+    /// shots on foot come from this weapon.
+    pub fn weapon_at(&self, player: PlayerId, tick: Tick) -> Option<TagId> {
+        if self.sample_at(player, tick)?.in_vehicle {
+            return None;
+        }
+        self.state(player)?.weapon_at(tick)
     }
 
     /// The film's raw layers: chunks, packets, frames.

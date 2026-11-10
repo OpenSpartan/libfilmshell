@@ -103,8 +103,20 @@ fn varint(b: &[u8], p: &mut usize) -> Option<u64> {
     }
 }
 
-/// A Bond Compact Binary v2 value of type `t`.
-fn value(b: &[u8], p: &mut usize, t: u8) -> Option<Node> {
+/// How deep values may nest: real variants nest a few levels.
+const MAX_DEPTH: u32 = 32;
+
+/// Moves `p` on by `n` bytes, which must lie within `b`.
+fn advance(b: &[u8], p: &mut usize, n: u64) -> Option<()> {
+    *p = p.checked_add(usize::try_from(n).ok()?).filter(|&e| e <= b.len())?;
+    Some(())
+}
+
+/// A Bond Compact Binary v2 value of type `t`, `depth` levels down.
+fn value(b: &[u8], p: &mut usize, t: u8, depth: u32) -> Option<Node> {
+    if depth > MAX_DEPTH {
+        return None;
+    }
     let zig = |v: u64| (v >> 1) as i64 ^ -((v & 1) as i64);
     Some(match t {
         2 | 3 | 14 => {
@@ -120,38 +132,42 @@ fn value(b: &[u8], p: &mut usize, t: u8) -> Option<Node> {
             Node::Num(v as f64)
         }
         8 => {
-            *p += 8;
+            advance(b, p, 8)?;
             Node::Other
         }
         9 => {
-            let n = varint(b, p)? as usize;
-            let s = b.get(*p..p.checked_add(n)?)?.to_vec();
-            *p += n;
-            Node::Text(s)
+            let n = varint(b, p)?;
+            let start = *p;
+            advance(b, p, n)?;
+            Node::Text(b[start..*p].to_vec())
         }
         18 => {
-            *p = p.checked_add(2 * varint(b, p)? as usize)?;
+            let n = varint(b, p)?;
+            advance(b, p, n.checked_mul(2)?)?;
             Node::Other
         }
         10 => {
-            let n = varint(b, p)? as usize;
-            let end = p.checked_add(n)?;
-            let fields = fields(b, p, Some(end))?;
+            let n = varint(b, p)?;
+            let mut end = *p;
+            advance(b, &mut end, n)?;
+            let fields = fields(b, p, Some(end), depth + 1)?;
             *p = end;
             fields
         }
         11 | 12 => {
             let x = *b.get(*p)?;
             *p += 1;
-            let n = if x >> 5 == 0 { varint(b, p)? } else { (x >> 5) as u64 - 1 } as usize;
+            let n = if x >> 5 == 0 { varint(b, p)? } else { (x >> 5) as u64 - 1 };
             if x & 31 == 3 {
                 // A byte list: the script and the string blob.
-                *p = p.checked_add(n)?;
+                advance(b, p, n)?;
                 return Some(Node::Other);
             }
-            let mut out = Vec::with_capacity(n.min(1024));
+            // Every value takes a byte at least, so the bytes left bound the
+            // list.
+            let mut out = Vec::with_capacity((n as usize).min(1024));
             for _ in 0..n {
-                out.push(value(b, p, x & 31)?);
+                out.push(value(b, p, x & 31, depth + 1)?);
             }
             Node::List(out)
         }
@@ -159,8 +175,8 @@ fn value(b: &[u8], p: &mut usize, t: u8) -> Option<Node> {
             let (kt, vt) = (*b.get(*p)?, *b.get(*p + 1)?);
             *p += 2;
             for _ in 0..varint(b, p)? {
-                value(b, p, kt)?;
-                value(b, p, vt)?;
+                value(b, p, kt, depth + 1)?;
+                value(b, p, vt, depth + 1)?;
             }
             Node::Other
         }
@@ -169,7 +185,7 @@ fn value(b: &[u8], p: &mut usize, t: u8) -> Option<Node> {
 }
 
 /// A struct's fields, up to its stop or `end`.
-fn fields(b: &[u8], p: &mut usize, end: Option<usize>) -> Option<Node> {
+fn fields(b: &[u8], p: &mut usize, end: Option<usize>, depth: u32) -> Option<Node> {
     let mut out = Vec::new();
     loop {
         if end.is_some_and(|e| *p >= e) {
@@ -188,7 +204,7 @@ fn fields(b: &[u8], p: &mut usize, end: Option<usize>) -> Option<Node> {
         match t {
             0 => return Some(Node::Struct(out)),
             1 => continue,
-            _ => out.push((id, value(b, p, t)?)),
+            _ => out.push((id, value(b, p, t, depth)?)),
         }
     }
 }
@@ -205,7 +221,7 @@ fn base_variant(chunk0: &[u8]) -> Option<Node> {
     let b = (0..8).map(|s| shifted(r, s)).find(|b| b.windows(ANCHOR.len()).any(|w| w == ANCHOR))?;
     let at = b.windows(MODE_PATH.len()).position(|w| w == MODE_PATH)?;
     let mut p = at + b[at..].iter().position(|&c| c == 0)? + 1;
-    fields(&b, &mut p, None)
+    fields(&b, &mut p, None, 0)
 }
 
 pub fn read(chunk0: &[u8]) -> Option<Definitions> {

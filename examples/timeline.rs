@@ -1,5 +1,5 @@
-//! Walks the event stream of one player, and samples their path once a
-//! second.
+//! Follows one player through a film: what they did, then where they were
+//! once a second of each life.
 //!
 //! ```text
 //! cargo run --release --example timeline -- path/to/film 3
@@ -14,14 +14,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dir = args.next().ok_or("usage: timeline <film folder> <player index>")?;
     let me = PlayerId(args.next().ok_or("give a player index")?.parse()?);
     let film = Film::from_chunks(common::load_folder(dir.as_ref())?)?;
+    let name = |id: PlayerId| film.player(id).and_then(|p| p.name()).unwrap_or("someone");
+    println!("{}", name(me));
 
-    for e in film.events() {
+    for e in film.events().iter().filter(|e| e.event.involves(me)) {
         let line = match &e.event {
-            Event::Kill(k) if k.victim == me => "died".to_string(),
-            Event::Kill(k) if k.killer == Some(me) => format!("killed {}", k.victim),
-            Event::Pickup(p) if p.player == me => format!("picked up {}", p.item),
-            Event::Action(a) if a.player == me && a.kind == ActionKind::Reload => "reloaded".to_string(),
-            Event::Medal(m) if m.player == me => format!("earned {}", m.medal().map_or("a medal", |m| m.name())),
+            Event::Kill(k) if k.victim == me => match k.killer {
+                Some(killer) if killer != me => format!("killed by {}", name(killer)),
+                _ => "died".to_string(),
+            },
+            Event::Kill(k) if k.killer == Some(me) => format!("killed {}", name(k.victim)),
+            Event::Kill(k) => format!("assisted on {}", name(k.victim)),
+            Event::Pickup(p) => format!("picked up {}", p.item.name().unwrap_or("an item")),
+            Event::Action(a) if a.kind == ActionKind::Reload => "reloaded".to_string(),
+            Event::Medal(m) => format!("earned {}", m.medal().map_or("a medal", |m| m.name())),
+            Event::VehicleExit(x) => {
+                let vehicle = film.vehicle_at(x.vehicle, e.tick).and_then(|v| v.kind());
+                format!("got out of {}", vehicle.map_or("a vehicle", |v| v.name()))
+            }
             _ => continue,
         };
         println!("{}  {line}", e.tick);
@@ -30,11 +40,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for life in film.lives_of(me) {
         let (Some(start), Some(end)) = (life.start(), life.end()) else { continue };
         println!("life from {start} to {end}{}", if life.died { ", died" } else { "" });
-        for second in (start.0..=end.0).step_by(Tick::PER_SECOND as usize) {
-            let Some(s) = life.at(Tick(second)) else { continue };
-            if let Some(p) = s.position {
-                println!("  {}  ({:.1}, {:.1})  health {:.2}", s.tick, p.x, p.y, s.health.unwrap_or(f64::NAN));
-            }
+        let mut t = start;
+        while t <= end {
+            let sample = life.at(t);
+            t += Tick::PER_SECOND;
+            let Some((s, p)) = sample.and_then(|s| Some((s, s.position?))) else { continue };
+            let health = s.health.map_or(String::new(), |h| format!("  health {:.0}%", h * 100.0));
+            println!("  {}  ({:.1}, {:.1}){health}", s.tick, p.x, p.y);
         }
     }
     Ok(())

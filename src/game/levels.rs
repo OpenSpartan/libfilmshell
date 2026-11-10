@@ -6,7 +6,7 @@
 //! engine units, and world units are ten engine units.
 
 use super::levels_data::{BUILD, LEVELS};
-use crate::TagId;
+use crate::{Guid, TagId};
 
 /// One structure BSP's box, in engine units, with the width of each axis'
 /// field.
@@ -39,6 +39,14 @@ pub struct Level {
     pub id: TagId,
     /// The level's file name ("ctf_aquarius", "fo11_blank").
     pub name: &'static str,
+    /// The level's English name, for the levels the game's map info names
+    /// ("Aquarius", "Fragmentation"). Most multiplayer levels' map info gives
+    /// only the file name, and the name players see comes with the map
+    /// variant from the Halo services.
+    pub display_name: Option<&'static str>,
+    /// The id the Halo services give the level: the match stats'
+    /// `MatchInfo.LevelId`, from the level's map info.
+    pub api_id: Option<Guid>,
     /// The play space's structure BSP tag.
     pub structure: TagId,
     /// The play space's box.
@@ -62,6 +70,12 @@ impl Level {
 /// The level whose `levl` tag id is `id`, when the catalogue has it.
 pub fn level(id: TagId) -> Option<&'static Level> {
     LEVELS.binary_search_by_key(&id, |l| l.id).ok().map(|i| &LEVELS[i])
+}
+
+/// The level the Halo services know as `api_id` (the match stats'
+/// `MatchInfo.LevelId`), when the catalogue has it.
+pub fn level_by_api_id(api_id: Guid) -> Option<&'static Level> {
+    LEVELS.iter().find(|l| l.api_id == Some(api_id))
 }
 
 /// Every catalogued level, in tag id order.

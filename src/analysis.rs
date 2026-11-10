@@ -4,18 +4,22 @@
 use crate::model::{Event, PlayerId, Tick};
 use crate::{Film, TagId};
 
-/// A player's shots and hits up to a tick.
+/// A player's shots and hits up to a tick: an estimate.
 ///
-/// The scoreboard's accuracy slots are empty in films, so accuracy is
-/// counted: shots are weapon-fire events plus the non-grenade projectiles
-/// the player created (the two don't overlap), hits are damage events whose
-/// effect belongs to a weapon, once per attacker, victim and frame.
+/// The scoreboard's accuracy slots are zero in films, so accuracy is
+/// counted: shots are [`Event::Shot`]s plus the non-grenade projectiles the
+/// player created (the two don't overlap), hits are damage events whose
+/// effect belongs to a weapon, once per attacker, victim and frame. Measured
+/// against the match stats, shots and hits are a median 1.00 of the game's
+/// counts, and accuracy is off by a median of 4 points.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Accuracy {
     /// Rounds fired.
     pub shots: u32,
-    /// Rounds that hit a player.
+    /// Frames in which the player's weapon damage landed on another player,
+    /// counted once per victim: a shotgun blast counts once, a blast that
+    /// hits two players twice.
     pub hits: u32,
 }
 
@@ -39,9 +43,9 @@ pub struct WeaponProfile {
     pub burst: i32,
     /// Rounds loaded, carried at the start, carried at most.
     pub magazine: Option<[i32; 3]>,
-    /// The projectile's initial velocity, engine units a second.
+    /// The projectile's initial velocity, world units a second.
     pub velocity: Option<f64>,
-    /// The projectile's range, engine units.
+    /// The projectile's range, world units.
     pub range: Option<f64>,
     /// A hit's damage on a shield and on a body, when it is one amount.
     pub damage: Option<[f64; 2]>,
@@ -52,12 +56,13 @@ pub struct WeaponProfile {
 
 /// How a respawn's pad scored under the game's default spawn weights, from
 /// where everyone else was a moment before. Needs the map's spawn points in
-/// the hints.
+/// [`Hints::spawn_pads`](crate::Hints::spawn_pads).
 ///
 /// The game scores every spawn point by regions around allies, enemies and
 /// recent deaths, each adding its weight inside, scaled by a falloff, and
-/// compares points by `floor(score / 4)`. Only the player influencers are
-/// modelled.
+/// compares points by `floor(score / step)` ([`SpawnModel::step`]). Only
+/// the player influencers are modelled, and there is no line of sight, so
+/// a factor can rule pads out but doesn't name the one the game chose.
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct SpawnFactor {
@@ -65,16 +70,15 @@ pub struct SpawnFactor {
     pub tick: Tick,
     /// Who.
     pub player: PlayerId,
-    /// The pad, an index into the hinted spawn pads.
+    /// The pad, an index into the spawn pads given to the hints.
     pub pad: usize,
     /// The pad's score.
     pub score: f64,
-    /// Respawn pads open to the player that scored better, the same, worse.
-    /// Pads are compared by `floor(score / step)` ([`SpawnModel::step`]).
+    /// Respawn pads open to the player that scored a better step.
     pub better: u32,
-    /// See `better`.
+    /// Respawn pads open to the player that scored the same step.
     pub same: u32,
-    /// See `better`.
+    /// Respawn pads open to the player that scored a worse step.
     pub worse: u32,
     /// Per region of [`spawn_model`], how many sources were inside.
     pub sources: Vec<u32>,
@@ -107,9 +111,10 @@ pub struct SpawnRegion {
     pub weight: f64,
     /// Every source inside counts; else only the strongest.
     pub stacks: bool,
-    /// The weight's falloff with distance over radius, piecewise linear:
-    /// each piece up to `x` is `slope * d + intercept`, clamped to 0..1.
-    /// Empty when the weight is flat.
+    /// The weight's falloff with `d`, the distance over the radius,
+    /// piecewise linear: each piece `[up_to, slope, intercept]` is
+    /// `slope * d + intercept` for `d` up to `up_to`, clamped to 0..1, the
+    /// last piece continuing past its end. Empty when the weight is flat.
     pub falloff: Vec<[f64; 3]>,
 }
 
@@ -171,8 +176,8 @@ pub fn accuracy_at(film: &Film, player: PlayerId, tick: Tick) -> Accuracy {
     Accuracy { shots: fired as u32 + upto(&d.projectiles), hits: upto(&d.landed) }
 }
 
-/// The projectile and hit ticks [`accuracy_at`] counts for `player`, beside
-/// their shot events.
+/// The ticks [`accuracy_at`] counts for `player` besides their
+/// [`Event::Shot`]s: the projectiles they created and the hits they landed.
 pub fn accuracy_ticks(film: &Film, player: PlayerId) -> AccuracyTicks<'_> {
     film.analysis
         .accuracy
@@ -186,7 +191,10 @@ pub fn weapon_profiles(film: &Film) -> &[WeaponProfile] {
     &film.analysis.weapons
 }
 
-/// Every respawn of a timed life that started on a hinted spawn pad.
+/// Every respawn that started on a hinted spawn pad, of a player whose
+/// lives the HighlightEvents death times placed. Empty unless the film has
+/// five or more players, its positions convert to world units, and the
+/// hints carry spawn pads.
 pub fn spawn_factors(film: &Film) -> &[SpawnFactor] {
     &film.analysis.spawn_factors
 }

@@ -626,7 +626,7 @@ fn splice_vehicle_rides(slots: &mut Slots, stubs: &IndexMap<i32, Vec<i64>>, vehi
                 k_in: i64,
                 d: f64,
             }
-            let mut best: Option<Best> = None;
+            let mut best: Option<Best<'_>> = None;
             for v in &veh_list {
                 let k_in = first_at_or_after(v, t0);
                 if k_in < 0 || v[k_in as usize].tick > t_lim {
@@ -794,7 +794,7 @@ fn for_each_entity_record<'a>(film: &'a Film, f: &mut dyn FnMut(EntityRecord<'a>
 
 /// c2 start bit for small-lobby records, by the same smoothness test as
 /// `detect_coord_layout`. Falls back to 20 (Aquarius).
-fn detect_record_seam(records: &[EntityRecord]) -> i64 {
+fn detect_record_seam(records: &[EntityRecord<'_>]) -> i64 {
     const CANDS: [i64; 8] = [19, 20, 21, 22, 23, 24, 25, 26];
     let sample = &records[..records.len().min(2000)];
     let mut best = 20;
@@ -846,7 +846,7 @@ struct SmallLobbyLife {
 /// small-lobby units: raw1 = 0x4000 + c1's 15-bit window / 64 (c2's bits
 /// below c1 masked off), raw2 = the window at the seam >> 3.
 fn extract_small_lobby_lives(film: &Film) -> (Vec<SmallLobbyLife>, i64) {
-    let mut records: Vec<EntityRecord> = Vec::new();
+    let mut records: Vec<EntityRecord<'_>> = Vec::new();
     for_each_entity_record(film, &mut |r| records.push(r));
     let c2_start = detect_record_seam(&records);
     let c2_in_c1 = 0.max(15 - (c2_start - 7));
@@ -1171,7 +1171,7 @@ fn paths_from_assignment(
         /// Game tick past which the life's samples are dropped.
         limit: f64,
     }
-    let mut per_player: Vec<Vec<L>> = roster.iter().map(|_| Vec::new()).collect();
+    let mut per_player: Vec<Vec<L<'_>>> = roster.iter().map(|_| Vec::new()).collect();
     let mut unlinked: Vec<Vec<RawSample>> = Vec::new();
     let mut deaths: Vec<DeathPosition> = Vec::new();
     for (&slot_id, frames) in slots {
@@ -1246,6 +1246,7 @@ fn paths_from_assignment(
     (paths, unlinked, deaths)
 }
 
+#[derive(Debug)]
 pub struct ExtractionResult {
     pub paths: Vec<PlayerPath>,
     /// The detected c2 start bit (7 plus c1's field width).

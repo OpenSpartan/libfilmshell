@@ -7,7 +7,8 @@ use std::fmt;
 pub enum Error {
     /// No chunks were given.
     NoChunks,
-    /// Chunks between 0 and the highest index given are missing.
+    /// Chunks between 0 and the highest index given are missing: the first
+    /// missing indices, at most 16.
     MissingChunks(Vec<u32>),
     /// Two chunks have the same index.
     DuplicateChunk(u32),
@@ -24,7 +25,9 @@ pub enum Error {
         /// The chunk's index.
         index: u32,
     },
-    /// A compressed chunk inflates to more than [`MAX_CHUNK_BYTES`](crate::MAX_CHUNK_BYTES).
+    /// A chunk holds more than [`MAX_CHUNK_BYTES`](crate::MAX_CHUNK_BYTES)
+    /// once inflated, or takes the film past
+    /// [`MAX_FILM_BYTES`](crate::MAX_FILM_BYTES).
     TooLarge {
         /// The chunk's index.
         index: u32,
@@ -47,11 +50,9 @@ impl fmt::Display for Error {
                 write!(f, "missing chunks {}", list.join(", "))
             }
             Error::DuplicateChunk(i) => write!(f, "chunk {i} given twice"),
-            Error::UnexpectedKind { index, kind } => write!(f, "chunk {index} cannot be a {kind:?} chunk"),
+            Error::UnexpectedKind { index, kind } => write!(f, "chunk {index} cannot be a {kind} chunk"),
             Error::Inflate { index } => write!(f, "chunk {index} does not inflate"),
-            Error::TooLarge { index } => {
-                write!(f, "chunk {index} inflates to more than {} bytes", crate::MAX_CHUNK_BYTES)
-            }
+            Error::TooLarge { index } => write!(f, "chunk {index} is too large"),
             Error::UnknownHeader => write!(f, "chunk 0 is not a film header"),
             Error::NoReplay => write!(f, "the film has no replay chunk"),
             Error::NoTicks => write!(f, "no replay chunk records a tick"),

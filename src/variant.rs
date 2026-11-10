@@ -140,9 +140,28 @@ fn varint(b: &[u8], p: &mut usize) -> Option<u64> {
     }
 }
 
-/// Read a Bond Compact Binary v2 value of type `t` at `p`, calling `f` on each
-/// integer with the path of field ids to it.
-fn value(b: &[u8], p: &mut usize, t: u8, path: &mut Vec<u32>, f: &mut impl FnMut(&[u32], i64)) -> Option<()> {
+/// How deep values may nest: real variants nest a few levels.
+const MAX_DEPTH: u32 = 32;
+
+/// Moves `p` on by `n` bytes, which must lie within `b`.
+fn advance(b: &[u8], p: &mut usize, n: u64) -> Option<()> {
+    *p = p.checked_add(usize::try_from(n).ok()?).filter(|&e| e <= b.len())?;
+    Some(())
+}
+
+/// Read a Bond Compact Binary v2 value of type `t` at `p`, `depth` levels
+/// down, calling `f` on each integer with the path of field ids to it.
+fn nested(
+    b: &[u8],
+    p: &mut usize,
+    t: u8,
+    path: &mut Vec<u32>,
+    f: &mut impl FnMut(&[u32], i64),
+    depth: u32,
+) -> Option<()> {
+    if depth > MAX_DEPTH {
+        return None;
+    }
     let zig = |v: u64| (v >> 1) as i64 ^ -((v & 1) as i64);
     match t {
         // bool, uint8, int8
@@ -164,19 +183,20 @@ fn value(b: &[u8], p: &mut usize, t: u8, path: &mut Vec<u32>, f: &mut impl FnMut
             *p += 4;
             f(path, (v as f64 * 1000.0).round() as i64);
         }
-        8 => *p += 8,
+        8 => advance(b, p, 8)?,
         9 => {
-            let n = varint(b, p)? as usize;
-            *p += n;
+            let n = varint(b, p)?;
+            advance(b, p, n)?;
         }
         18 => {
-            let n = varint(b, p)? as usize;
-            *p += 2 * n;
+            let n = varint(b, p)?;
+            advance(b, p, n.checked_mul(2)?)?;
         }
         10 => {
-            let n = varint(b, p)? as usize;
-            let end = p.checked_add(n)?;
-            fields(b, p, path, f)?;
+            let n = varint(b, p)?;
+            let mut end = *p;
+            advance(b, &mut end, n)?;
+            fields(b, p, path, f, depth + 1)?;
             *p = end;
         }
         11 | 12 => {
@@ -189,19 +209,19 @@ fn value(b: &[u8], p: &mut usize, t: u8, path: &mut Vec<u32>, f: &mut impl FnMut
                 if n == 8 {
                     f(path, i64::from_le_bytes(b.get(*p..*p + 8)?.try_into().ok()?));
                 }
-                *p += n as usize;
+                advance(b, p, n)?;
                 return Some(());
             }
             for _ in 0..n {
-                value(b, p, x & 31, path, f)?;
+                nested(b, p, x & 31, path, f, depth + 1)?;
             }
         }
         13 => {
             let (kt, vt) = (*b.get(*p)?, *b.get(*p + 1)?);
             *p += 2;
             for _ in 0..varint(b, p)? {
-                value(b, p, kt, path, f)?;
-                value(b, p, vt, path, f)?;
+                nested(b, p, kt, path, f, depth + 1)?;
+                nested(b, p, vt, path, f, depth + 1)?;
             }
         }
         _ => return None,
@@ -210,7 +230,7 @@ fn value(b: &[u8], p: &mut usize, t: u8, path: &mut Vec<u32>, f: &mut impl FnMut
 }
 
 /// A struct's fields, up to its stop.
-fn fields(b: &[u8], p: &mut usize, path: &mut Vec<u32>, f: &mut impl FnMut(&[u32], i64)) -> Option<()> {
+fn fields(b: &[u8], p: &mut usize, path: &mut Vec<u32>, f: &mut impl FnMut(&[u32], i64), depth: u32) -> Option<()> {
     loop {
         let h = *b.get(*p)?;
         *p += 1;
@@ -227,7 +247,7 @@ fn fields(b: &[u8], p: &mut usize, path: &mut Vec<u32>, f: &mut impl FnMut(&[u32
             1 => continue,
             _ => {
                 path.push(id);
-                let r = value(b, p, t, path, f);
+                let r = nested(b, p, t, path, f, depth);
                 path.pop();
                 r?;
             }
@@ -348,7 +368,7 @@ pub fn read(chunk0: &[u8]) -> Option<Variant> {
             }
         };
         // The fields past the settings aren't all read: a stop there changes nothing.
-        let _ = fields(&b, &mut p, &mut Vec::new(), &mut f);
+        let _ = fields(&b, &mut p, &mut Vec::new(), &mut f, 0);
         options.sort_by_key(|o: &(u32, OptionValue)| o.0);
         options.dedup_by_key(|o| o.0);
         v.options = options;
@@ -374,6 +394,6 @@ pub fn settings(chunk0: &[u8]) -> Vec<(Vec<u32>, i64)> {
     let Some(at) = b.windows(MODE_PATH.len()).position(|w| w == MODE_PATH) else { return out };
     let Some(end) = b[at..].iter().position(|&c| c == 0) else { return out };
     let mut p = at + end + 1;
-    let _ = fields(&b, &mut p, &mut Vec::new(), &mut |path: &[u32], x: i64| out.push((path.to_vec(), x)));
+    let _ = fields(&b, &mut p, &mut Vec::new(), &mut |path: &[u32], x: i64| out.push((path.to_vec(), x)), 0);
     out
 }

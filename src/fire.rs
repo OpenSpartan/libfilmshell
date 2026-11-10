@@ -41,6 +41,7 @@ const KILL_CAUSE_TICKS: u32 = 120;
 const THROW_TICKS: u32 = 360;
 
 #[cfg_attr(test, derive(Default))]
+#[derive(Debug)]
 pub struct FilmFire {
     /// The weapons fired and the `extra` ones given to [`read`], by tag id;
     /// a shot's weapon is an index into it.

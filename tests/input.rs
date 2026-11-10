@@ -8,6 +8,14 @@ fn chunk(index: u32, kind: ChunkKind) -> Chunk<'static> {
     Chunk::new(index, kind, vec![0u8; 16])
 }
 
+/// A film can be shared between threads, and errors sent across them.
+#[test]
+fn films_cross_threads() {
+    fn shared<T: Send + Sync>() {}
+    shared::<Film>();
+    shared::<Error>();
+}
+
 #[test]
 fn no_chunks() {
     assert_eq!(Film::from_chunks(Vec::new()).unwrap_err(), Error::NoChunks);
@@ -19,6 +27,12 @@ fn gaps_and_repeats_are_named() {
     assert_eq!(Film::from_chunks(gap).unwrap_err(), Error::MissingChunks(vec![2]));
     let twice = vec![chunk(0, ChunkKind::Header), chunk(1, ChunkKind::Replay), chunk(1, ChunkKind::Replay)];
     assert_eq!(Film::from_chunks(twice).unwrap_err(), Error::DuplicateChunk(1));
+}
+
+#[test]
+fn a_far_index_lists_only_the_first_gaps() {
+    let far = vec![chunk(0, ChunkKind::Header), chunk(1, ChunkKind::Replay), chunk(u32::MAX, ChunkKind::Replay)];
+    assert_eq!(Film::from_chunks(far).unwrap_err(), Error::MissingChunks((2..18).collect()));
 }
 
 #[test]

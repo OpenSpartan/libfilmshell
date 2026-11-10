@@ -5,8 +5,9 @@ use crate::TagId;
 
 /// What dealt a hit, from where its damage effect sits in the game's tags.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum DamageCause {
     /// A weapon's projectile, or a projectile with no weapon on record.
     Weapon,
@@ -26,6 +27,23 @@ pub enum DamageCause {
     Explosion,
     /// Not in the catalogue.
     Unknown,
+}
+
+impl std::fmt::Display for DamageCause {
+    /// A short lowercase description: "a grenade", "the environment".
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            DamageCause::Weapon => "a weapon",
+            DamageCause::Melee => "melee",
+            DamageCause::Grenade => "a grenade",
+            DamageCause::Equipment => "equipment",
+            DamageCause::Vehicle => "a vehicle",
+            DamageCause::Collision => "a collision",
+            DamageCause::World => "the environment",
+            DamageCause::Explosion => "an explosion",
+            DamageCause::Unknown => "an unknown cause",
+        })
+    }
 }
 
 /// A damage effect's numbers, from its tag and from what the multiplayer

@@ -1,17 +1,95 @@
 use std::fmt;
+use std::ops::{Add, AddAssign, Sub, SubAssign};
+use std::time::Duration;
 
 /// A game tick: 1/60 s of simulation, counted from the film's first frame.
+///
+/// Adding or subtracting a number of ticks works as it does for `u32`: going
+/// below tick 0 panics in debug builds and wraps in release ones, so use
+/// [`Tick::checked_sub`] or [`Tick::saturating_sub`] where it can. The
+/// difference of two ticks is signed:
+///
+/// ```
+/// use filmshell::Tick;
+///
+/// let spawn = Tick::from_seconds(12.5);
+/// let death = spawn + 5 * Tick::PER_SECOND;
+/// assert_eq!(death - spawn, 300);
+/// assert_eq!(spawn - death, -300);
+/// assert_eq!(death.to_string(), "0:17.500");
+/// ```
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Tick(pub u32);
 
 impl Tick {
     /// Ticks in a second of game time.
     pub const PER_SECOND: u32 = 60;
 
+    /// The tick `seconds` of game time after the film's first frame, to the
+    /// nearest tick. Negative and NaN times give tick 0.
+    pub fn from_seconds(seconds: f64) -> Tick {
+        let t = (seconds * Self::PER_SECOND as f64).round();
+        Tick(if t >= 0.0 { t.min(u32::MAX as f64) as u32 } else { 0 })
+    }
+
     /// Seconds since the film's first frame.
     pub fn seconds(self) -> f64 {
         self.0 as f64 / Self::PER_SECOND as f64
+    }
+
+    /// Game time since the film's first frame.
+    pub fn duration(self) -> Duration {
+        let per = Self::PER_SECOND as u64;
+        let t = self.0 as u64;
+        Duration::from_secs(t / per) + Duration::from_nanos((t % per) * 1_000_000_000 / per)
+    }
+
+    /// `ticks` earlier, or None before the film's first frame.
+    pub fn checked_sub(self, ticks: u32) -> Option<Tick> {
+        self.0.checked_sub(ticks).map(Tick)
+    }
+
+    /// `ticks` earlier, stopping at tick 0.
+    pub fn saturating_sub(self, ticks: u32) -> Tick {
+        Tick(self.0.saturating_sub(ticks))
+    }
+}
+
+impl Add<u32> for Tick {
+    type Output = Tick;
+
+    fn add(self, ticks: u32) -> Tick {
+        Tick(self.0 + ticks)
+    }
+}
+
+impl AddAssign<u32> for Tick {
+    fn add_assign(&mut self, ticks: u32) {
+        self.0 += ticks;
+    }
+}
+
+impl Sub<u32> for Tick {
+    type Output = Tick;
+
+    fn sub(self, ticks: u32) -> Tick {
+        Tick(self.0 - ticks)
+    }
+}
+
+impl SubAssign<u32> for Tick {
+    fn sub_assign(&mut self, ticks: u32) {
+        self.0 -= ticks;
+    }
+}
+
+/// The ticks from `other` to `self`, negative when `other` is later.
+impl Sub for Tick {
+    type Output = i64;
+
+    fn sub(self, other: Tick) -> i64 {
+        self.0 as i64 - other.0 as i64
     }
 }
 

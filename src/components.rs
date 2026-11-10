@@ -736,6 +736,8 @@ pub struct Fields {
     /// sprint (on-foot speed at the sprint ceiling), 3 a grapple with its
     /// target.
     pub ability: Option<u32>,
+    /// The grapple's target is an object (state 3), not a place.
+    pub grapple_object: bool,
     /// unit-control: Some(Some(id)) a player controls the unit, the engine
     /// player id of the events and the scoreboard; Some(None) no player does.
     pub controller: Option<Option<u32>>,
@@ -2212,17 +2214,18 @@ impl Reader<'_> {
             // 0, a Bond CompactBinary v2 struct, which opens with its length.
             MultiplayerProperties => {
                 if !self.flag() && self.bits(5) != 0 {
-                    let mut len = 0u32;
+                    // A varint of at most five bytes: 35 bits.
+                    let mut len = 0u64;
                     let mut shift = 0;
                     loop {
                         let b = self.bits(8);
-                        len |= (b & 0x7f) << shift;
+                        len |= u64::from(b & 0x7f) << shift;
                         shift += 7;
                         if b & 0x80 == 0 || shift > 28 {
                             break;
                         }
                     }
-                    self.skip(8 * len);
+                    self.at += 8 * len as i64;
                 }
             }
             ParentState => {
@@ -2607,7 +2610,9 @@ impl Reader<'_> {
             }
             // `[state:2]`: 1 carries 2 bits and a 24-bit direction; 3 (when
             // version > 1) a target: an object or a place, and an optional
-            // second place.
+            // second place. The object is a kind-0 handle, a 13-bit index
+            // from entity 512 and the generation (writer `142f27610`, handle
+            // writer `1406d5110`).
             Ability => match self.bits(2) {
                 1 => {
                     f.ability = Some(1);
@@ -2619,7 +2624,8 @@ impl Reader<'_> {
                         let flags = self.bits(6);
                         if flags & 1 != 0 {
                             if self.flag() {
-                                self.skip(11 + 2);
+                                f.grapple_object = true;
+                                self.skip(crate::events::INDEX_BITS + 2);
                                 if flags & 0x10 != 0 {
                                     self.place(p, true)?;
                                 }
@@ -2762,13 +2768,13 @@ pub fn update_header_at(c: &[u8], bp: i64) -> bool {
 /// The absolute bit where the data of the update `g` (as
 /// `for_each_object_update` dispatches it) starts, after a `count`-entry
 /// component list.
-pub fn data_start(g: &Shifted, count: usize) -> i64 {
+pub fn data_start(g: &Shifted<'_>, count: usize) -> i64 {
     8 * (g.q as i64 + 5) + g.sh as i64 + 6 * count as i64 - 22
 }
 
 /// The biped updates of `film` with their component lists (stubs as
 /// `[aim, command tick]`): f(g, frame, slot, list).
-fn for_each_biped_update(film: &Film, mut f: impl FnMut(&Shifted, i64, i32, &[u32]) -> bool) {
+fn for_each_biped_update(film: &Film, mut f: impl FnMut(&Shifted<'_>, i64, i32, &[u32]) -> bool) {
     let schema = Schema::read(&film.chunks[0]);
     let stub = [schema.biped.aim, schema.biped.command_tick];
     for_each_object_update(film, |g, _gp, frame, kind, id, off| match kind {
@@ -2821,6 +2827,7 @@ pub struct State {
 }
 
 /// Every biped slot's state over the film.
+#[derive(Debug)]
 pub struct SlotStates(HashMap<i32, Vec<(i64, State)>>, HashMap<i32, Vec<i64>>);
 
 /// A jump: the vertical speed (engine units a second) rises to at least

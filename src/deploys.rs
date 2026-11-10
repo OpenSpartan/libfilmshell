@@ -24,7 +24,7 @@ pub struct Use {
 
 /// What the walk gives: each entity's creates and positions, and the
 /// equipment events.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Seen {
     creates: HashMap<u32, Vec<(i64, u32)>>,
     positions: HashMap<u32, Vec<(i64, (u32, [u32; 3]))>>,

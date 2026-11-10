@@ -120,6 +120,7 @@ pub struct LifeClock {
     pub respawn_ticks: f64,
 }
 
+#[derive(Debug)]
 pub struct LifeAssignment {
     pub clock: LifeClock,
     /// Slot id to (roster index, life index).
@@ -130,6 +131,7 @@ pub struct LifeAssignment {
 }
 
 /// Matching costs, in game ticks of disagreement.
+#[derive(Debug)]
 pub struct LifeTuning {
     pub start_early_max: f64,
     pub start_soft: f64,
@@ -391,8 +393,11 @@ pub fn assign_lives(slots: &[LifeSlot], players: &[LifePlayer]) -> Option<LifeAs
     let mut pos: Vec<Pos> = Vec::new();
     for p in &timed {
         let d = p.death_ms.as_ref().unwrap();
+        // More lives than the film has slots and deaths can't be matched; a
+        // damaged scoreboard can claim billions.
+        let lives = p.spawns.min((slots.len() + d.len() + 1) as f64);
         let mut k = 0usize;
-        while (k as f64) < p.spawns {
+        while (k as f64) < lives {
             pos.push(Pos {
                 player: p.index,
                 life: k,
@@ -549,7 +554,7 @@ pub fn assign_lives(slots: &[LifeSlot], players: &[LifePlayer]) -> Option<LifeAs
     let sample = |matched: &IndexMap<usize, usize>, kind: PosKind| -> Vec<(&LifeSlot, f64)> {
         matched
             .iter()
-            .filter(|(&si, &qi)| {
+            .filter(|&(&si, &qi)| {
                 pos[qi].kind == kind
                     && (kind != PosKind::Respawn
                         || (human_slots[si].start - pos[qi].s_exp.unwrap_or(f64::NAN)).abs() <= t.start_soft)
