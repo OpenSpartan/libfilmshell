@@ -790,6 +790,32 @@ mod tests {
         assert_eq!(fire, 2854);
     }
 
+    /// A grapple whose target is an object reads on to the payload's end:
+    /// the object's handle is 13 bits and the generation.
+    #[test]
+    fn grapples_at_objects_read_through() {
+        let mut grapples = 0;
+        for prefix in ["c3790060", "de65111b", "f0eca791"] {
+            let Some(chunks) = crate::testing::chunks(prefix) else { continue };
+            let film = Film::new(chunks, crate::container::Framing::Packets);
+            let level = crate::header::read(&film.chunks[0]).level.and_then(crate::levels::level).unwrap();
+            let mut params = Params::new(level.widths);
+            params.set_level(Some(level));
+            let mut w = Walker::new(&film.chunks[0], params);
+            for_each_payload(&film, &mut w, |frame, p| {
+                let grapple = |o: &EntityOp| match &o.kind {
+                    OpKind::Update { fields, .. } => fields.grapple_object,
+                    _ => false,
+                };
+                if p.ops.iter().any(grapple) {
+                    grapples += 1;
+                    assert_eq!(p.stop, None, "{prefix} frame {frame}");
+                }
+            });
+        }
+        assert!(crate::testing::film_dirs().is_empty() || grapples > 0);
+    }
+
     #[test]
     fn a_shared_walk_hands_each_reader_the_same_payloads() {
         let Some(chunks) = crate::testing::chunks("f9129808") else { return };

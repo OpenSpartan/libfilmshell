@@ -736,6 +736,8 @@ pub struct Fields {
     /// sprint (on-foot speed at the sprint ceiling), 3 a grapple with its
     /// target.
     pub ability: Option<u32>,
+    /// The grapple's target is an object (state 3), not a place.
+    pub grapple_object: bool,
     /// unit-control: Some(Some(id)) a player controls the unit, the engine
     /// player id of the events and the scoreboard; Some(None) no player does.
     pub controller: Option<Option<u32>>,
@@ -2608,7 +2610,9 @@ impl Reader<'_> {
             }
             // `[state:2]`: 1 carries 2 bits and a 24-bit direction; 3 (when
             // version > 1) a target: an object or a place, and an optional
-            // second place.
+            // second place. The object is a kind-0 handle, a 13-bit index
+            // from entity 512 and the generation (writer `142f27610`, handle
+            // writer `1406d5110`).
             Ability => match self.bits(2) {
                 1 => {
                     f.ability = Some(1);
@@ -2620,7 +2624,8 @@ impl Reader<'_> {
                         let flags = self.bits(6);
                         if flags & 1 != 0 {
                             if self.flag() {
-                                self.skip(11 + 2);
+                                f.grapple_object = true;
+                                self.skip(crate::events::INDEX_BITS + 2);
                                 if flags & 0x10 != 0 {
                                     self.place(p, true)?;
                                 }
