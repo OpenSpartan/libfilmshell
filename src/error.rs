@@ -32,7 +32,9 @@ pub enum Error {
         /// The chunk's index.
         index: u32,
     },
-    /// Chunk 0 is not a film header the library knows.
+    /// Chunk 0 is not a film header the library knows: not a film's, or a
+    /// film an older game build recorded (film versions before 41, the
+    /// manifest's `FilmMajorVersion`; the format of chunk 0 changed).
     UnknownHeader,
     /// The film has no replay chunk.
     NoReplay,
@@ -53,7 +55,7 @@ impl fmt::Display for Error {
             Error::UnexpectedKind { index, kind } => write!(f, "chunk {index} cannot be a {kind} chunk"),
             Error::Inflate { index } => write!(f, "chunk {index} does not inflate"),
             Error::TooLarge { index } => write!(f, "chunk {index} is too large"),
-            Error::UnknownHeader => write!(f, "chunk 0 is not a film header"),
+            Error::UnknownHeader => write!(f, "chunk 0 is not a film header this library reads"),
             Error::NoReplay => write!(f, "the film has no replay chunk"),
             Error::NoTicks => write!(f, "no replay chunk records a tick"),
         }
