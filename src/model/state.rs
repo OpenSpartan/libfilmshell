@@ -1,5 +1,6 @@
 use super::Tick;
 use crate::TagId;
+use crate::game::Grenade;
 
 /// A player's movement input from `tick` on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -68,6 +69,13 @@ pub struct GrenadeCount {
     pub tick: Tick,
     /// Frag, plasma, dynamo and spike grenades.
     pub counts: [u32; 4],
+}
+
+impl GrenadeCount {
+    /// How many of `grenade` the player carries.
+    pub fn count(&self, grenade: Grenade) -> u32 {
+        self.counts.get(grenade.type_index() as usize - 1).copied().unwrap_or(0)
+    }
 }
 
 /// A player's equipment charge from `tick` on.
@@ -169,5 +177,20 @@ impl PlayerState {
     /// The movement input at `tick`.
     pub fn input_at(&self, tick: Tick) -> Option<&Input> {
         latest(&self.inputs, tick, |i| i.tick)
+    }
+
+    /// The charge of the energy weapon in `slot` at `tick`.
+    pub fn energy_in(&self, slot: u32, tick: Tick) -> Option<&Energy> {
+        self.energy.iter().take_while(|e| e.tick <= tick).filter(|e| e.slot == slot).last()
+    }
+
+    /// The heat of the weapon in `slot` at `tick`.
+    pub fn heat_in(&self, slot: u32, tick: Tick) -> Option<&Heat> {
+        self.heat.iter().take_while(|h| h.tick <= tick).filter(|h| h.slot == slot).last()
+    }
+
+    /// The equipment's charge at `tick`.
+    pub fn equipment_at(&self, tick: Tick) -> Option<&EquipmentCharge> {
+        latest(&self.equipment, tick, |e| e.tick)
     }
 }

@@ -20,7 +20,7 @@ pub enum Event {
     /// A player was killed.
     Kill(Kill),
     /// A player earned a medal (from the HighlightEvents chunk, when the
-    /// film fixes its clock; `Film::medals` lists every medal).
+    /// film fixes its clock; [`Film::medals`](crate::Film::medals) lists every medal).
     Medal(MedalAward),
     /// A weapon fired a round.
     Shot(Shot),
@@ -184,12 +184,13 @@ impl Event {
 pub struct Kill {
     /// Who died.
     pub victim: PlayerId,
-    /// Who killed them.
+    /// Who killed them: None when no player is credited (a fall, a kill
+    /// volume, an AI). On a suicide it can be the victim; check `suicide`.
     pub killer: Option<PlayerId>,
     /// The killer's damage percentage as the kill event carries it, whole
-    /// percent. Mostly 0 to 100, but up to 239 on the reference films, so it
-    /// isn't a share of the damage the victim took. None without a killer:
-    /// the game then sends whatever the field held.
+    /// percent. Values above 100 occur (up to 239 seen), so it isn't a share
+    /// of the damage the victim took. None without a killer: the game then
+    /// sends whatever the field held.
     pub killer_damage_percent: Option<u32>,
     /// Who assisted.
     pub assistant: Option<PlayerId>,
@@ -372,7 +373,7 @@ pub struct VehicleExit {
     /// The vehicle: [`Film::vehicle_at`](crate::Film::vehicle_at) finds its
     /// track.
     pub vehicle: EntityId,
-    /// The seat, counted from the driver's.
+    /// The seat, 0 the driver's.
     pub seat: u32,
 }
 
@@ -547,7 +548,7 @@ pub struct ZoneEvent {
     pub player: Option<PlayerId>,
     /// The team it is about.
     pub team: Option<TeamId>,
-    /// The zone, an index into `Film::zones`.
+    /// The zone, an index into [`Film::zones`](crate::Film::zones).
     pub zone: Option<usize>,
 }
 

@@ -6,7 +6,9 @@ use crate::TagId;
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub struct Header {
-    /// The game build that recorded the film ("6.10026.18411.0").
+    /// The game build that recorded the film ("6.10026.18411.0"). Always
+    /// set on a [`Film`](crate::Film): a header without one is refused with
+    /// [`Error::UnknownHeader`](crate::Error::UnknownHeader).
     pub build: Option<String>,
     /// The build's branch ("HI_1_13_0").
     pub branch: Option<String>,
@@ -17,6 +19,8 @@ pub struct Header {
     pub map_asset_id: Option<Guid>,
     /// The map variant's version id.
     pub map_version_id: Option<Guid>,
-    /// The `levl` tag the map variant is built on.
+    /// The `levl` tag the map variant is built on:
+    /// [`Hints::level`](crate::Hints::level) when given, else the one chunk 0
+    /// names.
     pub level: Option<TagId>,
 }

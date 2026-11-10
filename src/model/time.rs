@@ -4,8 +4,10 @@ use std::time::Duration;
 
 /// A game tick: 1/60 s of simulation, counted from the film's first frame.
 ///
-/// Adding or subtracting a number of ticks works as it does for `u32`, and
-/// the difference of two ticks is signed:
+/// Adding or subtracting a number of ticks works as it does for `u32`: going
+/// below tick 0 panics in debug builds and wraps in release ones, so use
+/// [`Tick::checked_sub`] or [`Tick::saturating_sub`] where it can. The
+/// difference of two ticks is signed:
 ///
 /// ```
 /// use filmshell::Tick;

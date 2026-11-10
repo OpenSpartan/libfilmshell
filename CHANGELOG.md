@@ -3,9 +3,9 @@
 The crate follows [semantic versioning](https://semver.org). Before 1.0, a minor release may break
 the API; the raw format layer (`filmshell::format`) may change in any minor release.
 
-## Unreleased
+## 0.1.0 (unreleased)
 
-The first release.
+First release.
 
 - `Film::from_chunks` reads a film from its chunks, compressed or inflated, into a typed model:
   players and their teams (bots' included), lives with positions and vitals, vehicles and rides,
@@ -17,5 +17,8 @@ The first release.
 - `filmshell::format` exposes the raw layers, with the game's names for every event and entity
   type.
 - `filmshell::analysis` estimates what films don't state: accuracy, weapon numbers, spawn factors.
-- A film whose chunks inflate past 1 GiB, or a chunk past 256 MiB, is refused. `Hints` leave out
-  spawn points and level boxes whose coordinates aren't finite.
+- Features: `serde` derives `Serialize` on the types at the crate root; `research` makes the
+  internal readers public, outside the stability guarantees.
+- A film whose chunks inflate past 1 GiB, or a chunk past 256 MiB, is refused. `Hints` ignore
+  spawn points with coordinates that aren't finite or lie more than a million world units out,
+  and level boxes that aren't finite or whose low corner isn't below their high one.

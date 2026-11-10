@@ -3,8 +3,8 @@
 //! damage effects, medals, levels and their quantization boxes, and the
 //! names and defaults of game variant options.
 //!
-//! Everything here is a static table compiled into the library. Lookups are
-//! binary searches over tag ids.
+//! Everything here is a static table compiled into the library, in the game
+//! files' engine units. Lookups by tag id are binary searches.
 //!
 //! ```
 //! use filmshell::game::{Weapon, damage_effect, DamageCause};

@@ -10,7 +10,7 @@ pub enum CoordinateSource {
     LevelBox,
     /// The box every Forge canvas shares, its offset fitted to spawn pads.
     ForgeCanvas,
-    /// A box fitted earlier for this map variant, its offset refitted.
+    /// A box the library fitted for this map variant beforehand, its offset refitted to the film.
     KnownLayout,
     /// Scale and offset fitted to the hinted spawn pads.
     SpawnFit,
@@ -60,11 +60,14 @@ pub struct Sample {
     pub tick: Tick,
     /// The two horizontal position fields as the film stores them, scaled to
     /// a 15-bit window (`field * 2^(15 - width)`; small lobbies' units are 64
-    /// and 8 times smaller). `Coordinates::to_world` converts them.
+    /// and 8 times smaller): `raw[0]` becomes world y, `raw[1]` world x.
+    /// [`Coordinates::to_world`] converts them.
     pub raw: [f64; 2],
     /// The position in world units, when the film's coordinates are known.
     pub position: Option<Position>,
-    /// Aim yaw in radians, in world axes (from +x toward +y).
+    /// Aim yaw in radians, in world axes (from +x toward +y). The aim, speed,
+    /// health and shield are None in small lobbies, whose biped updates
+    /// aren't read field by field.
     pub yaw: Option<f64>,
     /// On-foot speed, world units a second; None in a vehicle.
     pub speed: Option<f64>,
@@ -82,21 +85,26 @@ pub struct Sample {
 
 /// One life of a biped: from its spawn to its death or the film's end.
 ///
-/// A life is one biped entity. Its owner comes from matching each life's
-/// first and last records against the players' death times in the
-/// HighlightEvents chunk, so a life the matching can't place has no player.
+/// A life is one biped entity. Its owner is the player controlling the unit,
+/// as the biped's own records say; where they don't, the library matches
+/// the life's first and last records against the players' death times in
+/// the HighlightEvents chunk. A life neither places has no player.
+///
+/// For playback, prefer [`Film::sample_at`](crate::Film::sample_at) to
+/// [`Life::at`]: it also ends a life when its player leaves.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub struct Life {
     /// The player whose life it is.
     pub player: Option<PlayerId>,
-    /// The biped's id, which names this life only.
+    /// The biped's id, unique among the lives under way at the same time.
     pub entity: Option<EntityId>,
-    /// The life ended in a death, as the life assignment counts them.
+    /// Whether the life ended in a death, by the HighlightEvents death times
+    /// or, without them, by a respawn following it.
     pub died: bool,
-    /// The tick of the kill that ended the life, when the film's kill
-    /// events name one.
+    /// The tick of the kill event that ended the life. It can be None when
+    /// `died` is true: no kill event names that death.
     pub death: Option<Tick>,
     /// Its samples, in tick order.
     pub samples: Vec<Sample>,

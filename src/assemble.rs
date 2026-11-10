@@ -647,7 +647,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let paths = &ex.paths;
 
     // Spawn pads from the hints anchor fitted coordinates.
-    let pads: Vec<Pad> = hints.spawn_pads.iter().map(|p| Pad { x: p.position.x, y: p.position.y }).collect();
+    let pads: Vec<Pad> = hints.usable_pads().map(|(_, p)| Pad { x: p.position.x, y: p.position.y }).collect();
     let bounds = (!pads.is_empty()).then(|| {
         let (mut min_x, mut max_x, mut min_y, mut max_y) =
             (f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY);
@@ -816,11 +816,12 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 }
                 _ => named,
             };
+            let (killer, assistant) = (killer.and_then(|k| pid(k as i32)), assistant.and_then(|a| pid(a as i32)));
             let kill = Kill {
                 victim,
-                killer: killer.and_then(|k| pid(k as i32)),
+                killer,
                 killer_damage_percent: killer.map(|_| d.killer_percent),
-                assistant: assistant.and_then(|a| pid(a as i32)),
+                assistant,
                 assistant_damage_percent: assistant.map(|_| d.assistant_percent),
                 suicide: d.suicide,
                 headshot: None,
@@ -1480,11 +1481,9 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             })
             .collect()
     });
-    let spawn_factors = if composite && calib.is_some() && !hints.spawn_pads.is_empty() {
+    let spawn_factors = if composite && calib.is_some() && hints.usable_pads().next().is_some() {
         let pads: Vec<crate::spawns::Pad> = hints
-            .spawn_pads
-            .iter()
-            .enumerate()
+            .usable_pads()
             .map(|(index, p)| crate::spawns::Pad {
                 index,
                 x: p.position.x,

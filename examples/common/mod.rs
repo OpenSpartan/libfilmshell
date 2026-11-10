@@ -13,13 +13,13 @@ use std::io::{Error, ErrorKind};
 use std::path::Path;
 
 /// The chunks of the film in `dir`, the inflated copy of a chunk where both
-/// are there.
+/// are there. Other files are skipped.
 pub fn load_folder(dir: &Path) -> std::io::Result<Vec<Chunk<'static>>> {
     let mut chunks = Vec::new();
     for entry in std::fs::read_dir(dir)? {
         let path = entry?.path();
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-        if !name.starts_with("filmChunk") || dir.join(format!("{name}_dec")).exists() {
+        if !is_chunk_name(name) || dir.join(format!("{name}_dec")).exists() {
             continue;
         }
         let chunk = Chunk::from_file(name, std::fs::read(&path)?)
@@ -27,4 +27,11 @@ pub fn load_folder(dir: &Path) -> std::io::Result<Vec<Chunk<'static>>> {
         chunks.push(chunk);
     }
     Ok(chunks)
+}
+
+/// `filmChunk{N}` or `filmChunk{N}_dec`.
+fn is_chunk_name(name: &str) -> bool {
+    let Some(rest) = name.strip_prefix("filmChunk") else { return false };
+    let digits = rest.strip_suffix("_dec").unwrap_or(rest);
+    !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
 }

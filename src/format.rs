@@ -1,7 +1,8 @@
 //! The film's raw layers, for reading the bytes the model is built from.
 //!
-//! A replay chunk is a sequence of packets: `[kind:16][...]` headers with a
-//! microsecond timestamp and a payload. Kind 0 is a tick packet, one frame
+//! A replay chunk is a sequence of packets, each a 16-byte head (a 16-bit
+//! kind, a 32-bit payload size, a microsecond timestamp) and its payload,
+//! little-endian. Kind 0 is a tick packet, one frame
 //! of the film; its payload is bit-packed (MSB first) and holds two views:
 //!
 //! - the **event view**: one-off events (weapon fire, kills, pickups, voice
@@ -23,7 +24,8 @@
 //! let raw = film.raw();
 //! for frame in raw.frames().take(10) {
 //!     for e in raw.events(&frame) {
-//!         println!("{} event {} at bit {}", frame.tick, e.kind, e.bit);
+//!         let name = filmshell::format::event_name(e.kind).unwrap_or("?");
+//!         println!("{} {name} at bit {}", frame.tick, e.bit);
 //!     }
 //! }
 //! # }
@@ -31,7 +33,7 @@
 
 use crate::TagId;
 use crate::container::{Film as Container, Framing};
-use crate::model::Tick;
+use crate::model::{EntityId, Tick};
 
 /// MSB-first bit reads over a byte slice. Reads past the end give zero bits.
 #[derive(Clone, Copy, Debug)]
@@ -151,6 +153,28 @@ pub struct Handle {
     pub unit: bool,
 }
 
+impl Handle {
+    /// The biped's or vehicle's id in the model ([`entity_id`]).
+    pub fn entity_id(&self) -> Option<EntityId> {
+        entity_id(self.index, self.generation)
+    }
+}
+
+/// The model's [`EntityId`] of a biped (index 512 to 767) or vehicle (768 to
+/// 1023) with its generation, the id [`Life::entity`](crate::Life::entity),
+/// [`Vehicle::entity`](crate::Vehicle::entity) and
+/// [`Sample::vehicle`](crate::Sample::vehicle) use. None for other entities
+/// and generation 0.
+pub fn entity_id(index: u32, generation: u32) -> Option<EntityId> {
+    let base = match index {
+        512..=767 => 512,
+        768..=1023 => 768,
+        _ => return None,
+    };
+    let id = generation.checked_sub(1)? * 256 + index - base;
+    u16::try_from(id).ok().map(EntityId)
+}
+
 /// One event of a tick packet's event view.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -196,6 +220,13 @@ pub struct EntityEntry {
     pub op: EntityOp,
     /// The bit of the entry's index field in the chunk.
     pub bit: i64,
+}
+
+impl EntityEntry {
+    /// The biped's or vehicle's id in the model ([`entity_id`]).
+    pub fn entity_id(&self) -> Option<EntityId> {
+        entity_id(self.index, self.generation)
+    }
 }
 
 /// One entity of a seek snapshot.

@@ -53,7 +53,7 @@ impl Film {
     /// downloaded or already inflated.
     ///
     /// The chunks must be numbered 0 to n without gaps: chunk 0 the header,
-    /// the rest replay chunks, the last of them optionally the highlights.
+    /// then the replay chunks, then optionally the highlights chunk.
     /// In a release build reading takes a second or two for a 10-minute
     /// match, a few seconds for a long one.
     ///
@@ -69,7 +69,8 @@ impl Film {
         Film::from_chunks_with(chunks, &Hints::default())
     }
 
-    /// [`Film::from_chunks`] with what the caller knows beyond the film.
+    /// [`Film::from_chunks`] with what the caller knows beyond the film:
+    /// see [`Hints`].
     ///
     /// # Errors
     ///
@@ -142,17 +143,18 @@ impl Film {
         &self.header
     }
 
-    /// Frames and ticks.
+    /// The film's clock: which tick each frame is, and where HighlightEvents
+    /// times fall.
     pub fn clock(&self) -> &Clock {
         &self.clock
     }
 
-    /// Everyone who played, in index order.
+    /// Everyone who played, in id order.
     pub fn players(&self) -> &[Player] {
         &self.players
     }
 
-    /// The player with index `id`.
+    /// The player with id `id`.
     pub fn player(&self, id: PlayerId) -> Option<&Player> {
         match self.players.get(id.index()) {
             Some(p) if p.id == id => Some(p),
@@ -160,7 +162,7 @@ impl Film {
         }
     }
 
-    /// The game variant, when chunk 0's variant data reads.
+    /// The game variant; None when chunk 0's variant data doesn't parse.
     pub fn variant(&self) -> Option<&GameVariant> {
         self.variant.as_ref()
     }
@@ -170,7 +172,9 @@ impl Film {
         self.variant.as_ref().map_or(GameMode::Other, GameVariant::mode)
     }
 
-    /// The level, when the catalogue or the hints know it.
+    /// The level, when the catalogue or the hints know it. With
+    /// [`Hints::level_bounds`] it is a level made from the box: no name,
+    /// `structure` 0, and the hinted or header level id, else 0.
     pub fn level(&self) -> Option<&Level> {
         self.level.as_ref()
     }
@@ -193,9 +197,11 @@ impl Film {
 
     /// Where `player` was at `tick`: their last sample at or before it, in
     /// the life under way then. None while the player isn't alive: before
-    /// their first life, between a death and the next spawn, after the last
-    /// sample of a life no kill ended once another has begun, and after a
-    /// player who left was last listed.
+    /// their first life, after a death until the next spawn, and after a
+    /// player who left was last listed. A life no kill ended that another
+    /// life follows ends at its last sample.
+    ///
+    /// Looks through the film's lives, so it costs O(lives) a call.
     pub fn sample_at(&self, player: PlayerId, tick: Tick) -> Option<&Sample> {
         let mut lives = self.lives_of(player).peekable();
         let mut current = None;
@@ -220,7 +226,7 @@ impl Film {
     }
 
     /// Every player alive at `tick` with their sample then, in player order:
-    /// one frame of playback.
+    /// one frame of playback. O(players × lives).
     ///
     /// ```no_run
     /// # fn run(film: &filmshell::Film) {
@@ -340,7 +346,9 @@ impl Film {
         &self.scoreboard
     }
 
-    /// What `player` pressed and carried over the match.
+    /// What `player` pressed and carried over the match. None for a player
+    /// whose biped updates the library doesn't read: in small lobbies (four
+    /// players or fewer), and for a player who never spawned.
     pub fn state(&self, player: PlayerId) -> Option<&PlayerState> {
         self.states.iter().find(|s| s.0 == player).map(|s| &s.1)
     }
@@ -348,8 +356,8 @@ impl Film {
     /// The weapon in `player`'s hands at `tick`: the weapon in the slot they
     /// hold. None while they aren't alive ([`Film::sample_at`]), in a
     /// vehicle, where they fire the vehicle's weapons, and in small lobbies,
-    /// whose weapon state isn't read. On the reference films 99.6% of shots
-    /// on foot come from this weapon.
+    /// whose weapon state isn't read. Measured on the test films, 99.6% of
+    /// shots on foot come from this weapon.
     pub fn weapon_at(&self, player: PlayerId, tick: Tick) -> Option<TagId> {
         if self.sample_at(player, tick)?.in_vehicle {
             return None;

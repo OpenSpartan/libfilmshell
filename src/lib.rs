@@ -40,7 +40,7 @@
 //!
 //! # Playback
 //!
-//! Everything is read up front, so a player can scrub freely: at any
+//! Everything is read up front, so playback can seek to any tick: at any
 //! [`Tick`], [`Film::samples_at`] gives every living player's sample (where
 //! they were, their aim, health and shield, the vehicle they rode),
 //! [`Film::weapon_at`] what they held, [`Film::vehicle_at`] the track of the
@@ -63,14 +63,16 @@
 //! # Time and space
 //!
 //! Times are [`Tick`]s, 1/60 s of game time from the film's first frame.
-//! Positions are world units ([`Position`]). A film doesn't carry the box
-//! its positions are quantized over; the library knows it for the levels in
-//! its catalogue, and otherwise fits it to the spawn pads given in the
+//! Positions are world units ([`Position`]), ten to the game's engine unit.
+//! The model and [`analysis`] use world units; the [`game`] tables keep the
+//! engine units of the game's files. A film doesn't carry the box its
+//! positions are quantized over; the library knows it for the levels in its
+//! catalogue, and otherwise fits it to the spawn pads given in the
 //! [`Hints`], or leaves positions unconverted ([`Sample::raw`]).
 //!
 //! # Features
 //!
-//! - `serde`: derives `serde::Serialize` on the model types.
+//! - `serde`: derives `serde::Serialize` on the types at the crate root.
 //! - `research`: makes the internal readers public under a hidden
 //!   `research` module, for studying the format; they are outside the API's
 //!   stability guarantees.

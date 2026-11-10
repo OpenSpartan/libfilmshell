@@ -54,13 +54,12 @@ impl Vehicle {
 pub struct Ride {
     /// The rider.
     pub player: PlayerId,
-    /// The vehicle, an index into `Film::vehicles`, when it has a track. A
-    /// rider in a part (a Falcon's side gun, a Scorpion's turret) rides the
-    /// vehicle that carries the part.
+    /// The vehicle, an index into [`Film::vehicles`](crate::Film::vehicles),
+    /// when it has a track. A rider in a part (a Falcon's side gun, a
+    /// Scorpion's turret) rides the vehicle that carries the part.
     pub vehicle: Option<usize>,
-    /// The seat, counted from the driver's: the parent state's, else on a
-    /// film without it that of the exit that ends the ride. None when
-    /// neither names one.
+    /// The seat, 0 the driver's: the parent state's, else on a film without
+    /// it that of the exit that ends the ride. None when neither names one.
     pub seat: Option<u32>,
     /// The first tick in the vehicle.
     pub from: Tick,
@@ -82,7 +81,7 @@ pub struct WorldObject {
     pub position: Position,
     /// The first snapshot that had it.
     pub from: Tick,
-    /// The first snapshot without it; None if it was there to the end.
+    /// The first snapshot without it (snapshots are 20 s apart, so it went somewhere in between); None if it was there to the end.
     pub to: Option<Tick>,
 }
 

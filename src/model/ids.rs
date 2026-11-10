@@ -1,11 +1,15 @@
 use std::fmt;
 
-/// A player's index in [`Film::players`](crate::Film::players): everyone
-/// present at the start in the roster's order, then joiners and bots as they
-/// appear. Every player the model names is named by it. The film itself
-/// names players by engine player id, which a joiner can take over from
-/// someone who left; the library maps those to the player who held the id
-/// at the time.
+/// A player's place in the film's roster: everyone present at the start in
+/// the roster's order, then joiners and bots as they appear. Every player
+/// the model names is named by it. Ids can skip a number (a roster entry
+/// with neither an account nor a bot record is left out), so look players
+/// up with [`Film::player`](crate::Film::player) rather than by indexing
+/// [`Film::players`](crate::Film::players).
+///
+/// The film itself names players by engine player id, which a joiner can
+/// take over from someone who left; the library maps those to the player
+/// who held the id at the time.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct PlayerId(pub u8);
@@ -23,10 +27,13 @@ impl fmt::Display for PlayerId {
     }
 }
 
-/// A replicated object's id: `(generation - 1) * 256 + index`, the index
-/// counted within the object's kind, so bipeds and vehicles have separate
-/// ids. The game reuses an id once its object is gone: a biped's id names
-/// one life, a vehicle's one [`Vehicle`](crate::Vehicle) track.
+/// A biped's or a vehicle's id: `(generation - 1) * 256 + index`, the index
+/// counted within the object's kind (a raw entity index less 512 for a
+/// biped, less 768 for a vehicle, as [`format`](crate::format) gives them),
+/// so bipeds and vehicles have separate ids. The game reuses an id once its
+/// object is gone, so an id is unique only among the objects that exist at
+/// the same time: a biped's id names one life, a vehicle's one
+/// [`Vehicle`](crate::Vehicle) track.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct EntityId(pub u16);
@@ -48,7 +55,8 @@ impl fmt::Display for Xuid {
     }
 }
 
-/// A team id: 0 is the first team, 1 the second.
+/// A team id: 0 is the first team, 1 the second, up to 7 in modes with
+/// more teams.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct TeamId(pub u8);
@@ -60,8 +68,8 @@ impl fmt::Display for TeamId {
 }
 
 /// A set of players as the game packs it: bit `31 - index` for each player,
-/// the index a [`PlayerId`]'s. Voice lines, game events and zones name their
-/// players this way.
+/// the index a [`PlayerId`]'s, so at most the first 32 players. Voice lines,
+/// game events and zones name their players this way.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct PlayerMask(pub u32);

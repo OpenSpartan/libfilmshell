@@ -101,7 +101,25 @@ impl<'a> Chunk<'a> {
     /// `filmChunk{N}_dec` inflated, `name` the file's name without its
     /// folder. The index comes from the name and the kind from the bytes
     /// ([`ChunkKind::detect`]); compressed bytes are inflated here. None
-    /// when the name isn't a chunk's or the bytes are no chunk of a film.
+    /// when the name isn't a chunk's, the bytes don't inflate or inflate past
+    /// [`MAX_CHUNK_BYTES`], or they are no chunk of a film.
+    ///
+    /// Reading a film saved as a folder of chunk files:
+    ///
+    /// ```no_run
+    /// use filmshell::{Chunk, Film};
+    ///
+    /// let mut chunks = Vec::new();
+    /// for entry in std::fs::read_dir("path/to/film")? {
+    ///     let path = entry?.path();
+    ///     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+    ///     if name.starts_with("filmChunk") {
+    ///         chunks.extend(Chunk::from_file(name, std::fs::read(&path)?));
+    ///     }
+    /// }
+    /// let film = Film::from_chunks(chunks)?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn from_file(name: &str, data: impl Into<Cow<'a, [u8]>>) -> Option<Chunk<'a>> {
         let digits = name.strip_prefix("filmChunk")?;
         let digits = digits.strip_suffix("_dec").unwrap_or(digits);

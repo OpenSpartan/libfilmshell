@@ -11,7 +11,8 @@ pub enum StatOwner {
 }
 
 /// The scoreboard's statistics with a fixed meaning, by their statborg
-/// slot. The variant's `stat_labels` name every slot, these included.
+/// slot. The variant's [`stat_labels`](crate::GameVariant::stat_labels) name
+/// every slot, these included.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
@@ -149,13 +150,10 @@ pub struct Scoreboard {
 
 impl Scoreboard {
     /// The value of `slot` in `owner`'s row at `tick` (0 before any change).
+    /// Searches back from `tick` through the changes.
     pub fn value_at(&self, owner: StatOwner, slot: u32, tick: Tick) -> i32 {
-        self.changes
-            .iter()
-            .take_while(|c| c.tick <= tick)
-            .filter(|c| c.owner == owner && c.slot == slot)
-            .last()
-            .map_or(0, |c| c.value)
+        let upto = self.changes.partition_point(|c| c.tick <= tick);
+        self.changes[..upto].iter().rfind(|c| c.owner == owner && c.slot == slot).map_or(0, |c| c.value)
     }
 
     /// The final value of `slot` in `owner`'s row.
