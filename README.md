@@ -26,6 +26,11 @@ The crate is named `filmshell`:
 ```toml
 [dependencies]
 filmshell = { git = "https://github.com/OpenSpartan/libfilmshell" }
+
+# Reading a film unoptimized takes about ten times as long, so optimize this crate in debug
+# builds too.
+[profile.dev.package.filmshell]
+opt-level = 3
 ```
 
 ## Film chunks

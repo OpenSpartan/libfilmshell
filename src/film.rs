@@ -54,11 +54,11 @@ impl Film {
     ///
     /// The chunks must be numbered 0 to n without gaps: chunk 0 the header,
     /// then the replay chunks, then optionally the highlights chunk.
-    /// Everything is read up front: in a release build about 4 s for a
-    /// 9-minute Big Team Battle match of 27 players, 9 s for an 18-minute one
-    /// of 35. A debug build is several times slower; a crate that depends on
-    /// this one can optimize it alone with `[profile.dev.package.filmshell]
-    /// opt-level = 3`.
+    /// Everything is read up front: in a release build about 2 s for a
+    /// 9-minute Big Team Battle match of 27 players, 5 s for an 18-minute one
+    /// of 35. Unoptimized, as in a debug build of a crate that depends on
+    /// this one, it is about ten times slower; `[profile.dev.package.filmshell]
+    /// opt-level = 3` in that crate's `Cargo.toml` avoids it.
     ///
     /// # Errors
     ///
