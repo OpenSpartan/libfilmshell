@@ -1,0 +1,35 @@
+//! Prints a film's match, its players and the score.
+//!
+//! ```text
+//! cargo run --release --example players -- path/to/film
+//! ```
+
+mod common;
+
+use filmshell::{Film, Stat, StatOwner};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = std::env::args().nth(1).ok_or("usage: players <film folder>")?;
+    let film = Film::from_chunks(common::load_folder(dir.as_ref())?)?;
+
+    let variant = film.variant().map_or("unknown variant", |v| v.name.as_str());
+    let level = film.level().map_or("unknown level", |l| l.name);
+    println!("{variant} on {level}, {:.0} s", film.clock().end().seconds());
+
+    let board = film.scoreboard();
+    for team in board.teams() {
+        println!("{team}: {}", board.final_stat(StatOwner::Team(team), Stat::Score));
+    }
+    for p in film.players() {
+        let row = StatOwner::Player(p.id);
+        println!(
+            "{:>3}  {:<16} {:<8} kills {:>3}  deaths {:>3}",
+            p.id.0,
+            p.name().unwrap_or("?"),
+            p.team.map_or(String::new(), |t| t.to_string()),
+            board.final_stat(row, Stat::Kills),
+            board.final_stat(row, Stat::Deaths),
+        );
+    }
+    Ok(())
+}
