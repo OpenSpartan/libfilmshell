@@ -86,13 +86,11 @@
 //! Infection, Firefight, the minigames, Attrition and Elimination,
 //! Extraction, Escalation, Grifball) they check that the level, every
 //! player's kills and deaths over the match, and each team's score agree
-//! with the match stats. Kills agree for 646 of 647 players and deaths for
-//! 667 of 668, bots included, and for every player in the Attrition,
-//! Elimination, Infection, Juggernaut, Headhunter, Land Grab and Stockpile
-//! matches of one human with bots, where the bots' lives, deaths and kills
-//! come from the film alone. The one player who differs had their scoreboard
-//! row cleared partway through the match: the film counts all of their
-//! deaths, the match stats only those before it.
+//! with the match stats. Every player's kills and deaths agree, bots
+//! included (647 and 668 players), though a bot's lives, deaths and kills
+//! come from the film alone. For one player the comparison stops partway:
+//! the game cleared their scoreboard row mid-match (a reconnect), and the
+//! match stats count only what came before; the film goes on to the end.
 //!
 //! # Features
 //!

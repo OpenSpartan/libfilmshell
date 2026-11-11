@@ -473,21 +473,27 @@ fn scoreboard_totals_agree_with_the_match_stats() {
     assert!(agree * 100 >= rows * 95, "{agree} of {rows}");
 }
 
-/// Matches of one human with bots, where the bots' lives, deaths and kills
-/// come from the film alone: Attrition, Elimination, Infection, Juggernaut,
-/// Headhunter, Land Grab and Stockpile.
-const BOT_MATCHES: [&str; 11] = [
-    "813ff0a6", "f2b9163d", "d970bde6", "70b4b566", "7ddc2dc0", "81093849", "f1886e4e", "23a4bb69", "6cf896a6",
-    "d34dc219", "6aa44ce6",
-];
+/// The last tick the match stats count for `p`. The game can clear a player's
+/// scoreboard row while they stay in the match (a reconnect: every slot back
+/// to 0, their spawns counting again from 1), and the match stats keep only
+/// what came before.
+fn stats_until(f: &Film, p: PlayerId) -> Tick {
+    let mut spawns: HashMap<u32, i32> = HashMap::new();
+    for c in f.scoreboard().changes.iter().filter(|c| c.owner == StatOwner::Player(p) && c.slot == Stat::Spawns.slot())
+    {
+        if spawns.insert(c.round, c.value).is_some_and(|had| c.value == 0 && had > 0) {
+            return c.tick;
+        }
+    }
+    Tick(u32::MAX)
+}
 
-/// Each player's deaths, the bots' included, are the match stats' Deaths
-/// (in the roster's order, the film's): for 99% of players, and for every
-/// player in [`BOT_MATCHES`].
+/// Every player's deaths, the bots' included, are the match stats' Deaths
+/// (in the roster's order, the film's), up to [`stats_until`].
 #[test]
 fn lives_die_as_the_match_stats_count() {
-    let exact = BOT_MATCHES;
     let (mut players, mut agree) = (0usize, 0usize);
+    let mut wrong = Vec::new();
     for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
         let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
         let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
@@ -497,14 +503,18 @@ fn lives_die_as_the_match_stats_count() {
         }
         for (i, s) in rows.iter().enumerate() {
             let Some(want) = s["PlayerTeamStats"][0]["Stats"]["CoreStats"]["Deaths"].as_u64() else { continue };
-            let got = f.lives_of(PlayerId(i as u8)).filter(|l| l.died).count() as u64;
+            let until = stats_until(f, PlayerId(i as u8));
+            let got =
+                f.lives_of(PlayerId(i as u8)).filter(|l| l.died && l.end().is_some_and(|e| e <= until)).count() as u64;
             players += 1;
             agree += usize::from(got == want);
-            let exact = exact.contains(&name.as_str());
-            assert!(got == want || !exact, "{name}: player {i} died {got} times, the stats say {want}");
+            if got != want {
+                wrong.push(format!("{name}: player {i} died {got} times, the stats say {want}"));
+            }
         }
     }
-    assert!(corpus().is_empty() || agree * 100 >= players * 99, "{agree} of {players} players");
+    println!("{agree} of {players} players");
+    assert!(wrong.is_empty(), "{wrong:#?}");
 }
 
 /// Infection moves a survivor to the infected when killed: the victim's team
@@ -524,9 +534,9 @@ fn infection_moves_its_victims_to_the_infected() {
     assert!(moved > 0);
 }
 
-/// Each player's kills of players on the other team that the scoreboard
-/// counts, inferred kills included, are the match stats' Kills. Exact on
-/// [`BOT_MATCHES`], whose bot deaths have no kill event.
+/// Every player's kills of players on the other team that the scoreboard
+/// counts are the match stats' Kills, up to [`stats_until`]: the kills of
+/// bots, which have no kill event, included.
 #[test]
 fn kills_count_as_the_match_stats_do() {
     let (mut players, mut agree) = (0usize, 0usize);
@@ -552,9 +562,10 @@ fn kills_count_as_the_match_stats_do() {
                 continue;
             };
             let p = PlayerId(i as u8);
+            let until = stats_until(f, p);
             let got = f
                 .kills()
-                .filter(|(_, k)| k.killer == Some(p) && k.victim != p && k.scored != Some(false))
+                .filter(|&(t, k)| k.killer == Some(p) && k.victim != p && k.scored != Some(false) && t <= until)
                 .filter(|&(t, k)| team(k.victim, t) != team(p, t) || team(p, t).is_none())
                 .count() as u64;
             players += 1;
@@ -562,14 +573,13 @@ fn kills_count_as_the_match_stats_do() {
             if got != want {
                 println!("MISS {name} {} p{i}: {got} want {want}", f.variant().map_or("", |v| v.name.as_str()));
             }
-            if got != want && BOT_MATCHES.contains(&name.as_str()) {
+            if got != want {
                 wrong.push(format!("{name}: player {i} has {got} kills, the stats say {want}"));
             }
         }
     }
     println!("{agree} of {players} players");
     assert!(wrong.is_empty(), "{wrong:#?}");
-    assert!(corpus().is_empty() || agree * 100 >= players * 99, "{agree} of {players} players");
 }
 
 /// Between two readings of the match clock with the same limit, the time
