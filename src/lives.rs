@@ -94,6 +94,10 @@ pub struct LifeSlot {
     pub end: f64,
     pub x: Option<f64>,
     pub y: Option<f64>,
+    /// The tick the player controlling the life let go of it, which a death
+    /// does (not the release of every life at the film's end); None when the
+    /// film doesn't say.
+    pub released: Option<f64>,
 }
 
 /// Ticks before a player's first listing that their first life may start.
@@ -641,19 +645,76 @@ pub fn assign_lives(slots: &[LifeSlot], players: &[LifePlayer]) -> Option<LifeAs
             chains.get_mut(&b).unwrap().push(s);
         }
     }
+    // Where the film says when a player let go of a life, that is the death;
+    // else every life but the last died, as many as the scoreboard counts.
+    let said = slots.iter().any(|s| s.released.is_some());
     for p in &untimed {
         let chain = &chains[&p.index];
         for (k, s) in chain.iter().enumerate() {
             owner.insert(s.slot_id, (p.index, k));
             let last = k == chain.len() - 1;
-            let died = !last
-                || p.deaths >= p.spawns
-                || ((chain.len() as f64) < p.spawns && !p.left && s.end < match_end - t.survivor_window);
-            if died && (k as f64) < p.deaths {
+            let died = if said {
+                s.released.is_some()
+            } else {
+                (!last
+                    || p.deaths >= p.spawns
+                    || ((chain.len() as f64) < p.spawns && !p.left && s.end < match_end - t.survivor_window))
+                    && (k as f64) < p.deaths
+            };
+            if died {
                 deaths.insert(s.slot_id, None);
             }
         }
     }
 
+    // A life the film names that the matching left out is its owner's: a
+    // mode whose rounds respawn everyone (Infection) gives a player more
+    // lives than their deaths and spawns predict. It ends in one of the
+    // owner's deaths when one falls at its end.
+    for s in slots {
+        if owner.contains_key(&s.slot_id) {
+            continue;
+        }
+        let Some(p) = s.player.and_then(|p| by_index.get(&p)) else { continue };
+        if p.is_bot != s.is_bot || !p.can_start(s.start) {
+            continue;
+        }
+        owner.insert(s.slot_id, (p.index, usize::MAX));
+        let Some(times) = &p.death_ms else {
+            if s.released.is_some() {
+                deaths.insert(s.slot_id, None);
+            }
+            continue;
+        };
+        let taken: Vec<f64> = owner
+            .iter()
+            .filter(|(_, o)| o.0 == p.index)
+            .filter_map(|(slot, _)| deaths.get(slot).copied().flatten())
+            .collect();
+        let at_end = times.iter().copied().filter(|ms| !taken.contains(ms)).find(|&ms| {
+            let d = tick_of(ms);
+            s.end <= d + t.end_late_max && s.end >= d - NAMED_DEATH_EARLY_TICKS
+        });
+        if let Some(ms) = at_end {
+            deaths.insert(s.slot_id, Some(ms));
+        }
+    }
+    // Each player's lives numbered in the order they start.
+    let start_of: HashMap<i32, f64> = slots.iter().map(|s| (s.slot_id, s.start)).collect();
+    let mut by_player: HashMap<usize, Vec<i32>> = HashMap::new();
+    for (&slot, &(p, _)) in &owner {
+        by_player.entry(p).or_default().push(slot);
+    }
+    for (p, mut mine) in by_player {
+        mine.sort_by(|a, b| f64::total_cmp(&start_of[a], &start_of[b]).then(a.cmp(b)));
+        for (k, slot) in mine.into_iter().enumerate() {
+            owner.insert(slot, (p, k));
+        }
+    }
+
     Some(LifeAssignment { clock, owner, deaths })
 }
+
+/// How long before a death a named life's last record can be and still end
+/// in it: a player standing still sends none.
+const NAMED_DEATH_EARLY_TICKS: f64 = 600.0;

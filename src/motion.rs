@@ -1215,6 +1215,12 @@ fn life_slots_of(
             end: end as f64,
             x: Some(first.c1),
             y: Some(first.c2),
+            released: owner
+                .filter(|o| o.released)
+                .and_then(|o| o.end)
+                .and_then(|e| usize::try_from(e).ok())
+                .filter(|&e| e + 1 < game_ticks.len())
+                .map(|e| game_ticks[e] as f64),
         });
     }
     out

@@ -41,7 +41,7 @@ fn every_film_has_a_header_and_players() {
     for (name, f) in corpus() {
         let h = f.header();
         assert!(h.build.starts_with("6."), "{name}: {:?}", h.build);
-        assert!(h.started_at.is_some() && h.map_asset_id.is_some() && h.level.is_some(), "{name}");
+        assert!(h.started_at.is_some() && h.map_asset_id.is_some() && h.level_id.is_some(), "{name}");
         assert!(!f.players().is_empty(), "{name}");
         let mut ids: Vec<PlayerId> = f.players().iter().map(|p| p.id).collect();
         ids.dedup();
@@ -514,14 +514,16 @@ fn kills_count_as_the_match_stats_do() {
             let got = f
                 .kills()
                 .filter(|(_, k)| k.killer == Some(p) && k.victim != p && k.scored != Some(false))
-                .filter(|(_, k)| team(k.victim) != team(p) || team(p).is_none())
+                // Infection moves players between teams: their final teams
+                // aren't the teams they had at each kill.
+                .filter(|(_, k)| f.mode() == GameMode::Infection || team(k.victim) != team(p) || team(p).is_none())
                 .count() as u64;
             players += 1;
             agree += usize::from(got == want);
             if got != want {
                 println!("MISS {name} {} p{i}: {got} want {want}", f.variant().map_or("", |v| v.name.as_str()));
             }
-            if got != want && ["813ff0a6", "f2b9163d"].contains(&name.as_str()) {
+            if got != want && ["813ff0a6", "f2b9163d", "d970bde6", "70b4b566", "7ddc2dc0"].contains(&name.as_str()) {
                 panic!("{name}: player {i} has {got} kills, the stats say {want}");
             }
         }

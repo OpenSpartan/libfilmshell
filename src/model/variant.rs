@@ -15,7 +15,7 @@ pub enum GameMode {
     CaptureTheFlag,
     /// Oddball.
     Oddball,
-    /// Strongholds.
+    /// Strongholds, and Land Grab, which runs its scripts.
     Strongholds,
     /// King of the Hill.
     KingOfTheHill,
@@ -30,8 +30,9 @@ pub enum GameMode {
     Extraction,
     /// Escalation Slayer: a weapon ladder.
     Escalation,
-    /// Infection. Told apart by its event script as films of older builds
-    /// carry it; no film of the current format has been read yet.
+    /// Infection: rounds of survivors against the infected, whose team a
+    /// survivor joins when killed, so a player's
+    /// [`Player::team`](crate::Player::team) is the one they ended on.
     Infection,
     /// VIP. Told apart by its event script as films of older builds carry
     /// it; no film of the current format has been read yet.

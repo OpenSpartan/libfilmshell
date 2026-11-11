@@ -15,7 +15,7 @@ The first release, 0.1.0.
   (`Error::UnknownHeader`).
 - Every death is a `Kill` with its killer, cause and weapon, including the deaths the game sends no
   kill event for, a bot's among them (`Kill::inferred`). On the test films each player's kills of
-  other players equal the match stats' for 97% of players, and for all of them in matches against
+  other players equal the match stats' for 99% of players, and for all of them in matches against
   bots.
 - A life belongs to the player the film names as controlling it, else to the player whose death
   times in the highlights chunk it matches; none starts before its player joined or after they
@@ -23,10 +23,10 @@ The first release, 0.1.0.
 - The scoreboard has every value the game sends, with the round it is for (`StatChange::round`);
   `Scoreboard::total_stat` adds the rounds up, as the match stats do.
 - Playback: `Film::players_at` gives every living player at a tick with their life, sample,
-  weapon and its rounds, grenades, ride and vehicle; `life_at`, `sample_at`, `weapon_at`, `ride_at`, `vehicle_at` and
-  `events_in` look up one thing.
-- `GameMode` names the mode a film's scripts run, Attrition and Elimination, Extraction and
-  Escalation among them; `game::modes` lists each mode's options and their defaults.
+  weapon and its rounds, grenades, ride and vehicle; `life_at`, `sample_at`, `weapon_at`,
+  `ride_at`, `vehicle_at` and `events_in` look up one thing.
+- `GameMode` names the mode a film's scripts run, Attrition and Elimination, Extraction,
+  Escalation and Infection among them; `game::modes` lists each mode's options and their defaults.
 - `filmshell::game` holds the game's own tables: weapons, vehicles, medals, damage effects, and
   levels with their English names, the services' level ids and their quantization boxes.
 - `filmshell::format` exposes the raw layers, with the game's names for every event and entity

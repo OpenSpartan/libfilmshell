@@ -628,7 +628,8 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         vehicle_ident.finish(&film, p);
         // Teams for the players HighlightEvents doesn't give one: bots, and
         // people without records.
-        crate::teams::assign(&mut roster, &crate::teams::finish(&film, designators));
+        let team_rows = stat_log.changes.iter().any(|c| c.kind == 1);
+        crate::teams::assign(&mut roster, &crate::teams::finish(&film, designators), team_rows);
     }
     let vitals = walk.map(|_| Vitals::finish(vitals_marks));
     let splashes = walk.map(|_| crate::splash::finish(splash_seen)).unwrap_or_default();
@@ -1263,31 +1264,32 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     };
     // The game sends no kill event for some deaths, a bot's among them. Such
     // a death is still a kill: at the frame its player let go of the life
-    // (else its last sample), by the one player whose kills the scoreboard
-    // counts up then, else by the attacker of the last hit on the victim in
-    // the 2 s before (a downed player in Elimination can die later than
-    // that).
+    // (else its last sample), by the player whose kill the scoreboard counts
+    // then, else by the attacker of the last hit on the victim in the 2 s
+    // before (a downed player in Elimination can die later than that).
+    //
+    // Each kill the scoreboard counts, (player, frame), once per kill (the
+    // rows are per round); a kill event spends its own.
     let mut kill_counts: Vec<(u32, i64)> = Vec::new();
-    let mut kills_had: HashMap<u32, i32> = HashMap::new();
+    let mut kills_had: HashMap<(u32, u32), i32> = HashMap::new();
     for c in stat_log.changes.iter().filter(|c| c.kind == 0 && c.slot == KILLS_SLOT) {
-        if c.value > kills_had.get(&c.id).copied().unwrap_or(0) {
-            kill_counts.push((c.id, c.frame));
+        let had = kills_had.insert((c.id, c.round), c.value).unwrap_or(0);
+        if c.value > had {
+            kill_counts.extend(std::iter::repeat_n((c.id, c.frame), (c.value - had) as usize));
         }
-        kills_had.insert(c.id, c.value);
     }
-    let counted_killer = |victim: PlayerId, frame: i64| {
-        let mut ids: Vec<u32> = kill_counts
-            .iter()
-            .filter(|&&(id, f)| id != victim.0 as u32 && (f - frame).abs() <= DEATH_FRAMES)
-            .map(|&(id, _)| id)
-            .collect();
-        ids.sort_unstable();
-        ids.dedup();
-        match ids[..] {
-            [id] => pid(id as i32),
-            _ => None,
+    let mut spent = vec![false; kill_counts.len()];
+    let near = |frame: i64, f: i64| (f - frame).abs() <= DEATH_FRAMES;
+    for (frame, e) in &events {
+        let Event::Kill(k) = e else { continue };
+        let Some(killer) = k.killer.filter(|&c| c != k.victim) else { continue };
+        let at = (0..kill_counts.len())
+            .filter(|&i| !spent[i] && kill_counts[i].0 == killer.0 as u32 && near(*frame, kill_counts[i].1))
+            .min_by_key(|&i| (kill_counts[i].1 - frame).abs());
+        if let Some(i) = at {
+            spent[i] = true;
         }
-    };
+    }
     if let Some(ff) = &fired {
         let recorded: Vec<(i64, PlayerId)> = events
             .iter()
@@ -1296,6 +1298,8 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 _ => None,
             })
             .collect();
+        // (victim, its path, frame, the last hit's attacker)
+        let mut unrecorded: Vec<(PlayerId, usize, i64, Option<PlayerId>)> = Vec::new();
         for (vk, p) in paths.iter().enumerate() {
             let Some(victim) = pid(p.player_index) else { continue };
             let starts = p.life_starts.clone().unwrap_or_else(|| vec![0]);
@@ -1317,26 +1321,47 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                     .filter(|h| h.2 == vk && h.0 <= frame + INFERRED_KILL_FRAMES)
                     .find(|h| fire::within_ticks(&ex.frame_ticks, h.0, frame.max(h.0), INFERRED_HIT_TICKS))
                     .and_then(|h| h.1);
-                let hit_by = attacker.and_then(|k| pid(paths[k].player_index));
-                let killer = counted_killer(victim, frame).or(hit_by);
-                let kk = killer.and_then(|k| path_of(k.0 as i32));
-                let (cause, weapon) = cause_and_weapon(ff, Some(vk), kk, frame);
-                let kill = Kill {
-                    victim,
-                    killer,
-                    killer_damage_percent: None,
-                    assistant: None,
-                    assistant_damage_percent: None,
-                    suicide: killer == Some(victim),
-                    headshot: None,
-                    scored: scored(victim, frame),
-                    cause,
-                    weapon,
-                    position: at_frame(vk, frame),
-                    inferred: true,
-                };
-                events.push((frame, Event::Kill(kill)));
+                unrecorded.push((victim, vk, frame, attacker.and_then(|k| pid(paths[k].player_index))));
             }
+        }
+        // Deaths and counted kills pair up nearest first over all of them, so
+        // a chain of kills frames apart (Infection's) pairs each death with
+        // its own; at equal distance the last hit's attacker goes first.
+        let mut pairs: Vec<(i64, bool, usize, usize)> = Vec::new();
+        for (d, &(victim, _, frame, hit_by)) in unrecorded.iter().enumerate() {
+            for (i, &(id, f)) in kill_counts.iter().enumerate() {
+                if !spent[i] && id != victim.0 as u32 && near(frame, f) {
+                    pairs.push(((f - frame).abs(), pid(id as i32) != hit_by, d, i));
+                }
+            }
+        }
+        pairs.sort_unstable();
+        let mut counted: Vec<Option<PlayerId>> = vec![None; unrecorded.len()];
+        for (_, _, d, i) in pairs {
+            if counted[d].is_none() && !spent[i] {
+                spent[i] = true;
+                counted[d] = pid(kill_counts[i].0 as i32);
+            }
+        }
+        for (&(victim, vk, frame, hit_by), counted) in unrecorded.iter().zip(counted) {
+            let killer = counted.or(hit_by);
+            let kk = killer.and_then(|k| path_of(k.0 as i32));
+            let (cause, weapon) = cause_and_weapon(ff, Some(vk), kk, frame);
+            let kill = Kill {
+                victim,
+                killer,
+                killer_damage_percent: None,
+                assistant: None,
+                assistant_damage_percent: None,
+                suicide: killer == Some(victim),
+                headshot: None,
+                scored: scored(victim, frame),
+                cause,
+                weapon,
+                position: at_frame(vk, frame),
+                inferred: true,
+            };
+            events.push((frame, Event::Kill(kill)));
         }
     }
 

@@ -87,11 +87,14 @@ pub fn finish(film: &Film, mut d: Designators) -> HashMap<u32, Vec<(i64, u32)>> 
 /// Gives each player without a team the team their participant's designator
 /// names while they hold it: the last value up to the end of their tenure,
 /// else the first after it began. Nothing on a film whose designators name
-/// fewer than two teams.
-pub fn assign(roster: &mut Roster, designators: &HashMap<u32, Vec<(i64, u32)>>) {
+/// fewer than two teams, unless `team_rows` (the scoreboard keeps team rows,
+/// as a team game does): in free for all every designator names team 0
+/// too, and so does a team game with everyone on one team (both Land Grab
+/// matches among the test films).
+pub fn assign(roster: &mut Roster, designators: &HashMap<u32, Vec<(i64, u32)>>, team_rows: bool) {
     let teams: std::collections::BTreeSet<u32> =
         designators.values().flatten().map(|&(_, v)| v).filter(|&v| v > 0).collect();
-    if teams.len() < 2 {
+    if teams.len() < 2 && !(teams.len() == 1 && team_rows) {
         return;
     }
     for i in 0..roster.players.len() {
