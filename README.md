@@ -92,7 +92,7 @@ cargo run --release --example players -- path/to/film
 cargo run --release --example kills -- path/to/film
 # One player's match, event by event
 cargo run --release --example timeline -- path/to/film 3
-# Everyone's state 90 seconds in
+# The map 90 seconds in: every player, vehicle, grenade and weapon on the ground
 cargo run --release --example playback -- path/to/film 90
 # Every path and kill, drawn as a map
 cargo run --release --example trails -- path/to/film > map.svg
