@@ -236,11 +236,17 @@ pub struct Kill {
     /// Where the victim was.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
-    /// The film has no kill event for this death. The tick is where the
-    /// victim's player let go of the life, else its last sample; `killer` is
-    /// the one player whose kills the scoreboard counts up then, else the
-    /// attacker of the last hit in the 2 s before, else None; `assistant` and
-    /// both damage percentages are None.
+    /// The film has no kill event for this death: the game sends one to the
+    /// victim's player, and a bot has none. The tick is where the victim's
+    /// player let go of the life, else its last sample. `killer` is the kill
+    /// the scoreboard counted then, else the victim when it counted a
+    /// suicide, else whom the game's rule credits from the film's hits: the
+    /// fatal hit's attacker when an enemy, else the most recent enemy to hit
+    /// the victim in the 6 s before, else the most recent player to.
+    /// `assistant` is the enemy, other than the killer, whose hits on the
+    /// life in those 6 s took the most of its shield and health, at least a
+    /// fifth, with that share as `assistant_damage_percent`;
+    /// `killer_damage_percent` is None.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "std::ops::Not::not"))]
     pub inferred: bool,
 }
