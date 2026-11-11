@@ -43,7 +43,9 @@ states a layout says how it is known: read from the game's code, measured on fil
 
 ## Releasing
 
-1. Set the version in `Cargo.toml`, move the changelog's Unreleased notes under it, and merge.
+1. Set the version in `Cargo.toml`, move the changelog's Unreleased notes under it, point the
+   README's install line at the version (`filmshell = "x.y"`) rather than the repository, and
+   merge.
 2. Tag the merge `x.y.z`, without a `v`, and push the tag. The Release workflow checks the version,
    runs the tests and publishes to crates.io.
 

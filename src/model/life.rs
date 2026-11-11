@@ -172,6 +172,31 @@ impl Life {
         }
         self.samples.partition_point(|s| s.tick <= tick).checked_sub(1).map(|i| &self.samples[i])
     }
+
+    /// Where the player was at `tick`, for playback that draws every tick:
+    /// between two samples at most [`Life::GLIDE_TICKS`] apart, the point
+    /// between their positions in proportion; else the last sample's
+    /// position. A film samples a moving player every frame, so a longer gap
+    /// is a player standing still, who sends no position: they stay where
+    /// they were. None when [`Life::sample_at`] is, or the sample has no
+    /// position.
+    pub fn position_at(&self, tick: Tick) -> Option<Position> {
+        let a = self.sample_at(tick)?;
+        let p = a.position?;
+        let i = self.samples.partition_point(|s| s.tick <= tick);
+        let Some(b) = self.samples.get(i).filter(|b| self.until.is_none_or(|u| b.tick <= u)) else { return Some(p) };
+        let (Some(q), gap) = (b.position, b.tick.0 - a.tick.0) else { return Some(p) };
+        if gap > Self::GLIDE_TICKS || a.in_vehicle != b.in_vehicle {
+            return Some(p);
+        }
+        let f = (tick.0 - a.tick.0) as f64 / gap as f64;
+        let mid = |a: f64, b: f64| a + (b - a) * f;
+        Some(Position { x: mid(p.x, q.x), y: mid(p.y, q.y), z: p.z.zip(q.z).map(|(a, b)| mid(a, b)).or(p.z) })
+    }
+
+    /// The longest gap between samples [`Life::position_at`] draws a line
+    /// across: 6 ticks, three frames of a 30 Hz film.
+    pub const GLIDE_TICKS: u32 = 6;
 }
 
 #[cfg(test)]
@@ -182,7 +207,7 @@ mod tests {
         let sample = |t: u32| Sample {
             tick: Tick(t),
             raw: [0.0; 2],
-            position: None,
+            position: Some(Position::new(t as f64, 0.0)),
             yaw: None,
             speed: None,
             health: None,
@@ -218,5 +243,18 @@ mod tests {
         // A life that didn't end in a death lasts past its last sample.
         let l = life(&[10, 20], false, None);
         assert_eq!(l.sample_at(Tick(1000)).map(|s| s.tick), Some(Tick(20)));
+    }
+
+    #[test]
+    fn positions_glide_between_close_samples_and_hold_across_gaps() {
+        // Each sample stands at x = its tick.
+        let l = life(&[10, 12, 40], false, None);
+        let x = |t: u32| l.position_at(Tick(t)).map(|p| p.x);
+        assert_eq!(x(11), Some(11.0));
+        assert_eq!(x(12), Some(12.0));
+        // 28 ticks with no sample: standing still at 12.
+        assert_eq!(x(20), Some(12.0));
+        assert_eq!(x(50), Some(40.0));
+        assert_eq!(x(9), None);
     }
 }

@@ -28,7 +28,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         };
         let s = now.sample;
-        let place = s.position.map_or("unknown place".to_string(), |w| format!("{:7.1} {:7.1}", w.x, w.y));
+        let place =
+            now.life.position_at(at).map_or("unknown place".to_string(), |w| format!("{:7.1} {:7.1}", w.x, w.y));
         // Small lobbies' films send no shield or health.
         let percent =
             |label: &str, v: Option<f64>| v.map_or(String::new(), |v| format!("  {label} {:>3.0}", v * 100.0));

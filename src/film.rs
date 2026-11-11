@@ -271,7 +271,9 @@ impl Film {
 
     /// Everything playback draws for `player` at `tick`: their life and
     /// sample then, the weapon in their hands, and the ride and vehicle
-    /// they're in. None while they aren't alive ([`Film::life_at`]).
+    /// they're in. None while they aren't alive ([`Film::life_at`]). The
+    /// sample is the last at or before `tick`; [`Life::position_at`] places
+    /// the player between samples.
     ///
     /// ```no_run
     /// # fn run(film: &filmshell::Film, id: filmshell::PlayerId) {

@@ -30,7 +30,8 @@ The first release, 0.1.0.
   and `is_counting_up`.
 - Playback: `Film::players_at` gives every living player at a tick with their life, sample,
   weapon and its rounds, grenades, ride and vehicle; `life_at`, `sample_at`, `weapon_at`,
-  `ride_at`, `vehicle_at` and `events_in` look up one thing.
+  `ride_at`, `vehicle_at` and `events_in` look up one thing, and `Life::position_at` places a
+  player between samples.
 - `GameMode` names the mode a film's scripts run, Attrition and Elimination, Extraction,
   Escalation, Infection and Stockpile among them; `game::modes` lists each mode's options and their
   defaults.
