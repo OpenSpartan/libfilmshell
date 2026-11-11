@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/icon.png" alt="" width="200">
+  <img src="https://raw.githubusercontent.com/OpenSpartan/libfilmshell/main/assets/icon.png" alt="" width="200">
 </p>
 
 <h1 align="center">libfilmshell</h1>
