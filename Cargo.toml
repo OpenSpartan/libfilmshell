@@ -27,6 +27,11 @@ serde = { version = "1", features = ["derive"], optional = true }
 # Reads the film manifests in the tests, and round-trips the model.
 serde_json = { version = "1", features = ["float_roundtrip"] }
 
+# Writes the model with serde.
+[[example]]
+name = "json"
+required-features = ["serde"]
+
 [profile.release]
 opt-level = 3
 lto = "thin"
