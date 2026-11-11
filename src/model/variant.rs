@@ -34,8 +34,8 @@ pub enum GameMode {
     /// survivor joins when killed, so a player's
     /// [`Player::team`](crate::Player::team) is the one they ended on.
     Infection,
-    /// VIP. Told apart by its event script as films of older builds carry
-    /// it; no film of the current format has been read yet.
+    /// VIP. Recognised by `vipevents.lua`, which films of older builds
+    /// carry; no VIP film of the current format has been read yet.
     Vip,
     /// Stockpile: teams carry power seeds to their stockpiles.
     Stockpile,
@@ -222,10 +222,10 @@ impl StatDisplay {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct StatSettings {
-    /// The statistics, by statborg slot.
+    /// The statistics, by scoreboard slot.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub stats: Vec<StatDefinition>,
-    /// The scoreboard's columns, as statborg slots.
+    /// The scoreboard's columns, as slots.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub scoreboard: Vec<usize>,
     /// The server runs at 30 Hz.
@@ -260,7 +260,7 @@ pub struct GameVariant {
     pub name: String,
     /// Its English description.
     pub description: String,
-    /// The scoreboard's English labels, by statborg slot.
+    /// The scoreboard's English labels, by slot.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub stat_labels: Vec<String>,
     /// Seconds from death to respawn.

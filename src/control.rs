@@ -1,6 +1,7 @@
 //! What each player pressed: the movement input in the tick packets' control
-//! view (`components::control_view`). Each player's forward and left throttle, -31 to 31, and a stance
-//! value (the record's optional 5-bit field), kept when they change. Only
+//! view (`components::control_view`). Each player's forward and left
+//! throttle, -31 to 31, and a stance value (the record's optional 5-bit
+//! field), kept when they change. Only
 //! packets the view reads to their last byte count.
 
 use crate::components::{control_view, Params};

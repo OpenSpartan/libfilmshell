@@ -187,9 +187,10 @@ impl FromStr for Guid {
     }
 }
 
-/// A position in world units (a tenth of the engine unit of the game's files,
-/// and a foot). `x` and `y` are horizontal; `z` is up, known when positions
-/// convert with the level's box ([`CoordinateSource::LevelBox`](crate::CoordinateSource::LevelBox)).
+/// A position in world units. A world unit is a foot; the game's files use
+/// engine units of ten world units. `x` and `y` are horizontal; `z` is up,
+/// known when positions convert with the level's box
+/// ([`CoordinateSource::LevelBox`](crate::CoordinateSource::LevelBox)).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Position {

@@ -1279,9 +1279,10 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         Some(d) => d.clone(),
         None => small_lobby_deaths(&film, roster.players.len(), Some(&entries), level),
     };
-    // The game sends no kill event for a bot's death: the event goes to the
-    // victim's player, and a bot has none. Such a death is still a kill, at
-    // the frame its player let go of the life (else its last sample).
+    // The game sends no kill event for a bot's death: it sends one only for
+    // a victim with a player, and a bot has none. Such a death is still a
+    // kill, at the frame its player let go of the life (else its last
+    // sample).
     //
     // Who killed is the game's decision, and the scoreboard records it: a
     // kill counted then for the killer (once per count, the rows being per

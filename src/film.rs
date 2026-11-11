@@ -59,7 +59,8 @@ impl Film {
     /// 9-minute Big Team Battle match of 27 players, 5 s for an 18-minute one
     /// of 35. Unoptimized, as in a debug build of a crate that depends on
     /// this one, it is about ten times slower; `[profile.dev.package.filmshell]
-    /// opt-level = 3` in that crate's `Cargo.toml` avoids it.
+    /// opt-level = 3` in that crate's `Cargo.toml` avoids it. The crate's
+    /// [Quick start](crate#quick-start) shows a film read from a manifest.
     ///
     /// # Errors
     ///
@@ -81,12 +82,11 @@ impl Film {
         Film::from_chunks_with(chunks, &Hints::default())
     }
 
-    /// [`Film::from_chunks`] with what the caller knows beyond the film (see
-    /// [`Hints`]): for a level the library's catalogue lacks
+    /// [`Film::from_chunks`] with facts the film lacks ([`Hints`]): a level
+    /// box or spawn points for a level the catalogue lacks
     /// ([`Film::coordinates`] is None, or not [`CoordinateSource::LevelBox`]),
-    /// to name the level in place of the one the film names, or for
-    /// [`analysis::spawn_factors`](crate::analysis::spawn_factors), which
-    /// needs the map's spawn points.
+    /// a level id in place of the film's, and spawn points for
+    /// [`analysis::spawn_factors`](crate::analysis::spawn_factors).
     ///
     /// # Errors
     ///
@@ -274,12 +274,15 @@ impl Film {
     /// they're in. None while they aren't alive ([`Film::life_at`]).
     ///
     /// ```no_run
-    /// # fn run(film: &filmshell::Film) {
+    /// # fn run(film: &filmshell::Film, id: filmshell::PlayerId) {
     /// use filmshell::Tick;
     ///
-    /// for p in film.players_at(Tick::from_seconds(90.0)) {
-    ///     let holding = p.weapon.and_then(|w| w.name()).unwrap_or("nothing");
-    ///     println!("{} holds {holding}", p.player.name().unwrap_or("someone"));
+    /// match film.player_at(id, Tick::from_seconds(90.0)) {
+    ///     Some(now) => match now.sample.position {
+    ///         Some(p) => println!("at ({:.1}, {:.1})", p.x, p.y),
+    ///         None => println!("alive, at a place the film can't convert"),
+    ///     },
+    ///     None => println!("not on the map"),
     /// }
     /// # }
     /// ```
@@ -301,6 +304,17 @@ impl Film {
 
     /// [`Film::player_at`] for every player alive at `tick`, in id order:
     /// one frame of playback. O(players × lives).
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film) {
+    /// use filmshell::Tick;
+    ///
+    /// for p in film.players_at(Tick::from_seconds(90.0)) {
+    ///     let holding = p.weapon.and_then(|w| w.name()).unwrap_or("nothing");
+    ///     println!("{} holds {holding}", p.player.name().unwrap_or("someone"));
+    /// }
+    /// # }
+    /// ```
     pub fn players_at(&self, tick: Tick) -> impl Iterator<Item = PlayerAt<'_>> + '_ {
         self.players.iter().filter_map(move |p| self.player_at(p.id, tick))
     }
@@ -351,7 +365,7 @@ impl Film {
     }
 
     /// What stood on the map, from the seek snapshots. Empty unless the
-    /// film's coordinates are exact.
+    /// film's positions convert exactly ([`CoordinateSource::LevelBox`]).
     pub fn world_objects(&self) -> &[WorldObject] {
         &self.world
     }
@@ -383,6 +397,21 @@ impl Film {
 
     /// The events in a range of ticks, in tick order: `film.events_in(a..b)`
     /// leaves out tick `b`, `film.events_in(a..=b)` keeps it.
+    ///
+    /// Playback that steps from tick `last` to `now` shows what happened in
+    /// between:
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film, last: filmshell::Tick, now: filmshell::Tick) {
+    /// use filmshell::Event;
+    ///
+    /// for e in film.events_in(last..now) {
+    ///     if let Event::Kill(k) = &e.event {
+    ///         println!("{} {} died", e.tick, film.player_name(k.victim).unwrap_or("someone"));
+    ///     }
+    /// }
+    /// # }
+    /// ```
     pub fn events_in(&self, range: impl std::ops::RangeBounds<Tick>) -> &[TimedEvent] {
         use std::ops::Bound;
         let a = match range.start_bound() {
@@ -411,8 +440,8 @@ impl Film {
 
     /// Every medal the highlights chunk records for a player of the
     /// film, in its order, with the medal's tick. The tick is None when the
-    /// film fixes no highlight clock; only medals with a tick are also in
-    /// the event stream as [`Event::Medal`].
+    /// highlight clock isn't known ([`Clock::highlight_zero`]); only medals
+    /// with a tick are also in the event stream as [`Event::Medal`].
     pub fn medals(&self) -> impl Iterator<Item = (Option<Tick>, MedalAward)> + '_ {
         self.highlights.iter().filter_map(|h| match h.kind {
             HighlightKind::Medal(index) => Some((h.tick, MedalAward { player: h.player?, index })),

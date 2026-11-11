@@ -1,8 +1,9 @@
 //! Each biped life's health and shield over time. Both are fractions of
 //! the biped's maximum (the game's `prop_body_vitality_fraction` and
 //! `prop_shield_vitality_fraction`) and no create or update states them at
-//! spawn, so a life starts at 1.0. After that the tick packets' updates change them, read with the payload
-//! walker because a player standing still and taking damage sends no position,
+//! spawn, so a life starts at 1.0. After that the tick packets' updates
+//! change them, read with the payload walker because a player standing
+//! still and taking damage sends no position,
 //! and every chunk's seek snapshot restates them. A mode without shields says
 //! so in the biped's maximum vitalities: a shield maximum of zero.
 

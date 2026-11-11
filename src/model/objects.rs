@@ -101,9 +101,9 @@ impl Ride {
         self.part.is_none() && self.seat == Some(0)
     }
 
-    /// How long the ride lasted.
+    /// How long the ride lasted, its last tick included.
     pub fn duration(&self) -> std::time::Duration {
-        Tick((self.to - self.from).max(0) as u32).duration()
+        Tick((self.to - self.from + 1).max(0) as u32).duration()
     }
 }
 

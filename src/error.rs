@@ -66,7 +66,7 @@ impl fmt::Display for Error {
             Error::DuplicateChunk(i) => write!(f, "chunk {i} given twice"),
             Error::UnexpectedKind { index, kind } => write!(f, "chunk {index} cannot be a {kind} chunk"),
             Error::Inflate { index } => write!(f, "chunk {index} does not inflate"),
-            Error::TooLarge { index } => write!(f, "chunk {index} is too large"),
+            Error::TooLarge { index } => write!(f, "chunk {index} is past the size limit for a chunk or a film"),
             Error::UnknownHeader => write!(f, "chunk 0 is not a film header this library reads"),
             Error::NoReplay => write!(f, "the film has no replay chunk"),
             Error::NoTicks => write!(f, "no replay chunk records a tick"),

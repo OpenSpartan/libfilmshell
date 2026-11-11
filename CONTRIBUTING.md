@@ -2,11 +2,15 @@
 
 ## Building and testing
 
+What CI runs:
+
 ```sh
-cargo test --release
-cargo clippy --all-targets --all-features -- -D warnings
 cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --release --all-features
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
 cargo build --lib --target wasm32-unknown-unknown
+cargo +1.85 check --all-targets --all-features --locked   # the oldest Rust supported
 ```
 
 Most tests read real films. They live outside this repository: set `FILMSHELL_TEST_FILMS` to a
@@ -16,8 +20,11 @@ the variable the tests look in `films/` here (ignored by git), and with no films
 nothing. With the variable set, a missing film fails the tests.
 
 ```sh
-FILMSHELL_TEST_FILMS=/path/to/films cargo test --release
+FILMSHELL_TEST_FILMS=/path/to/films cargo test --release --all-features
 ```
+
+The tests read eight films at a time and keep every film read: on 95 films they take about two
+minutes and 6 GB of memory.
 
 CI runs them against a private set of films, since films carry every player's gamertag and XUID.
 Pull requests from forks run everything else; a maintainer runs the films before merging.

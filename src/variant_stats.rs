@@ -1,6 +1,7 @@
 //! The game variant's stat definitions and engine settings, from the same
-//! Bond data in chunk 0 as `variant.rs`. `BaseVariantData` is read to its end: 1 options, 2 intro and UI,
-//! 3 data dependencies, 4 gameplay miscellany, 5 engine miscellany; the field
+//! Bond data in chunk 0 as `variant.rs`. `BaseVariantData` is read to its
+//! end: 1 options, 2 intro and UI, 3 data dependencies, 4 gameplay
+//! miscellany, 5 engine miscellany; the field
 //! ids are the game's (`i343.NetProtocol.GameOptions`, `.GameStats`).
 
 const REGION_START: usize = 0xce680;

@@ -12,7 +12,11 @@ use filmshell::Film;
 use filmshell::format::{self, EntityOp};
 use std::collections::BTreeMap;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> std::process::ExitCode {
+    common::main(run)
+}
+
+fn run() -> Result<(), Box<dyn std::error::Error>> {
     let dir = std::env::args().nth(1).ok_or("usage: raw <film folder>")?;
     let film = Film::from_chunks(common::load_folder(dir.as_ref())?)?;
     let raw = film.raw();

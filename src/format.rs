@@ -1,9 +1,10 @@
 //! The film's raw layers, for reading the bytes the model is built from.
 //!
-//! A replay chunk is a sequence of packets, each a 16-byte head (a 16-bit
-//! kind, a 32-bit payload size, a microsecond timestamp) and its payload,
-//! little-endian. Kind 0 is a tick packet, one frame
-//! of the film; its payload is bit-packed (MSB first) and holds two views:
+//! A replay chunk is a sequence of packets, each a 16-byte head and its
+//! payload. The head, little-endian: the kind (16 bits), two bytes the
+//! library doesn't read, the payload's size (32 bits) and a 64-bit
+//! timestamp in microseconds. Kind 0 is a tick packet, one frame of the
+//! film; its payload is bit-packed (MSB first) and holds two views:
 //!
 //! - the **event view**: one-off events (weapon fire, kills, pickups, voice
 //!   lines), each a 7-bit type, up to three object handles and a body;
@@ -105,7 +106,8 @@ impl<'a> BitReader<'a> {
 pub struct Packet<'a> {
     /// The chunk's index.
     pub chunk: u32,
-    /// The packet kind: 0 a tick, 2 the seek snapshot, 8 player structs, 12
+    /// The packet kind: 0 a tick, 1 the first of a replay chunk, 2 the seek
+    /// snapshot, 8 player structs, 9 the first of the highlights chunk, 12
     /// bot records.
     pub kind: u16,
     /// The packet's timestamp, microseconds.

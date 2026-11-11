@@ -95,7 +95,7 @@ cargo run --release --example raw -- path/to/film                # the packets a
 ```
 
 >[!NOTE]
->Positions are in world units, ten to the game's own engine unit. On every level in the library's
+>Positions are in world units, a foot each; the game's own engine unit is ten. On every level in the library's
 >catalogue they convert exactly. For any other level, give the level's bounds or the map's spawn
 >points with `Hints` and `Film::from_chunks_with`, or read the unconverted coordinates from
 >`Sample::raw`. A `Sample` records where a player was at a given tick, along with their aim, speed,

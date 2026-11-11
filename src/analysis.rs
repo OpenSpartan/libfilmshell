@@ -19,9 +19,9 @@ use crate::{Film, TagId};
 pub struct Accuracy {
     /// Rounds fired.
     pub shots: u32,
-    /// Frames of the film in which the player's weapon damage landed on another player,
-    /// counted once per victim: a shotgun blast counts once, a blast that
-    /// hits two players twice.
+    /// Frames of the film in which the player's weapon damage landed on
+    /// another player, counted once per victim: a shotgun blast counts once,
+    /// a blast that hits two players twice.
     pub hits: u32,
 }
 

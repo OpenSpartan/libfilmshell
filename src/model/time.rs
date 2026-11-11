@@ -178,12 +178,17 @@ impl Clock {
         &self.frame_ticks
     }
 
-    /// The highlight clock's tick of HighlightEvents time 0, when the film's
-    /// kills, or its medals, fix it. The highlight clock is the time since
-    /// the first frame by the packets' timestamps, in ticks of 1/59.94 s: a
-    /// recorder hitch skips ticks but no time ([`Clock::hitches`]), and a
-    /// server that falls behind runs fewer ticks than time. Time `ms` is
-    /// highlight tick `zero + ms * 0.05994`.
+    /// The highlight clock's tick of HighlightEvents time 0. The highlights'
+    /// times count from the match's start, which the film doesn't mark, so
+    /// the library places it from events the film times itself: each death
+    /// record on the kill event of that victim, else each medal record on
+    /// the mode event that names its player. None when neither places it;
+    /// the highlights then have no ticks.
+    ///
+    /// The highlight clock is the time since the first frame by the packets'
+    /// timestamps, in ticks of 1/59.94 s: a recorder hitch skips ticks but no
+    /// time ([`Clock::hitches`]), and a server that falls behind runs fewer
+    /// ticks than time. Time `ms` is highlight tick `zero + ms * 0.05994`.
     pub fn highlight_zero(&self) -> Option<f64> {
         self.highlight_zero
     }
@@ -193,8 +198,8 @@ impl Clock {
         crate::lives::hitches(&self.frame_ticks).into_iter().map(|(at, skipped)| Hitch { at, skipped }).collect()
     }
 
-    /// The tick of HighlightEvents time `ms`, when the film's kills, or its
-    /// medals and the mode events sent with them, fix the highlight clock.
+    /// The tick of HighlightEvents time `ms`, when the highlight clock is
+    /// known ([`Clock::highlight_zero`]).
     pub fn highlight_tick(&self, ms: u32) -> Option<Tick> {
         let at = (self.highlight_zero? + ms as f64 * TICKS_PER_MS).round().max(0.0) as u32;
         let k = self.highlight_ticks.partition_point(|&t| t <= at).checked_sub(1)?;

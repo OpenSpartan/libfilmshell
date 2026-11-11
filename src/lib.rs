@@ -2,11 +2,11 @@
 //!
 //! A film is a set of chunks: a header chunk, replay chunks that record the
 //! match tick by tick, and a highlights chunk (the game's HighlightEvents)
-//! with the theater timeline. [`Film::from_chunks`] reads them into a data model: who played,
-//! every life with its positions and vitals, vehicles and what stood on the
-//! map, one stream of events (kills, shots, hits, pickups, medals, voice
-//! lines, objectives), the scoreboard, and each player's inputs and
-//! ammunition.
+//! with the theater timeline. [`Film::from_chunks`] reads them into a data
+//! model: who played, every life with its positions and vitals, vehicles and
+//! what stood on the map, one stream of events (kills, shots, hits, pickups,
+//! medals, voice lines, objectives), the scoreboard, and each player's inputs
+//! and ammunition.
 //!
 //! The library does no I/O. Hand it the chunks' bytes, compressed as
 //! downloaded or already inflated, from wherever they come from: with the
@@ -17,7 +17,7 @@
 //! # Quick start
 //!
 //! ```no_run
-//! use filmshell::{Chunk, ChunkKind, Event, Film};
+//! use filmshell::{Chunk, ChunkKind, Film};
 //!
 //! # struct Entry { index: u32, chunk_type: u32, bytes: Vec<u8> }
 //! # let manifest: Vec<Entry> = Vec::new();
@@ -29,12 +29,11 @@
 //! let film = Film::from_chunks(chunks)?;
 //!
 //! let name = |id| film.player_name(id).unwrap_or("someone");
-//! for e in film.events() {
-//!     if let Event::Kill(kill) = &e.event {
-//!         match kill.credited_killer() {
-//!             Some(killer) => println!("{} {} killed {}", e.tick, name(killer), name(kill.victim)),
-//!             None => println!("{} {} died", e.tick, name(kill.victim)),
-//!         }
+//! // Leaves out the deaths the game deals everyone alive when a match ends.
+//! for (tick, kill) in film.kills().filter(|(_, k)| k.is_scored()) {
+//!     match kill.credited_killer() {
+//!         Some(killer) => println!("{tick} {} killed {}", name(killer), name(kill.victim)),
+//!         None => println!("{tick} {} died", name(kill.victim)),
 //!     }
 //! }
 //! # Ok::<(), filmshell::Error>(())
@@ -57,8 +56,9 @@
 //!   [`Scoreboard`] and the rest.
 //! - [`game`] is what the library knows about the game itself: weapons,
 //!   vehicles, medals, damage effects and levels, as Rust tables.
-//! - [`format`](mod@format) exposes the raw layers: chunks, packets, frames, the event
-//!   and entity views of a tick packet, the seek snapshots, a bit reader.
+//! - [`format`](mod@format) exposes the raw layers: chunks, packets, frames,
+//!   the event and entity views of a tick packet, the seek snapshots, a bit
+//!   reader.
 //! - [`analysis`] derives estimates the film doesn't state directly:
 //!   accuracy, weapon numbers, spawn factors.
 //!
@@ -69,8 +69,8 @@
 //! gives its first and last, both inclusive; one that ends when something is
 //! gone (an object off the map, a weapon picked up) gives that tick, and says
 //! so.
-//! Positions are in world units ([`Position`]): a world unit is a tenth of
-//! the engine unit of the game's files, and a foot. The model and
+//! Positions are in world units ([`Position`]): a world unit is a foot, and
+//! the game's files use engine units of ten world units. The model and
 //! [`analysis`] use world units; the [`game`] tables keep engine units. A film
 //! doesn't carry the box its positions are quantized over: the library knows
 //! it for the levels in its catalogue or from [`Hints::level_bounds`];
@@ -80,7 +80,7 @@
 //! # Checked against the match stats
 //!
 //! A film doesn't carry the stats the Halo services keep for its match (the
-//! match stats), and the library doesn't read them; its tests do. Over 95
+//! match stats), and the library doesn't read them; its tests do. On 95
 //! films (film version 41: Slayer, Juggernaut, Headhunter, CTF, Big Team
 //! Battle, King of the Hill, Strongholds, Land Grab, Oddball, Stockpile,
 //! Infection, Firefight, the minigames, Attrition and Elimination,
@@ -96,7 +96,8 @@
 //!
 //! - `serde`: derives `Serialize` and `Deserialize` on the model's types
 //!   (not [`Film`], [`Clock`], [`Chunk`], [`Hints`] or [`Error`]; [`Rule`]
-//!   only serializes), the [`analysis`] results and the `game` enums. An
+//!   and [`analysis::AccuracyTicks`] only serialize), the [`analysis`]
+//!   results and the `game` enums. An
 //!   [`Event`] is an object with a `type` (`{"type": "kill", "victim": 3,
 //!   ...}`), enum variants are snake_case, [`TagId`]s, [`StringId`]s,
 //!   [`Xuid`]s and [`Guid`]s are strings, and empty `Option` and `Vec` fields

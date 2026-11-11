@@ -10,12 +10,24 @@
 
 use filmshell::Chunk;
 use std::path::Path;
+use std::process::ExitCode;
+
+/// Runs an example, printing its error as text and exiting with status 1.
+pub fn main(run: fn() -> Result<(), Box<dyn std::error::Error>>) -> ExitCode {
+    match run() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("error: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
 
 /// The chunks of the film in `dir`, the inflated copy of a chunk where both
 /// are there. Other files are skipped.
 pub fn load_folder(dir: &Path) -> Result<Vec<Chunk<'static>>, Box<dyn std::error::Error>> {
     let mut chunks = Vec::new();
-    for entry in std::fs::read_dir(dir)? {
+    for entry in std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))? {
         let path = entry?.path();
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
         if Chunk::file_index(name).is_none() || dir.join(format!("{name}_dec")).exists() {

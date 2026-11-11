@@ -20,8 +20,9 @@ pub struct TimedEvent {
 pub enum Event {
     /// A player was killed.
     Kill(Kill),
-    /// A player earned a medal (from the highlights chunk, when the
-    /// film fixes its clock; [`Film::medals`](crate::Film::medals) lists every medal).
+    /// A player earned a medal, from the highlights chunk, when its clock is
+    /// known ([`Clock::highlight_zero`](crate::Clock::highlight_zero));
+    /// [`Film::medals`](crate::Film::medals) lists every medal.
     Medal(MedalAward),
     /// A weapon fired a round.
     Shot(Shot),
@@ -220,10 +221,11 @@ pub struct Kill {
     /// headshot events at all.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub headshot: Option<bool>,
-    /// Whether the scoreboard counted the death: false for the deaths the
-    /// game deals everyone still alive when a match ends. In a film whose
-    /// scoreboard isn't read (a small lobby) those are told by their time,
-    /// 6 s before the film ends with cause World, and the rest are None.
+    /// Whether the scoreboard counted the death. It counts only while a round
+    /// is under way, so the deaths the game deals everyone still alive when a
+    /// match ends are false. In a small lobby, whose scoreboard isn't read, a
+    /// death with cause World in the film's last 6 s is false and every other
+    /// death None.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub scored: Option<bool>,
     /// What the last hit on the victim in the 2 s before was.
@@ -236,13 +238,13 @@ pub struct Kill {
     /// Where the victim was.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
-    /// The film has no kill event for this death: the game sends one to the
-    /// victim's player, and a bot has none. The tick is where the victim's
-    /// player let go of the life, else its last sample. `killer` is the kill
-    /// the scoreboard counted then, else the victim when it counted a
-    /// suicide, else whom the game's rule credits from the film's hits: the
-    /// fatal hit's attacker when an enemy, else the most recent enemy to hit
-    /// the victim in the 6 s before, else the most recent player to.
+    /// The film has no kill event for this death: the game sends one only
+    /// for a victim with a player, and a bot has none. The tick is where the
+    /// victim's player let go of the life, else its last sample. `killer` is
+    /// the kill the scoreboard counted then, else the victim when it counted
+    /// a suicide, else whom the game's rule credits from the film's hits:
+    /// the fatal hit's attacker when an enemy, else the most recent enemy to
+    /// hit the victim in the 6 s before, else the most recent player to.
     /// `assistant` is the enemy, other than the killer, whose hits on the
     /// life in those 6 s took the most of its shield and health, at least a
     /// fifth, with that share as `assistant_damage_percent`;
@@ -335,7 +337,8 @@ pub struct Pickup {
     pub player: PlayerId,
     /// The item's tag.
     pub item: TagId,
-    /// The inventory slot it went into.
+    /// The inventory slot it went into, as the pickup event names it (3
+    /// bits).
     pub slot: u32,
 }
 
@@ -702,8 +705,8 @@ pub struct Highlight {
     pub kind: HighlightKind,
     /// Milliseconds since the match started, on the highlight clock.
     pub time_ms: u32,
-    /// The record's tick, when the film's kills or medals fix the highlight
-    /// clock.
+    /// The record's tick, when the highlight clock is known
+    /// ([`Clock::highlight_zero`](crate::Clock::highlight_zero)).
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub tick: Option<Tick>,
 }

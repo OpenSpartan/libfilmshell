@@ -4,8 +4,8 @@ use std::str::FromStr;
 
 /// A global tag id: the 32-bit name the game gives an asset (a weapon, a
 /// vehicle, a damage effect, a sound, a level). Films refer to everything in
-/// the game's content by these ids. They print, serialize and parse as eight
-/// hex digits.
+/// the game's content by these ids. They print and serialize as eight hex
+/// digits, and parse from up to eight, with or without `0x`.
 #[derive(Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TagId(pub u32);
 

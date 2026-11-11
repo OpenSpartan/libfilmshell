@@ -4,21 +4,34 @@
 //! ```text
 //! cargo run --release --example timeline -- path/to/film 3
 //! ```
+//!
+//! The players example lists the players' ids.
 
 mod common;
 
 use filmshell::{ActionKind, Event, Film, PlayerId, Tick};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> std::process::ExitCode {
+    common::main(run)
+}
+
+fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
-    let dir = args.next().ok_or("usage: timeline <film folder> <player index>")?;
-    let me = PlayerId(args.next().ok_or("give a player index")?.parse()?);
+    let dir = args.next().ok_or("usage: timeline <film folder> <player id>")?;
+    let id = args.next().ok_or("give a player id")?;
+    let me = PlayerId(id.parse().map_err(|_| format!("{id} is not a player id"))?);
     let film = Film::from_chunks(common::load_folder(dir.as_ref())?)?;
+    if film.player(me).is_none() {
+        return Err(format!("the film has no player {me}").into());
+    }
     let name = |id: PlayerId| film.player_name(id).unwrap_or("someone");
     println!("{}", name(me));
 
     for e in film.events().iter().filter(|e| e.event.involves(me)) {
         let line = match &e.event {
+            // The deaths the game deals everyone alive as a round ends count
+            // nothing.
+            Event::Kill(k) if k.victim == me && !k.is_scored() => "died, not counted".to_string(),
             Event::Kill(k) if k.victim == me => match k.credited_killer() {
                 Some(killer) => format!("killed by {}", name(killer)),
                 None => "died".to_string(),

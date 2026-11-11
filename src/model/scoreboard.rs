@@ -11,9 +11,10 @@ pub enum StatOwner {
     Team(TeamId),
 }
 
-/// The scoreboard's statistics with a fixed meaning, by their statborg
-/// slot. The variant's [`stat_labels`](crate::GameVariant::stat_labels) name
-/// every slot, these included.
+/// The scoreboard's statistics with a fixed meaning, by their slot in its
+/// rows ([`Scoreboard`]). The variant's
+/// [`stat_labels`](crate::GameVariant::stat_labels) name every slot, these
+/// included.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
@@ -68,7 +69,7 @@ impl Stat {
         Stat::Spawns,
     ];
 
-    /// The statistic's statborg slot.
+    /// The statistic's scoreboard slot.
     pub fn slot(self) -> u32 {
         match self {
             Stat::Score => 0,
@@ -98,7 +99,7 @@ pub struct StatChange {
     pub tick: Tick,
     /// Whose row.
     pub owner: StatOwner,
-    /// The statborg slot, 0 to 55.
+    /// The slot in the row, 0 to 55.
     pub slot: u32,
     /// The new value.
     pub value: i32,
@@ -117,7 +118,8 @@ pub struct MatchClock {
     pub tick: Tick,
     /// The round's limit, seconds.
     pub limit: f64,
-    /// Seconds left.
+    /// The timer's seconds: the time left while it counts down, the time so
+    /// far while it counts up.
     pub left: f64,
     /// The timer's 5-bit state as the game sends it: an index into the
     /// game's table of timer rates ([`MatchClock::rate`]). On the test films
@@ -190,9 +192,14 @@ pub struct EngineState {
 ///
 /// ```no_run
 /// # fn run(film: &filmshell::Film, id: filmshell::PlayerId) {
-/// use filmshell::{Stat, StatOwner};
+/// use filmshell::{Stat, StatOwner, Tick};
 ///
-/// let kills = film.scoreboard().total_stat(StatOwner::Player(id), Stat::Kills);
+/// let board = film.scoreboard();
+/// let me = StatOwner::Player(id);
+/// // The scoreboard as playback shows it 5 minutes in, and the match's total.
+/// let now = board.value_at_stat(me, Stat::Kills, Tick::from_seconds(300.0));
+/// let total = board.total_stat(me, Stat::Kills);
+/// println!("{now} kills at 5:00, {total} in all");
 /// # }
 /// ```
 #[derive(Clone, Debug, Default, PartialEq)]

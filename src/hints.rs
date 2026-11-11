@@ -103,7 +103,10 @@ impl Hints {
 
     /// The level's play-space box, in place of the catalogue's. A box whose
     /// corners aren't finite, whose low corner isn't below its high one, or
-    /// that spans a million engine units or more is ignored.
+    /// that spans a million engine units or more is ignored, and so is one
+    /// whose field widths differ from the film's:
+    /// [`Film::coordinates`](crate::Film::coordinates) says which fit ran
+    /// instead.
     #[must_use]
     pub fn level_bounds(mut self, bounds: LevelBounds) -> Hints {
         let ok = (0..3).all(|i| {

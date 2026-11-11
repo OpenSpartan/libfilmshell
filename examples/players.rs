@@ -8,7 +8,11 @@ mod common;
 
 use filmshell::{Film, Stat, StatOwner};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> std::process::ExitCode {
+    common::main(run)
+}
+
+fn run() -> Result<(), Box<dyn std::error::Error>> {
     let dir = std::env::args().nth(1).ok_or("usage: players <film folder>")?;
     let film = Film::from_chunks(common::load_folder(dir.as_ref())?)?;
 

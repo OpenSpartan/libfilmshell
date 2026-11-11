@@ -77,14 +77,15 @@ pub struct Sample {
     /// When.
     pub tick: Tick,
     /// The two horizontal position fields as the film stores them, scaled to
-    /// a 15-bit window (`field * 2^(15 - width)`; small lobbies' units are 64
-    /// and 8 times smaller): `raw[0]` becomes world y, `raw[1]` world x.
+    /// a 15-bit window (`field * 2^(15 - width)`; in a small lobby `raw[0]`
+    /// is 64 and `raw[1]` 8 times smaller): `raw[0]` becomes world y,
+    /// `raw[1]` world x.
     /// [`Coordinates::to_world`] converts them.
     pub raw: [f64; 2],
     /// The position in world units, when the film's coordinates are known.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
-    /// Aim yaw in radians, in world axes (from +x toward +y).
+    /// Aim yaw in radians, -π to π, in world axes (from +x toward +y).
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub yaw: Option<f64>,
     /// On-foot speed, world units a second; None in a vehicle.
@@ -121,21 +122,24 @@ pub struct Life {
     /// The player whose life it is.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub player: Option<PlayerId>,
-    /// The biped's id, unique among the lives under way at the same time.
+    /// The biped's id, unique among the lives under way at the same time;
+    /// None for a life no player owns.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub entity: Option<EntityId>,
     /// Whether the life ended in a death: by the HighlightEvents death times,
-    /// else where the player controlling it let go of it or the scoreboard
-    /// counted a death; in a small lobby, by a respawn following it.
+    /// else where the player controlling it let go of it at a time the
+    /// scoreboard counts a death (a bot removed to make room for a joiner
+    /// lets go without dying); in a small lobby, by a respawn following it.
     pub died: bool,
     /// The tick of the [`Kill`](crate::Kill) that ended the life, recorded or
     /// [`inferred`](crate::Kill::inferred). None when `died` is true but no
     /// kill was placed.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub death: Option<Tick>,
-    /// The last tick the life lasts, when it ends before the film does: its
-    /// death; the last sample of a death no kill was placed for, or of a life
-    /// another of the player's follows; or when its player left.
+    /// The life's last tick, when it ends before the film does. For a death
+    /// with a kill, the kill's tick; for a death without one, or a life the
+    /// player's next life follows, the last sample; for a player who left,
+    /// the tick they left. None when the life lasts to the film's end.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub until: Option<Tick>,
     /// Its samples, in tick order.
@@ -149,7 +153,8 @@ impl Life {
         self.samples.first().map(|s| s.tick)
     }
 
-    /// The last sample's tick.
+    /// The last sample's tick. The life can last past it, to
+    /// [`Life::until`] or the film's end: [`Life::is_over_at`] says when.
     pub fn end(&self) -> Option<Tick> {
         self.samples.last().map(|s| s.tick)
     }

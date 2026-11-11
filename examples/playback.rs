@@ -9,10 +9,15 @@ mod common;
 
 use filmshell::{Film, Tick};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> std::process::ExitCode {
+    common::main(run)
+}
+
+fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     let dir = args.next().ok_or("usage: playback <film folder> <seconds>")?;
-    let at = Tick::from_seconds(args.next().ok_or("give a time in seconds")?.parse()?);
+    let seconds = args.next().ok_or("give a time in seconds")?;
+    let at = Tick::from_seconds(seconds.parse().map_err(|_| format!("{seconds} is not a number of seconds"))?);
     let film = Film::from_chunks(common::load_folder(dir.as_ref())?)?;
     println!("{at} of {}", film.clock().end());
 
@@ -24,7 +29,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         let s = now.sample;
         let place = s.position.map_or("unknown place".to_string(), |w| format!("{:7.1} {:7.1}", w.x, w.y));
-        let percent = |v: Option<f64>| v.map_or("   ".to_string(), |v| format!("{:>3.0}", v * 100.0));
+        // Small lobbies' films send no shield or health.
+        let percent =
+            |label: &str, v: Option<f64>| v.map_or(String::new(), |v| format!("  {label} {:>3.0}", v * 100.0));
         let doing = match (now.vehicle, now.weapon) {
             (Some(v), _) => format!("in {}", v.vehicle().map_or("a vehicle", |v| v.name())),
             (None, Some(w)) => {
@@ -33,7 +40,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             (None, None) => String::new(),
         };
-        println!("{name:<16} {place}  shield {}  health {}  {doing}", percent(s.shield), percent(s.health));
+        let vitals = percent("shield", s.shield) + &percent("health", s.health);
+        println!("{name:<16} {place}{vitals}  {doing}");
     }
     Ok(())
 }
