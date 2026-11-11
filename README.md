@@ -12,10 +12,11 @@
   <img src="https://img.shields.io/badge/rust-1.85%2B-orange.svg" alt="Rust 1.85 or newer">
 </p>
 
-`libfilmshell` is designed to parse out useful data from Halo Infinite film files. I first wrote about
-parsing them in [Extracting Match Stats From Halo Infinite Film
-Files](https://den.dev/blog/extracting-stats-film-files-halo-infinite/), and this library is me
-actually wrapping a lot of the investigations into one, easy-to-consume package.
+`libfilmshell` reads Halo Infinite film files into typed data: who played, where everyone went, every
+kill, shot and medal, and the scoreboard as it changed. I first wrote about parsing them in
+[Extracting Match Stats From Halo Infinite Film
+Files](https://den.dev/blog/extracting-stats-film-files-halo-infinite/), and this library collects
+those investigations in one package.
 
 This is the library that powers [OpenSpartan Films](https://films.openspartan.com).
 
@@ -45,11 +46,10 @@ A film has three kinds:
 | 3    | `Highlights` | Last   | Summary of kills, deaths, and medals on the theater timeline         |
 
 Reading a film takes the header and every replay chunk. The highlights chunk is optional, but
-without it a film has no medals, and lives the film doesn't name an owner for can't be matched
-to players by their death times. You can
-download the chunks yourself with a script or a third-party tool, using your own
-[Spartan token](https://den.dev/blog/halo-api-authentication/), including for matches other players
-participated in.
+without it a film has no medals, and lives the film doesn't name an owner for can't be matched to
+players by their death times. You can download the chunks yourself with a script or a third-party
+tool, using your own [Spartan token](https://den.dev/blog/halo-api-authentication/), including for
+matches other players participated in.
 
 ## Quick start
 
@@ -82,8 +82,8 @@ fn print_match(chunks: &[(u32, u32, Vec<u8>)]) -> Result<(), filmshell::Error> {
 
 Chunks saved as files named `filmChunk{N}` (as downloaded) or `filmChunk{N}_dec` (inflated) need no
 manifest: `Chunk::from_file(name, bytes)` takes the index from the file name and the kind from the
-bytes. The [`examples` folder](examples) has a few small sample programs that can read a film saved
-as a folder of chunk files and then interpret their contents:
+bytes. The [`examples` folder](examples) has seven programs that read a film saved as a folder of
+chunk files:
 
 ```sh
 # The match, its players and the score
@@ -120,4 +120,4 @@ MIT. See [LICENSE](LICENSE).
 
 ## Maintainers
 
-- [Den Delimarsky](https://den.dev) (with 💖 for Halo and the Halo community)
+- [Den Delimarsky](https://den.dev), with love for Halo and the Halo community
