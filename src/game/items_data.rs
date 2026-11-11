@@ -33,6 +33,8 @@ pub enum Weapon {
     FusionCoilShock,
     /// Generic Ball.
     GenericBall,
+    /// Generic Power Seed.
+    GenericPowerSeed,
     /// Generic Skull.
     GenericSkull,
     /// Generic Skull, Escalation.
@@ -73,8 +75,6 @@ pub enum Weapon {
     PlasmaCannon,
     /// Plasma Pistol.
     PlasmaPistol,
-    /// Power Socket UNSC.
-    PowerSocketUnsc,
     /// Pulse Carbine.
     PulseCarbine,
     /// Ravager.
@@ -121,6 +121,7 @@ impl Weapon {
             Weapon::FuelRodSpnkr => "Fuel Rod SPNKr",
             Weapon::FusionCoilShock => "Fusion Coil Shock",
             Weapon::GenericBall => "Generic Ball",
+            Weapon::GenericPowerSeed => "Generic Power Seed",
             Weapon::GenericSkull => "Generic Skull",
             Weapon::GenericSkullEscalation => "Generic Skull, Escalation",
             Weapon::Ghost => "Ghost",
@@ -141,7 +142,6 @@ impl Weapon {
             Weapon::NormalSandwich => "Normal Sandwich",
             Weapon::PlasmaCannon => "Plasma Cannon",
             Weapon::PlasmaPistol => "Plasma Pistol",
-            Weapon::PowerSocketUnsc => "Power Socket UNSC",
             Weapon::PulseCarbine => "Pulse Carbine",
             Weapon::Ravager => "Ravager",
             Weapon::S7SniperRifle => "S7 Sniper Rifle",
@@ -1642,7 +1642,7 @@ pub(crate) static TAGS: &[TagInfo] = &[
     r(0xaf4f140f, K::Crate, "Covenant Ring Full", None, 0x0, 0x0, false),
     r(0xaf7d38fe, K::Crate, "Flood Light A w/Light", None, 0x0, 0x0, false),
     r(0xaf7f8c4a, K::Crate, "Target Dummy Grunt", None, 0x0, 0x0, false),
-    r(0xaf8c936a, K::Weapon, "Power Socket UNSC", Some(I::Weapon(Weapon::PowerSocketUnsc)), 0xa7d2ad46, 0x0, false),
+    r(0xaf8c936a, K::Weapon, "Generic Power Seed", Some(I::Weapon(Weapon::GenericPowerSeed)), 0xa7d2ad46, 0x0, false),
     r(0xaf955176, K::Crate, "Gravity Slide 008x016", None, 0x0, 0x0, false),
     r(0xafa0a180, K::Projectile, "", None, 0x0, 0x0, false),
     r(0xafc2591d, K::Crate, "UNSC Full Cover", None, 0x0, 0x0, false),
