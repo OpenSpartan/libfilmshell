@@ -27,7 +27,13 @@ The tests read eight films at a time and keep every film read: on 95 films they 
 minutes and 6 GB of memory.
 
 CI runs them against a private set of films, since films carry every player's gamertag and XUID.
-Pull requests from forks run everything else; a maintainer runs the films before merging.
+Pull requests from forks run everything else; a maintainer runs the films before merging. With the
+films, CI also runs every example on every film:
+
+```sh
+cargo build --release --all-features --examples
+sh .github/examples-on-films.sh /path/to/films
+```
 
 ## How the format is known
 

@@ -85,3 +85,7 @@ jobs:
         run: cargo test --release --all-features
         env:
           FILMSHELL_TEST_FILMS: ${{ github.workspace }}/test-films/films
+      - name: Examples on every film
+        run: |
+          cargo build --release --all-features --examples
+          sh .github/examples-on-films.sh test-films/films

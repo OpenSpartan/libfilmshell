@@ -49,6 +49,27 @@
 //! [`Film::vehicle_at`] look up one thing. [`Clock`] maps the film's frames
 //! to ticks.
 //!
+//! A viewer's loop, one tick at a time:
+//!
+//! ```no_run
+//! # fn run(film: &filmshell::Film) {
+//! use filmshell::Tick;
+//!
+//! let mut last = Tick(0);
+//! let mut now = Tick(0);
+//! while now <= film.clock().end() {
+//!     for p in film.players_at(now) {
+//!         // Between samples, where the player was this tick.
+//!         let _at = p.life.position_at(now);
+//!     }
+//!     // What happened since the last frame drawn.
+//!     for _event in film.events_in(last..now) {}
+//!     last = now;
+//!     now += 1;
+//! }
+//! # }
+//! ```
+//!
 //! # Layout
 //!
 //! - The crate root holds [`Film`], the input types ([`Chunk`],
