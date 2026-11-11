@@ -208,18 +208,60 @@ impl GrenadeFlight {
     /// path is thinned, so this is the flight's line, not each tick's
     /// recorded position. None outside the flight.
     pub fn position_at(&self, tick: Tick) -> Option<Position> {
-        let first = self.path.first()?;
-        if tick < first.tick || tick > self.end {
-            return None;
-        }
-        let i = self.path.partition_point(|p| p.tick <= tick);
-        let a = self.path[i - 1];
-        let Some(b) = self.path.get(i) else { return Some(a.position) };
-        let f = (tick.0 - a.tick.0) as f64 / (b.tick.0 - a.tick.0) as f64;
-        let mid = |a: f64, b: f64| a + (b - a) * f;
-        let (p, q) = (a.position, b.position);
-        Some(Position { x: mid(p.x, q.x), y: mid(p.y, q.y), z: p.z.zip(q.z).map(|(a, b)| mid(a, b)).or(p.z) })
+        along(&self.path, self.end, tick)
     }
+}
+
+/// A projectile's flight: a rocket, a plasma bolt, a spike, anything a
+/// weapon fires as an object that flies rather than hitting on the spot.
+/// Thrown grenades are [`GrenadeFlight`]s.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct ProjectileFlight {
+    /// Who fired it: the shooter its creation names, or the rider of the
+    /// vehicle or turret that fired it. None when the creation names no one.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub player: Option<PlayerId>,
+    /// The projectile's tag.
+    pub projectile: TagId,
+    /// Its path from where it was created, thinned as a grenade's is: a
+    /// straight shot is its two ends.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
+    pub path: Vec<PathPoint>,
+    /// When it went off or was gone: its deletion, else its last position.
+    pub end: Tick,
+    /// Whether `end` is the projectile's deletion.
+    pub deleted: bool,
+}
+
+impl ProjectileFlight {
+    /// Where the projectile was at `tick`, as
+    /// [`GrenadeFlight::position_at`] places a grenade.
+    pub fn position_at(&self, tick: Tick) -> Option<Position> {
+        along(&self.path, self.end, tick)
+    }
+
+    /// The projectile's numbers in the game's sandbox: its velocity, range
+    /// and the damage effect of a direct hit.
+    pub fn stats(&self) -> Option<&'static game::ProjectileStats> {
+        game::projectile_stats(self.projectile)
+    }
+}
+
+/// A position along a thinned path at `tick`, from its first point to `end`.
+fn along(path: &[PathPoint], end: Tick, tick: Tick) -> Option<Position> {
+    let first = path.first()?;
+    if tick < first.tick || tick > end {
+        return None;
+    }
+    let i = path.partition_point(|p| p.tick <= tick);
+    let a = path[i - 1];
+    let Some(b) = path.get(i) else { return Some(a.position) };
+    let f = (tick.0 - a.tick.0) as f64 / (b.tick.0 - a.tick.0) as f64;
+    let mid = |a: f64, b: f64| a + (b - a) * f;
+    let (p, q) = (a.position, b.position);
+    Some(Position { x: mid(p.x, q.x), y: mid(p.y, q.y), z: p.z.zip(q.z).map(|(a, b)| mid(a, b)).or(p.z) })
 }
 
 /// The ground a zone covers, in world units.

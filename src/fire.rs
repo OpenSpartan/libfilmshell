@@ -87,8 +87,24 @@ pub struct FilmFire {
 /// The shots and kills of `film`, attributed to `paths`. `layout` is how
 /// the level lays out a position, which some event bodies read; `extra` are
 /// other weapons' tag ids the weapon list must hold (picked up, on the
-/// ground: `inventory.rs`).
+/// ground: `inventory.rs`). An event body's player index is taken for the
+/// player's: [`read_mapped`] maps it.
+#[cfg_attr(not(feature = "research"), allow(dead_code))]
 pub fn read(film: &Film, layout: Layout, paths: &[PlayerPath], extra: &[u32]) -> FilmFire {
+    read_mapped(film, layout, paths, extra, |id, _| id)
+}
+
+/// [`read`], with `player_of` mapping the engine slot an event body names at
+/// a frame to the player's index (`holders`): an event attributed by its
+/// body rather than its handles (a shot or a hit from a vehicle) names the
+/// slot.
+pub fn read_mapped(
+    film: &Film,
+    layout: Layout,
+    paths: &[PlayerPath],
+    extra: &[u32],
+    player_of: impl Fn(u32, i64) -> u32,
+) -> FilmFire {
     let mut slot_owner: HashMap<i32, usize> = HashMap::new();
     let mut by_index: HashMap<i32, usize> = HashMap::new();
     for (k, p) in paths.iter().enumerate() {
@@ -115,7 +131,7 @@ pub fn read(film: &Film, layout: Layout, paths: &[PlayerPath], extra: &[u32]) ->
                     let slot = e.handles[0].and_then(|h| h.biped_slot());
                     let owner = slot
                         .and_then(|s| slot_owner.get(&s))
-                        .or_else(|| f.player.and_then(|p| by_index.get(&(p as i32))));
+                        .or_else(|| f.player.and_then(|p| by_index.get(&(player_of(p, frame as i64) as i32))));
                     if let (Some(&k), Some(w)) = (owner, f.weapon) {
                         raw.push((frame as i64, k, w));
                     }
@@ -151,7 +167,7 @@ pub fn read(film: &Film, layout: Layout, paths: &[PlayerPath], extra: &[u32]) ->
                         .map(|h| (h.generation as i32 - 1) * 256 + h.index as i32);
                     let owner = life
                         .and_then(|s| slot_owner.get(&s))
-                        .or_else(|| player.and_then(|p| by_index.get(&(p as i32))));
+                        .or_else(|| player.and_then(|p| by_index.get(&(player_of(p, frame as i64) as i32))));
                     if let Some(&k) = owner {
                         throws[k].push((frame as i64, grenade));
                     }
@@ -159,7 +175,8 @@ pub fn read(film: &Film, layout: Layout, paths: &[PlayerPath], extra: &[u32]) ->
                 Body::Damage(d) => {
                     let life =
                         |k: usize| e.handles[k].and_then(|h| h.biped_slot()).and_then(|s| slot_owner.get(&s)).copied();
-                    let attacker = life(1).or_else(|| d.player.and_then(|p| by_index.get(&(p as i32)).copied()));
+                    let attacker = life(1)
+                        .or_else(|| d.player.and_then(|p| by_index.get(&(player_of(p, frame as i64) as i32)).copied()));
                     if let (Some(victim), Some(slot)) = (life(0), e.handles[0].and_then(|h| h.biped_slot())) {
                         hits.push((frame as i64, attacker, victim));
                         hit_details.push((slot, d.tag, d.a[0]));

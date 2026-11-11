@@ -298,31 +298,11 @@ fn pair_grenades(
         let Some((j, _)) = best else { continue };
         used[j] = true;
         let p = &f.projectiles[j];
-        let mut full: Vec<(i64, f64, f64)> = p
-            .path
-            .iter()
-            .filter_map(|&(fr, bx, q)| {
-                let (x, y) = place(bx, q, w, c, level)?;
-                Some((fr, x, y))
-            })
-            .collect();
-        // A missed deletion lets a later object in the same entity slot
-        // continue the path: cut it at the first long gap or jump.
-        let cut = full.windows(2).position(|s| {
-            let gap = s[1].0 - s[0].0;
-            gap > GRENADE_GAP_FRAMES || (s[1].1 - s[0].1).hypot(s[1].2 - s[0].2) > GRENADE_STEP_WU * gap as f64
-        });
-        let whole = cut.is_none();
-        if let Some(i) = cut {
-            full.truncate(i + 1);
-        }
-        let last = full.last().map(|s| s.0).unwrap_or(p.from);
-        let deleted = whole && p.to.is_some_and(|to| to - last <= GRENADE_GAP_FRAMES);
-        let end = if deleted { p.to.unwrap_or(last) } else { last };
+        let (path, end, deleted) = flight_path(p, w, c, level);
         out.push(Flight {
             path_index: k,
             grenade: t.grenade,
-            path: thin(&full, GRENADE_TOLERANCE),
+            path,
             end,
             deleted,
             entity: (p.entity, p.generation),
@@ -330,6 +310,38 @@ fn pair_grenades(
         });
     }
     out
+}
+
+/// A projectile's path in world units, thinned, with the frame it ended and
+/// whether that is its deletion.
+fn flight_path(
+    p: &grenades::Projectile,
+    w: [u32; 3],
+    c: &Calibration,
+    level: Option<&LevelBox>,
+) -> (Vec<(i64, f64, f64)>, i64, bool) {
+    let mut full: Vec<(i64, f64, f64)> = p
+        .path
+        .iter()
+        .filter_map(|&(fr, bx, q)| {
+            let (x, y) = place(bx, q, w, c, level)?;
+            Some((fr, x, y))
+        })
+        .collect();
+    // A missed deletion lets a later object in the same entity slot continue
+    // the path: cut it at the first long gap or jump.
+    let cut = full.windows(2).position(|s| {
+        let gap = s[1].0 - s[0].0;
+        gap > GRENADE_GAP_FRAMES || (s[1].1 - s[0].1).hypot(s[1].2 - s[0].2) > GRENADE_STEP_WU * gap as f64
+    });
+    let whole = cut.is_none();
+    if let Some(i) = cut {
+        full.truncate(i + 1);
+    }
+    let last = full.last().map(|s| s.0).unwrap_or(p.from);
+    let deleted = whole && p.to.is_some_and(|to| to - last <= GRENADE_GAP_FRAMES);
+    let end = if deleted { p.to.unwrap_or(last) } else { last };
+    (thin(&full, GRENADE_TOLERANCE), end, deleted)
 }
 
 /// A bot's spawns when the scoreboard has no row of its: high enough that
@@ -723,7 +735,8 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         .map(|((p, positions), states)| WorldPath { player: p.player_index, positions, states })
         .collect();
     let extra: Vec<u32> = inv.pickups.iter().map(|p| p.tag).chain(inv.ground.iter().map(|g| g.tag)).collect();
-    let fired: Option<FilmFire> = params.map(|p| fire::read(&film, (&p).into(), paths, &extra));
+    let player_of = |id: u32, frame: i64| holders.api(id, frame);
+    let fired: Option<FilmFire> = params.map(|p| fire::read_mapped(&film, (&p).into(), paths, &extra, player_of));
     let scripts = crate::scripts::script_names(&film.chunks[0]);
     let mode = GameMode::from_scripts(&scripts);
 
@@ -753,8 +766,8 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let mut objects_seen = zones::ObjectsSeen::default();
     let koth = zone_input.as_ref().is_some_and(|z| z.0 == zones::Mode::Koth) && exact;
     if let Some(p) = walk {
-        let mut a = actions::reader(paths, mode.is_pvp(), &mut acts_out);
-        let mut b = crate::accuracy::reader(paths, &mut aim);
+        let mut a = actions::reader(paths, mode.is_pvp(), player_of, &mut acts_out);
+        let mut b = crate::accuracy::reader(paths, player_of, &mut aim);
         let mut c = crate::ammo::reader(paths, &mut ammo);
         let mut d = koth.then(|| zones::hill_score_reader(team_of, &mut hill_seen));
         let mut e = zone_input.as_ref().filter(|_| exact).map(|z| zones::objects_reader(&z.3, &mut objects_seen));
@@ -993,6 +1006,8 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
 
     // What needs world units.
     let mut grenade_flights = Vec::new();
+    let mut projectile_flights = Vec::new();
+    let mut vehicle_shots: Vec<(usize, i32, i64)> = Vec::new();
     let mut ground = Vec::new();
     let mut zones_out = Vec::new();
     let mut hill_score = None;
@@ -1031,6 +1046,33 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 from: tick(g.from),
                 to,
                 taken: g.taken,
+            });
+        }
+        // Every other projectile that flew: the shooter its creation names,
+        // by their life, else their engine slot; a vehicle's are its rider's,
+        // found once the rides are.
+        let paired: std::collections::HashSet<((u32, u32), i64)> = flights.iter().map(|g| (g.entity, g.from)).collect();
+        let owner: HashMap<i32, usize> =
+            paths.iter().enumerate().flat_map(|(k, p)| p.life_slots.iter().flatten().map(move |&s| (s, k))).collect();
+        for p in thrown.projectiles.iter().filter(|p| p.path.len() >= 2) {
+            if paired.contains(&((p.entity, p.generation), p.from)) {
+                continue;
+            }
+            let (path, end, deleted) = flight_path(p, w, c, level);
+            if path.len() < 2 {
+                continue;
+            }
+            let by_life = p.shooter.1.and_then(|h| h.biped_slot()).and_then(|s| owner.get(&s)).map(|&k| paths[k].player_index);
+            let by_slot = p.shooter.0.map(|i| holders.api(i, p.from) as i32).filter(|&i| paths.iter().any(|q| q.player_index == i));
+            if let Some(v) = p.shooter.1.and_then(|h| h.vehicle_slot()).filter(|_| by_life.is_none()) {
+                vehicle_shots.push((projectile_flights.len(), v, p.from));
+            }
+            projectile_flights.push(ProjectileFlight {
+                player: by_life.or(by_slot).and_then(pid),
+                projectile: TagId(p.tag),
+                path: path.iter().map(|&(fr, x, y)| PathPoint::new(tick(fr), Position::new(x, y))).collect(),
+                end: tick(end),
+                deleted,
             });
         }
         for f in flights {
@@ -1620,6 +1662,30 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             r.to = r.to.min(until);
         }
     }
+    // A vehicle's projectile is its driver's; a part's (a turret's) is the
+    // rider in that part.
+    for &(i, v, frame) in &vehicle_shots {
+        let at = tick(frame);
+        let id = ex.vehicle_ident.resolve(v);
+        let part = (id != v).then(|| ex.vehicle_ident.tag(v, frame).map(TagId)).flatten();
+        let track = vehicles
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.entity == EntityId(id as u16) && t.on_map_at(at))
+            .max_by_key(|(_, t)| t.span().map(|s| s.0))
+            .map(|(k, _)| k);
+        let rider = track.and_then(|k| {
+            rides.iter().find(|r| {
+                r.vehicle == Some(k)
+                    && r.from <= at
+                    && at <= r.to
+                    && if part.is_some() { r.part == part } else { r.part.is_none() && r.seat == Some(0) }
+            })
+        });
+        if let Some(r) = rider {
+            projectile_flights[i].player = Some(r.player);
+        }
+    }
     // Vehicle destroys and hijacks: the mode scripts' personal scores.
     if let Some(group) = crate::game::events::group(&scripts) {
         let hits: Vec<(Tick, Option<usize>, Option<PlayerId>, Option<u32>)> = fired
@@ -1959,6 +2025,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         world: world_objects,
         ground,
         grenades: grenade_flights,
+        projectiles: projectile_flights,
         zones: zones_out,
         hill_score,
         events,

@@ -68,11 +68,13 @@ pub struct FilmActions {
 }
 
 /// The actions of `film`, attributed to `paths` the way `fire.rs` does: the
-/// life the event's biped handle names, else the body's player index.
-/// Headshots only when `pvp`. Packet framing only.
+/// life the event's biped handle names, else the player of the body's engine
+/// slot (`player_of`, as `fire::read_mapped`). Headshots only when `pvp`.
+/// Packet framing only.
 pub fn reader<'a>(
     paths: &'a [PlayerPath],
     pvp: bool,
+    player_of: impl Fn(u32, i64) -> u32 + 'a,
     out: &'a mut FilmActions,
 ) -> impl FnMut(usize, &[u8], &Payload) + 'a {
     let mut slot_owner: HashMap<i32, usize> = HashMap::new();
@@ -98,7 +100,7 @@ pub fn reader<'a>(
             });
             let owner = |player: Option<u32>| {
                 life.and_then(|s| slot_owner.get(&s))
-                    .or_else(|| player.and_then(|p| by_index.get(&(p as i32))))
+                    .or_else(|| player.and_then(|p| by_index.get(&(player_of(p, frame) as i32))))
                     .copied()
             };
             let (k, kind, arg) = match e.body {

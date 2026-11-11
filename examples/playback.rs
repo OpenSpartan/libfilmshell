@@ -1,7 +1,7 @@
 //! The match at one moment: where everyone was, their shield and health,
 //! what they held, with its rounds, or rode, and what objective they
-//! carried; then the vehicles, the grenades in the air and the weapons on
-//! the ground.
+//! carried; then the vehicles, the grenades and other projectiles in the
+//! air and the weapons on the ground.
 //!
 //! ```text
 //! cargo run --release --example playback -- path/to/film 90
@@ -72,6 +72,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let name = g.grenade.map_or("a grenade", |g| g.name());
         let thrower = film.player_name(g.player).unwrap_or("someone");
         println!("{name:<20} {:7.1} {:7.1}  thrown by {thrower}", at.x, at.y);
+    }
+    for (p, at) in film.projectiles_at(at) {
+        // A projectile's weapon: the one whose direct hit its damage is,
+        // else what its shooter held when it appeared.
+        let fired = p.path.first().map(|q| q.tick);
+        let weapon = p
+            .stats()
+            .and_then(|s| filmshell::game::damage_effect(s.impact?)?.weapon)
+            .or_else(|| film.weapon_at(p.player?, fired?));
+        let name = weapon.and_then(|w| w.name()).unwrap_or("a projectile");
+        let shooter = p.player.and_then(|p| film.player_name(p)).unwrap_or("no one");
+        println!("{name:<20} {:7.1} {:7.1}  fired by {shooter}", at.x, at.y);
     }
     for w in film.ground_weapons_at(at) {
         let name = w.tag.name().unwrap_or("a weapon");

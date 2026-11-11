@@ -782,6 +782,22 @@ fn players_aim_up_at_higher_targets() {
     assert!(corpus().is_empty() || toward * 100 >= hits * 75, "{toward} of {hits} hits aimed toward the victim");
 }
 
+/// A projectile starts at its shooter: within 50 world units (a fast one
+/// travels a few ticks before its first position) for nearly all.
+#[test]
+fn projectiles_start_at_their_shooters() {
+    let (mut placed, mut near) = (0, 0);
+    for (_, f) in corpus() {
+        for p in f.projectiles() {
+            let (Some(player), Some(first)) = (p.player, p.path.first()) else { continue };
+            let Some(at) = f.life_at(player, first.tick).and_then(|l| l.position_at(first.tick)) else { continue };
+            placed += 1;
+            near += usize::from(at.distance(&first.position) <= 50.0);
+        }
+    }
+    assert!(corpus().is_empty() || near * 100 >= placed * 90, "{near} of {placed} projectiles start at their shooter");
+}
+
 /// Every vehicle destroy the scripts score is tied to a vehicle of its type,
 /// and the riders killed with it rode it.
 #[test]

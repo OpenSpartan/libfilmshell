@@ -36,7 +36,7 @@ The first release, 0.1.0.
   `sample_at`, `weapon_at`, `ride_at`, `vehicle_at` and `events_in` look up one thing, and
   `Life::position_at` places a player between samples. The rest of the map at a tick: `vehicles_at`
   (a parked vehicle stays where it stopped until the game deletes it, `VehicleTrack::removed`),
-  `grenades_at`, `ground_weapons_at` and `world_objects_at`; `Zone::state_at` and
+  `grenades_at`, `projectiles_at`, `ground_weapons_at` and `world_objects_at`; `Zone::state_at` and
   `HillScore::points_at`.
 - A ride ends when its vehicle is deleted, and with the rider's life: a driver killed with their
   tank stays seated in the wreck, but the ride stops at the death.
@@ -50,9 +50,12 @@ The first release, 0.1.0.
   seed a player carries, from the item the game puts in the carrier's weapon slots. On the test
   films each player's time carrying is the match stats' time as carrier, within a second for 151 of
   155.
-- The mode scripts' events name players by engine slot, which joins and leaves can set apart from
-  player ids; flag, power seed, zone and headshot events map them as game events do. On the test
+- Events name players by engine slot, which joins and leaves can set apart from player ids: the
+  mode scripts' events, and the player index in a shot's, a hit's or a throw's body, which is what
+  names the player of one fired from a vehicle. Every reader maps them to player ids. On the test
   films each player's flag events equal the match stats' (1,338 counts).
+- `Film::projectiles` and `Film::projectiles_at`: every projectile but thrown grenades, from where
+  it was created, with the player who fired it, or who rode the vehicle or turret that did.
 - `GameEvent::sequence`, the events' sequence number. An event the game sent again, which a film can
   record twice a few ticks apart, is kept once.
 - `Event::VehicleDestroyed` and `Event::Hijack`: the personal scores the modes' scripts give for

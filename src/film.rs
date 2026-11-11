@@ -26,6 +26,7 @@ pub struct Film {
     pub(crate) world: Vec<WorldObject>,
     pub(crate) ground: Vec<GroundWeapon>,
     pub(crate) grenades: Vec<GrenadeFlight>,
+    pub(crate) projectiles: Vec<ProjectileFlight>,
     pub(crate) zones: Vec<Zone>,
     pub(crate) hill_score: Option<HillScore>,
     pub(crate) events: Vec<TimedEvent>,
@@ -404,6 +405,17 @@ impl Film {
     /// ([`GrenadeFlight::position_at`]), in throw order.
     pub fn grenades_at(&self, tick: Tick) -> impl Iterator<Item = (&GrenadeFlight, Position)> + '_ {
         self.grenades.iter().filter_map(move |g| Some((g, g.position_at(tick)?)))
+    }
+
+    /// Every other projectile's flight, in the order they were fired.
+    pub fn projectiles(&self) -> &[ProjectileFlight] {
+        &self.projectiles
+    }
+
+    /// The projectiles in flight at `tick`, with where each was, in the order
+    /// they were fired.
+    pub fn projectiles_at(&self, tick: Tick) -> impl Iterator<Item = (&ProjectileFlight, Position)> + '_ {
+        self.projectiles.iter().filter_map(move |p| Some((p, p.position_at(tick)?)))
     }
 
     /// The zones or hills of a zone mode.
