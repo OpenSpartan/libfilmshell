@@ -201,7 +201,7 @@ pub fn weapon_profiles(film: &Film) -> &[WeaponProfile] {
 }
 
 /// Every respawn that started on a hinted spawn pad, of a player whose
-/// lives the HighlightEvents death times placed. Empty unless the film has
+/// lives the `HighlightEvents` death times placed. Empty unless the film has
 /// five or more players, its positions convert to world units, and the
 /// hints carry spawn pads.
 pub fn spawn_factors(film: &Film) -> &[SpawnFactor] {

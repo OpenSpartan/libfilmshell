@@ -129,7 +129,7 @@ pub struct Life {
     /// None for a life no player owns.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub entity: Option<EntityId>,
-    /// Whether the life ended in a death: by the HighlightEvents death times,
+    /// Whether the life ended in a death: by the `HighlightEvents` death times,
     /// else where the player controlling it let go of it at a time the
     /// scoreboard counts a death (a bot removed to make room for a joiner
     /// lets go without dying); in a small lobby, by a respawn following it.

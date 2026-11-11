@@ -121,24 +121,24 @@ impl fmt::Display for Tick {
 #[derive(Clone, Debug, Default)]
 pub struct Clock {
     pub(crate) frame_ticks: Vec<u32>,
-    /// Each frame's tick on the clock HighlightEvents times run on: the
+    /// Each frame's tick on the clock `HighlightEvents` times run on: the
     /// time since the first frame by the packets' timestamps, in ticks.
     pub(crate) highlight_ticks: Vec<u32>,
-    /// The highlight tick of HighlightEvents time 0.
+    /// The highlight tick of `HighlightEvents` time 0.
     pub(crate) highlight_zero: Option<f64>,
 }
 
-/// A pause in the recording that HighlightEvents time doesn't count.
+/// A pause in the recording that `HighlightEvents` time doesn't count.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Hitch {
-    /// Where it falls, on the highlight clock (the ticks HighlightEvents
+    /// Where it falls, on the highlight clock (the ticks `HighlightEvents`
     /// times count, not [`Tick`]s).
     pub at: u32,
     /// The game ticks it skipped.
     pub skipped: u32,
 }
-/// Game ticks per millisecond of HighlightEvents time.
+/// Game ticks per millisecond of `HighlightEvents` time.
 const TICKS_PER_MS: f64 = crate::lives::TICKS_PER_MS;
 
 impl Clock {
@@ -178,7 +178,7 @@ impl Clock {
         &self.frame_ticks
     }
 
-    /// The highlight clock's tick of HighlightEvents time 0. The highlights'
+    /// The highlight clock's tick of `HighlightEvents` time 0. The highlights'
     /// times count from the match's start, which the film doesn't mark, so
     /// the library places it from events the film times itself: each death
     /// record on the kill event of that victim, else each medal record on
@@ -193,12 +193,12 @@ impl Clock {
         self.highlight_zero
     }
 
-    /// The recorder hitches HighlightEvents time doesn't count, in order.
+    /// The recorder hitches `HighlightEvents` time doesn't count, in order.
     pub fn hitches(&self) -> Vec<Hitch> {
         crate::lives::hitches(&self.frame_ticks).into_iter().map(|(at, skipped)| Hitch { at, skipped }).collect()
     }
 
-    /// The tick of HighlightEvents time `ms`, when the highlight clock is
+    /// The tick of `HighlightEvents` time `ms`, when the highlight clock is
     /// known ([`Clock::highlight_zero`]).
     pub fn highlight_tick(&self, ms: u32) -> Option<Tick> {
         let at = (self.highlight_zero? + ms as f64 * TICKS_PER_MS).round().max(0.0) as u32;

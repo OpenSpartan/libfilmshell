@@ -160,7 +160,7 @@ impl Film {
         &self.header
     }
 
-    /// The film's clock: which tick each frame is, and where HighlightEvents
+    /// The film's clock: which tick each frame is, and where `HighlightEvents`
     /// times fall.
     pub fn clock(&self) -> &Clock {
         &self.clock

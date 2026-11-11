@@ -52,7 +52,7 @@ pub enum Event {
     Chatter(Chatter),
     /// A message appeared on players' HUDs.
     HudMessage(HudMessage),
-    /// A mode script's game event (PlayerGameEventSmall).
+    /// A mode script's game event (`PlayerGameEventSmall`).
     GameEvent(GameEvent),
     /// Something happened to a flag.
     Flag(FlagEvent),
@@ -208,7 +208,7 @@ impl Event {
     }
 }
 
-/// A kill: the game's PlayerKilledEvent, with what dealt the fatal hit. The
+/// A kill: the game's `PlayerKilledEvent`, with what dealt the fatal hit. The
 /// game sends no such event for some deaths, a bot's among them; those are
 /// kills too, marked [`inferred`](Kill::inferred).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -557,7 +557,7 @@ pub struct Chatter {
     pub speaker: Option<PlayerId>,
     /// The sound tag.
     pub sound: TagId,
-    /// The line's priority class: the game's DialoguePriority.
+    /// The line's priority class: the game's `DialoguePriority`.
     pub priority: u32,
     /// The vocalization's index in the game's dialogue tables.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
@@ -682,9 +682,9 @@ pub struct FlagEvent {
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum FlagEventKind {
-    /// Picked up where it was dropped: the match stats' FlagGrabs.
+    /// Picked up where it was dropped: the match stats' `FlagGrabs`.
     Grab,
-    /// Taken from its stand: the match stats' FlagSteals.
+    /// Taken from its stand: the match stats' `FlagSteals`.
     Steal,
     /// Captured.
     Capture,
@@ -720,12 +720,12 @@ pub struct SeedEvent {
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum SeedEventKind {
     /// Taken from the other team's stockpile: the match stats'
-    /// PowerSeedsStolen.
+    /// `PowerSeedsStolen`.
     Steal,
     /// Delivered to the player's team's stockpile: the match stats'
-    /// PowerSeedsDeposited.
+    /// `PowerSeedsDeposited`.
     Deposit,
-    /// Its carrier killed: the match stats' PowerSeedCarriersKilled.
+    /// Its carrier killed: the match stats' `PowerSeedCarriersKilled`.
     CarrierKilled,
 }
 

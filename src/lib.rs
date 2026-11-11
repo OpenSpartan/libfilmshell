@@ -1,7 +1,7 @@
 //! Reads Halo Infinite theater films.
 //!
 //! A film is a set of chunks: a header chunk, replay chunks that record the
-//! match tick by tick, and a highlights chunk (the game's HighlightEvents)
+//! match tick by tick, and a highlights chunk (the game's `HighlightEvents`)
 //! with the theater timeline. [`Film::from_chunks`] reads them into a data
 //! model: who played, every life with its positions and vitals, vehicles and
 //! what stood on the map, one stream of events (kills, shots, hits, pickups,

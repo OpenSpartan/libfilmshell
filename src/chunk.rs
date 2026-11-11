@@ -2,7 +2,7 @@ use crate::Error;
 use std::borrow::Cow;
 
 /// What a chunk holds. The film's manifest gives each chunk a type: the
-/// header chunk first, then the replay chunks, then the HighlightEvents
+/// header chunk first, then the replay chunks, then the `HighlightEvents`
 /// chunk.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]

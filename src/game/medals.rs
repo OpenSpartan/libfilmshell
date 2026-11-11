@@ -59,7 +59,7 @@ impl Medal {
         self.row().2
     }
 
-    /// The game's sorting weight. HighlightEvents records carry it.
+    /// The game's sorting weight. `HighlightEvents` records carry it.
     pub fn sorting_weight(self) -> u32 {
         self.row().3
     }

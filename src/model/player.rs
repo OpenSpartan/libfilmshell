@@ -12,7 +12,7 @@ pub enum PlayerKind {
         /// The account.
         xuid: Xuid,
         /// The gamertag, from chunk 0's roster or the player's
-        /// HighlightEvents records.
+        /// `HighlightEvents` records.
         #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
         gamertag: Option<String>,
     },
@@ -36,7 +36,7 @@ pub struct Player {
     pub id: PlayerId,
     /// Person or bot.
     pub kind: PlayerKind,
-    /// The player's team: from their HighlightEvents records, else from the
+    /// The player's team: from their `HighlightEvents` records, else from the
     /// team their engine player id carries while they hold it. None in free
     /// for all. A player can change teams during a match (Infection moves a
     /// survivor to the infected when killed): this is the last, and
