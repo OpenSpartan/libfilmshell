@@ -17,14 +17,13 @@ The first release, 0.1.0.
   kill event for, a bot's (`Kill::inferred`). Those are credited as the game credits them: the kill
   its scoreboard counted, else its rule (the fatal hit's attacker when an enemy, else the last enemy
   to hit the victim in the 6 s before), with the assistant by its rule (a fifth of the victim's
-  shield and health). On the test films each player's kills of other players equal the match
-  stats' for every player.
+  shield and health).
 - A life belongs to the player the film names as controlling it, else to the player whose death
   times in the highlights chunk it matches; none starts before its player joined or after they
   left. A player letting go of a life is a death only when the scoreboard counts one then, so a
-  bot removed to make room for a joiner doesn't die. Each player's deaths, the bots' included,
-  equal the match stats' for every player on the test films (up to a reconnect, after which the
-  match stats count nothing more).
+  bot removed to make room for a joiner doesn't die. On the test films every player's kills of
+  other players and deaths, the bots' included, equal the match stats' (which stop counting a
+  player whose scoreboard row a reconnect clears).
 - `Player::teams` and `Player::team_at` give a player's team over the match, as the game replicates
   it: Infection moves a survivor to the infected when killed, and some minigames change teams
   between rounds.

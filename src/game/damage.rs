@@ -13,11 +13,11 @@ pub enum DamageCause {
     Weapon,
     /// A melee strike, a sword or hammer swing included.
     Melee,
-    /// A grenade.
+    /// A grenade's damage effect.
     Grenade,
-    /// Equipment.
+    /// An equipment's damage effect.
     Equipment,
-    /// A vehicle.
+    /// A vehicle's own damage effect.
     Vehicle,
     /// A physics model: something ran into something.
     Collision,

@@ -189,7 +189,7 @@ pub fn read(film: &Film, layout: Layout, paths: &[PlayerPath], extra: &[u32]) ->
 }
 
 impl FilmFire {
-    /// The index in `weapons` of the weapon named as tag id `tag` is: a tag
+    /// The index in `weapons` of the weapon `tag` names: a tag
     /// behind a damage effect is often a variant or base of the one in the film.
     pub fn named(&self, tag: u32) -> Option<usize> {
         let name = weapons::weapon(tag).name?;

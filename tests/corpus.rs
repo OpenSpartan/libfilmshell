@@ -571,9 +571,6 @@ fn kills_count_as_the_match_stats_do() {
             players += 1;
             agree += usize::from(got == want);
             if got != want {
-                println!("MISS {name} {} p{i}: {got} want {want}", f.variant().map_or("", |v| v.name.as_str()));
-            }
-            if got != want {
                 wrong.push(format!("{name}: player {i} has {got} kills, the stats say {want}"));
             }
         }
@@ -583,8 +580,8 @@ fn kills_count_as_the_match_stats_do() {
 }
 
 /// Between two readings of the match clock with the same limit, the time
-/// left moves by the timer's rate: on 95% of them (the mode's scripts can
-/// also set the time outright).
+/// left moves by the timer's rate: on 93% of them at least (95% on the
+/// test films; the mode's scripts can also set the time outright).
 #[test]
 fn the_match_clock_runs_at_its_rate() {
     let (mut intervals, mut agree) = (0usize, 0usize);
@@ -621,7 +618,7 @@ fn named_assists_are_counted_assists() {
 }
 
 /// The deaths the game deals everyone alive at a match's end are never
-/// counted, also in films whose scoreboard isn't read.
+/// counted, even in films whose scoreboard isn't read.
 #[test]
 fn deaths_at_the_match_end_are_not_scored() {
     let mut seen = 0;

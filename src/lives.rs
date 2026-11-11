@@ -19,7 +19,7 @@ pub const TICKS_PER_MS: f64 = 0.05994;
 /// hitch: HighlightEvents time doesn't advance across it.
 const HITCH_TICKS: u32 = 6;
 
-/// The film's hitches, (the tick on the highlight clock, ticks it skipped),
+/// The film's hitches (the tick on the highlight clock, ticks it skipped),
 /// oldest first.
 pub fn hitches(game_ticks: &[u32]) -> Vec<(u32, u32)> {
     let mut counts = std::collections::BTreeMap::new();

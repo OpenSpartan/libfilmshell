@@ -1,6 +1,6 @@
 //! Which weapon dealt each hit, and each weapon's numbers in the film: how
 //! it fires and what its hits deal, from the projectile and damage effect
-//! its hits actually used, so a variant that swaps them shows its own.
+//! its hits used, so a variant that swaps them shows its own.
 
 use crate::damage::{self, Cause};
 use crate::fire::FilmFire;
@@ -58,7 +58,8 @@ pub fn hit_weapons(ff: &FilmFire, frame_ticks: &[u32]) -> Vec<Option<usize>> {
         .collect()
 }
 
-/// Hits of `a` at `d` that down a Spartan with `shield` and `body`.
+/// How many hits of `d` points of effect `a` down a Spartan with `shield`
+/// and `body` points.
 fn hits_to_kill(a: &damage::Amount, d: f64, mut shield: f64, mut body: f64) -> Option<u32> {
     for n in 1..=200 {
         let (s, b) = apply(a, d, shield, body);

@@ -115,8 +115,8 @@ pub fn entity_table(c: &[u8], start: usize, end: usize) -> Vec<Entity> {
     let mut next_index = 0u32;
     let mut at = first;
     while at < last {
-        // [gen:2][17 zeros][index:13]: the second bit onward must open with
-        // zeros; test the cheap byte first.
+        // [gen:2][17 zeros][index:13]: this word is tested before the
+        // whole header.
         let id = u32_at(c, at);
         let (generation, index) = (id >> 30, id & 0x3fff_ffff);
         // A wrapped generation 0 is left to `walk`: here a run of zeros would

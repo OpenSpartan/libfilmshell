@@ -219,8 +219,8 @@ impl Film {
 /// of zeros into millions of frames.
 const MAX_PACKETS: usize = 1 << 16;
 
-/// Walk `buf` as packets; None unless the walk ends exactly at its end, or
-/// with more than `MAX_PACKETS`.
+/// Walk `buf` as packets; None unless the walk ends exactly at its end, and
+/// None past `MAX_PACKETS` packets.
 pub fn walk_packets(buf: &[u8]) -> Option<Vec<Packet>> {
     let mut out = Vec::new();
     let mut p = 0usize;
@@ -338,8 +338,8 @@ pub fn tick_message_counter(payload: &[u8]) -> Option<u32> {
 /// Packet framing's clock. Each type-0 packet is one simulation tick
 /// (two on 30 Hz films), and its tick message says which: the counter steps
 /// by the ticks per packet, and by 3 or 4 across a recorder hitch. Between
-/// two counter-bearing packets
-/// the counter delta is spread evenly; a delta smaller than the packet count
+/// two counter-bearing packets the counter delta is spread evenly; a delta
+/// smaller than the packet count
 /// or more than 64 ticks past it is not trusted, and the packet steps by the
 /// film's ticks per packet.
 fn packet_ticks(film: &Film) -> Vec<u32> {

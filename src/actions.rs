@@ -41,8 +41,9 @@ pub const SPRINT: u8 = 8;
 
 /// Registry block of bipeds.
 const BIPED: u32 = 35;
-/// First entity of the bipeds, and of the objects kind-5 handles index.
+/// First entity of the bipeds.
 const BIPED_BASE: u32 = 512;
+/// First entity of the objects kind-5 handles index (projectiles).
 const PROJECTILE_BASE: u32 = 1024;
 /// The headshot-kill id of PlayerGameEventSmall.
 const HEADSHOT: u32 = 0x027;

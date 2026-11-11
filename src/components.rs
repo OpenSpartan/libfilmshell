@@ -526,11 +526,11 @@ impl Component {
     }
 }
 
-/// The box of a position in the game's default box: three
-/// 22-bit fields, in no box of the level.
+/// The box index given to a position in the game's default box (three
+/// 22-bit fields), in no box of the level.
 pub const DEFAULT_BOX: u32 = 0xffff;
-/// Bits of each field of a position relative to a parent: a box of plus or
-/// minus 100 units at the precision's step, 1/120 of a unit.
+/// Bits of each of the three fields of a position local to the unit's
+/// parent (`14076e420`).
 const ATTACHED_BITS: u32 = 14;
 
 /// Bits between one update's last data block and the next update.
@@ -753,15 +753,15 @@ pub struct Fields {
     /// compares, `1431aef58`), when parent state is listed: Some(Some(seat))
     /// seated, Some(None) not.
     pub seat: Option<Option<u32>>,
-    /// A unit's weapon slots' state, by slot as `weapons` (the `n`th row of
-    /// each of weapon-state-ammo, -rounds-inventory and -overheated): the
-    /// rounds loaded (0 when the reader gets none) and a 0 to 1 fraction the
-    /// reader takes for some weapons,
+    /// A unit's weapon slots' rounds loaded, by slot as `weapons` (the `n`th
+    /// row of weapon-state-ammo): the rounds (0 when the reader gets none)
+    /// and a 0 to 1 fraction the reader takes for some weapons.
     pub loaded: [Option<(u32, Option<f64>)>; 4],
-    /// the rounds in reserve,
+    /// The slots' rounds in reserve (weapon-state-rounds-inventory).
     pub reserve: [Option<u32>; 4],
-    /// and the heat, 0 to 1, with the two flags after it (bits 1 and 2 of
-    /// the slot's flags byte), the first in the high bit.
+    /// The slots' heat, 0 to 1 (weapon-state-overheated), with the two flags
+    /// after it (bits 1 and 2 of the slot's flags byte), the first in the
+    /// high bit.
     pub heat: [Option<(f64, u32)>; 4],
     /// unit-grenade-counts: the count of each grenade type, in the order of
     /// the throws' 3-bit types less one (frag, plasma, dynamo, spike).
@@ -820,7 +820,7 @@ pub struct ControlMessage {
     pub throttle: Option<[u32; 2]>,
     /// The unit block's first field: which of its parts follow.
     pub state: Option<u32>,
-    /// A kind-1 message's body.
+    /// Where a kind-1 message's body starts.
     pub command_at: Option<i64>,
     /// The control block's raw fields, for naming: `[a, value]` (2 bits),
     /// two optional floats, an optional 5-bit value.
@@ -2207,8 +2207,8 @@ impl Reader<'_> {
             MatchflowFocus => {
                 self.skip(6 + 4);
             }
-            // a count, a mask of its items and 32 bits; each
-            // item in the mask `[none:1]` else a player, and a flag.
+            // Radial visibility: a count, a mask of its items and 32 bits;
+            // each item in the mask `[none:1]` else a player, and a flag.
             RadialVisibility => {
                 let count = self.bits(32);
                 let mask = self.bits(32);
@@ -2230,8 +2230,8 @@ impl Reader<'_> {
                     self.skip(m.count_ones() * (32 + 3));
                 }
             }
-            // `[empty:1]`, else a 5-bit variant and, unless it is
-            // 0, a Bond CompactBinary v2 struct, which opens with its length.
+            // `[empty:1]`, else a 5-bit variant and, unless it is 0, a Bond
+            // Compact Binary v2 struct, which opens with its length.
             MultiplayerProperties => {
                 if !self.flag() && self.bits(5) != 0 {
                     // A varint of at most five bytes: 35 bits.
@@ -2614,7 +2614,7 @@ impl Reader<'_> {
                 }
             },
             // A list of up to 15 actions over a 96-bit mask: each a 7-bit
-            // type and a 5-bit variant (0-5) with its body; then a 2-bit
+            // type and a 5-bit variant (0-25) with its body; then a 2-bit
             // sub-state for each of the mask's first 73 bits that is set;
             // then 96 bits.
             BipedAction => {
@@ -2630,8 +2630,8 @@ impl Reader<'_> {
                 }
                 self.skip(96);
             }
-            // a 3-bit mask, then 7 bits for each ability it names
-            // (the rest stay 0x7f).
+            // Ability energy: a 3-bit mask, then 7 bits for each ability it
+            // names (the rest stay 0x7f).
             AbilityEnergy => {
                 let mask = self.bits(3);
                 self.skip(7 * mask.count_ones());

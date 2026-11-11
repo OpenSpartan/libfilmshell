@@ -187,10 +187,11 @@ pub fn finish(log: &mut Log) {
     fix_respawn_owners(log);
 }
 
-/// A death and its countdown share a frame. An engine player slot is reused by
-/// a joiner, also without a bot between, so the slot's first holder can be the
-/// wrong owner: when the holder didn't die on that frame and exactly one other
-/// player did, without a countdown of their own, the countdown is theirs.
+/// A death and its countdown share a frame. An engine player slot is reused
+/// by a joiner, even when no bot held it in between, so the slot's first
+/// holder can be the wrong owner: when the holder didn't die on that frame
+/// and exactly one other player did, without a countdown of their own, the
+/// countdown is theirs.
 fn fix_respawn_owners(log: &mut Log) {
     let mut deaths: HashMap<i64, Vec<u32>> = HashMap::new();
     for c in log.changes.iter().filter(|c| c.kind == 0 && c.slot == DEATHS_SLOT) {

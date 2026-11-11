@@ -3,8 +3,9 @@
 //! A throw is a `biped_throw_initiate` event (39): the thrower's life (first
 //! handle) and the grenade type. The grenade is then a projectile object
 //! (registry block 41) created within a few frames, whose updates list its
-//! position nearly every frame until it is deleted when it detonates. This module collects
-//! every projectile created within `WINDOW` frames after a throw, with its
+//! position nearly every frame until it is deleted when it detonates. This
+//! module collects every projectile created within `WINDOW` frames after a
+//! throw, with its
 //! positions; `assemble` pairs each throw with the one whose first position
 //! is nearest the thrower, since bullets and other projectiles are created
 //! in the same window.

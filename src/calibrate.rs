@@ -9,7 +9,7 @@
 //! world_x = -sx * (c2 - 16384) + dx        sx = R_x / 32768
 //! ```
 //!
-//! Known boxes live in `FORGE_CANVAS` and `KNOWN_LAYOUTS`; unknown levels are
+//! Known boxes live in `FORGE_CANVAS` and `known_layout`; unknown levels are
 //! searched from life starts against spawn pads.
 
 use crate::levels::LevelBox;

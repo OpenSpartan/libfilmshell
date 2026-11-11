@@ -1844,8 +1844,8 @@ mod tests {
     #[test]
     fn medals_fix_the_highlight_clock() {
         let hl_ticks: Vec<u32> = (0..2000).collect();
-        // Medals at 1, 10 and 20 s for players 0 and 2; each recipient gets an
-        // event 13 ticks after the medal's time, among others.
+        // Medals at 1, 10, 20 and 25 s for players 0 and 2; each recipient
+        // gets an event 13 ticks after the medal's time, among others.
         let medals = [(0, 1000.0), (2, 10_000.0), (0, 20_000.0), (2, 25_000.0)];
         let at = |ms: f64| (ms * crate::lives::TICKS_PER_MS).round() as i64 + 13;
         let mut events: Vec<(i64, u32)> = medals.iter().map(|&(p, ms)| (at(ms), 0x8000_0000u32 >> p)).collect();

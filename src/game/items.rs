@@ -81,13 +81,13 @@ impl Grenade {
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum Item {
-    /// A weapon.
+    /// A weapon the catalogue names.
     Weapon(Weapon),
-    /// A vehicle.
+    /// A vehicle the catalogue names.
     Vehicle(Vehicle),
-    /// A grenade.
+    /// One of the four grenades.
     Grenade(Grenade),
-    /// Equipment or a power-up.
+    /// Equipment or a power-up the catalogue names.
     Equipment(Equipment),
 }
 
@@ -107,9 +107,9 @@ impl Item {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct TagInfo {
-    /// The tag.
+    /// The tag's id.
     pub tag: TagId,
-    /// Its kind.
+    /// What kind of object the tag defines.
     pub kind: ObjectKind,
     /// Its English name, or its nearest ancestor's when it has none of its
     /// own.

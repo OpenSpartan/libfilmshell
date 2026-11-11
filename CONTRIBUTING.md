@@ -2,7 +2,7 @@
 
 ## Building and testing
 
-What CI runs:
+What CI runs, besides clippy on each feature alone and a check of the package's contents:
 
 ```sh
 cargo fmt --check
@@ -49,6 +49,6 @@ states a layout says how it is known: read from the game's code, measured on fil
 2. Tag the merge `x.y.z`, without a `v`, and push the tag. The Release workflow checks the version,
    runs the tests and publishes to crates.io.
 
-Publishing uses crates.io trusted publishing. The very first version has to be published by hand
+Publishing uses crates.io trusted publishing. The first version has to be published by hand
 with `cargo publish` and a token; after that, add this repository's `release.yml` workflow and its
 `release` environment as the crate's trusted publisher on crates.io.

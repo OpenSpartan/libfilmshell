@@ -28,13 +28,13 @@ pub enum MedalKind {
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum MedalDifficulty {
-    /// Normal.
+    /// The easiest tier.
     Normal,
-    /// Heroic.
+    /// The second tier.
     Heroic,
-    /// Legendary.
+    /// The third tier.
     Legendary,
-    /// Mythic.
+    /// The hardest tier.
     Mythic,
 }
 

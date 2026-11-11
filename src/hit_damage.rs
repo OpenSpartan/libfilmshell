@@ -11,16 +11,16 @@
 //! The body's first 5-bit field scales the hit: 15 on almost every direct
 //! hit, lower with distance from a blast, 19 on some hits that take 1.2
 //! times the amount off a shield. What it encodes isn't traced, so a hit
-//! with any other value, an area or range-falloff effect (whose scale `s`
-//! isn't traced either) or an effect the catalogue lacks is measured
+//! with any other value, an area or range-falloff effect (whose scale isn't
+//! traced either) or an effect the catalogue lacks is measured
 //! instead: the victim's shield and health readings across the hit's frame,
 //! shared between that frame's hits. Those are 8-bit fractions, so a
 //! measured hit is good to about 2 points of shield and 1 of health, and is
 //! marked as measured.
 //!
-//! Headshots aren't in the event. A kill by an effect that can headshot that
-//! takes more health than the amount explains took what was left: the
-//! game's headshot path finished the victim.
+//! Headshots aren't in the event. When an effect that can headshot kills
+//! and takes more health than its amount explains, the hit took what was
+//! left: the game's headshot path finished the victim.
 
 use crate::damage::{self, CAN_HEADSHOT, NO_SPILL, SKIPS_SHIELDS};
 use crate::fire::FilmFire;
@@ -39,7 +39,8 @@ pub struct HitDamage {
 
 impl HitDamage {}
 
-/// What `amount` takes off a Spartan with `shield` and `body` points left.
+/// What `d` points of effect `a` take off a Spartan with `shield` and
+/// `body` points left.
 pub fn apply(a: &damage::Amount, d: f64, shield: f64, body: f64) -> (f64, f64) {
     let (s, b) = if shield > 0.0 && a.flags & SKIPS_SHIELDS == 0 {
         let on_shield = d * a.shield_scale;

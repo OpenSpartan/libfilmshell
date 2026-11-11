@@ -1,4 +1,4 @@
-//! Whose each biped life is: a unit's unit-control component names the
+//! Who owns each biped life: a unit's unit-control component names the
 //! player controlling it. A life's biped is created with it set to its
 //! player, and it is cleared when the player dies. The id is the engine
 //! player id the events and the scoreboard use (read from the films: on

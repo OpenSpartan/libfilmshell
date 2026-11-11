@@ -1,6 +1,6 @@
-//! Vehicles by id: the tag a vehicle id stands for when (its creates in the
-//! tick packets, and the snapshots for what was created before the film),
-//! and which vehicle each part belongs to.
+//! Vehicles by id: the tag a vehicle id stands for over time (from its
+//! creates in the tick packets, and from the snapshots for vehicles created
+//! before the film), and which vehicle each part belongs to.
 //!
 //! A vehicle id is `(generation - 1) * 256 + index - 768`, the id the vehicle
 //! updates and `unit_exit_vehicle` use (`replication`, `events::Handle::
@@ -19,7 +19,7 @@ use std::collections::HashMap;
 
 /// The registry block of vehicles.
 pub const VEHICLE: u32 = 40;
-/// Entity indexes of vehicles.
+/// The vehicles' entity indexes: the first, and the one after the last.
 const FIRST: u32 = 768;
 const END: u32 = 1024;
 /// Engine units between a part and its vehicle in a snapshot.

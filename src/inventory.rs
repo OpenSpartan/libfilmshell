@@ -53,7 +53,7 @@ pub struct Ground {
     pub at: [u32; 3],
     /// The box `at` is in.
     pub at_box: u32,
-    /// Deleted in the packet a biped picked up the same weapon.
+    /// Deleted in the packet in which a biped picked up the same weapon.
     pub taken: bool,
 }
 

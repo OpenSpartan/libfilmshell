@@ -395,7 +395,7 @@ pub struct ZoneShape {
     pub team: Option<i32>,
 }
 
-/// Bond CompactBinary v2, as much as the multiplayer properties need.
+/// Bond Compact Binary v2, as much as the multiplayer properties need.
 mod bond {
     #[derive(Debug, Clone)]
     pub enum V {

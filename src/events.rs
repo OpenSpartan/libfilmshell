@@ -7,11 +7,10 @@
 //! ```
 //!
 //! The handle widths depend on the handle's kind, which the event type fixes
-//! per slot ([`handle_kinds`]). The bodies of 47 types are known, read the
-//! way the game's readers read them; a type whose body isn't known ends the
-//! view's walk ([`Stop::EventBody`]). The decoded fields of two types are
-//! kept: weapon fire (36) and player killed (85). Every other known body is
-//! read past.
+//! per slot ([`handle_kinds`]). The bodies `body` knows are read the way the
+//! game's readers read them; a type whose body isn't known ends the view's
+//! walk ([`Stop::EventBody`]). The fields of the types [`Body`] names are
+//! kept; every other known body is read past.
 //!
 //! The widths here are the game's writers' constants: the melee kind is 3
 //! bits, a direction 19 (as in ai_jump), the object-impact floats 7.
@@ -271,7 +270,7 @@ pub enum Body {
         tags: [Option<u32>; 2],
     },
     /// player_set_respawn_target_transform (64): the player's slot, the
-    /// place and three floats (their bits; 32::from_bits).
+    /// place and three floats (their bits; f32::from_bits).
     RespawnTarget {
         player: u32,
         at: Option<[u32; 3]>,
@@ -525,8 +524,9 @@ fn body(r: &mut Bits<'_>, t: u32, widths: Layout) -> Option<Body> {
             let n = r.bits(10);
             r.bits(n);
         }
-        // unit_zoom, controlToggleResponse
+        // unit_zoom
         21 => return Some(Body::Zoom { level: r.bits(2) }),
+        // controlToggleResponse
         27 => {
             r.bits(2);
         }
