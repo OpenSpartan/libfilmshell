@@ -336,8 +336,9 @@ const UNCOUNTED: f64 = 1e9;
 /// What life assignment needs of each player, from the film: the roster, and
 /// each player's deaths and spawns on the scoreboard. A player who leaves
 /// has their row cleared, so a count is its highest value in each round
-/// (the round the game sends with the row), summed over the rounds. A bot that took a leaver's place can have no row
-/// at all; its lives are chained by time without a count.
+/// (the round the game sends with the row), summed over the rounds. A bot
+/// that took a leaver's place can have no row at all; its lives are chained
+/// by time without a count.
 fn roster_entries(roster: &Roster, log: &crate::statlog::Log, hl_ticks: &[u32]) -> Vec<RosterEntry> {
     let at = |f: i64| usize::try_from(f).ok().and_then(|f| hl_ticks.get(f)).map_or(0.0, |&t| t as f64);
     let most = |id: usize, slot: u32| {
@@ -349,16 +350,24 @@ fn roster_entries(roster: &Roster, log: &crate::statlog::Log, hl_ticks: &[u32]) 
         (!rounds.is_empty()).then(|| rounds.values().map(|&v| v as f64).sum())
     };
     let known = !log.changes.is_empty();
-    // A death is the row's count going up; a clear (a round, or a leaver)
-    // takes it down, and the next death counts up from there.
+    // A death is the row's count for its round going up; a leaver's clear
+    // takes it down, and the next death counts up from there. A rise by one
+    // is a death at that frame, the rest of a bigger rise deaths since the
+    // count's last change; the count can first be sent with deaths on it (a
+    // bot's with two), which happened any time before.
     let death_frames = |id: usize| {
         let mut out = Vec::new();
-        let mut prev = 0;
+        // Per round, the count and the frame it changed at.
+        let mut had: HashMap<u32, (i32, i64)> = HashMap::new();
         for c in log.changes.iter().filter(|c| c.kind == 0 && c.id as usize == id && c.slot == DEATHS_SLOT) {
-            if c.value > prev {
-                out.extend(std::iter::repeat_n(c.frame, (c.value - prev) as usize));
-            }
-            prev = c.value;
+            let prev = had.insert(c.round, (c.value, c.frame));
+            let rise = (c.value - prev.map_or(0, |p| p.0)).max(0) as usize;
+            let (earliest, at_frame) = match prev {
+                Some((_, f)) => (f, usize::from(rise > 0)),
+                None => (i64::MIN, 0),
+            };
+            out.extend(std::iter::repeat_n((earliest, c.frame), rise - at_frame));
+            out.extend(std::iter::repeat_n((c.frame, c.frame), at_frame));
         }
         out
     };
@@ -1260,7 +1269,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
 
     let deaths = match &ex.deaths {
         Some(d) => d.clone(),
-        None => small_lobby_deaths(&film, roster.players.len(), Some(&entries)),
+        None => small_lobby_deaths(&film, roster.players.len(), Some(&entries), level),
     };
     // The game sends no kill event for some deaths, a bot's among them. Such
     // a death is still a kill: at the frame its player let go of the life

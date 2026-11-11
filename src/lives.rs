@@ -120,6 +120,10 @@ pub struct LifePlayer {
     pub listed: Option<(f64, f64)>,
     /// When the player's lives can start (`RosterEntry::in_match`).
     pub in_match: Option<(f64, f64)>,
+    /// The deaths the scoreboard counts, each as the earliest tick it can be
+    /// at and the tick it is counted at (`RosterEntry::death_frames`); None
+    /// without a scoreboard.
+    pub death_ticks: Option<Vec<(f64, f64)>>,
 }
 
 impl LifePlayer {
@@ -129,7 +133,21 @@ impl LifePlayer {
         let early = if self.is_bot { BOT_LISTED_EARLY_TICKS } else { LISTED_EARLY_TICKS };
         self.in_match.is_none_or(|(a, b)| start >= a - early && start <= b)
     }
+
+    /// Whether letting go of a life at `released` was a death: the
+    /// scoreboard counts one then, when there is a scoreboard. A bot removed
+    /// to make room for a joiner lets go of its life with no death counted,
+    /// as does everyone the end of the match kills.
+    fn died_at(&self, released: Option<f64>) -> bool {
+        released.is_some_and(|r| {
+            let m = COUNTED_DEATH_TICKS;
+            self.death_ticks.as_ref().is_none_or(|d| d.iter().any(|&(a, b)| r >= a - m && r <= b + m))
+        })
+    }
 }
+
+/// How far apart a release and the death the scoreboard counts for it can be.
+const COUNTED_DEATH_TICKS: f64 = 30.0;
 
 #[derive(Clone, Copy, Debug)]
 pub struct LifeClock {
@@ -645,8 +663,9 @@ pub fn assign_lives(slots: &[LifeSlot], players: &[LifePlayer]) -> Option<LifeAs
             chains.get_mut(&b).unwrap().push(s);
         }
     }
-    // Where the film says when a player let go of a life, that is the death;
-    // else every life but the last died, as many as the scoreboard counts.
+    // Where the film says when a player let go of a life, that is a death
+    // when the scoreboard counts one then; else every life but the last
+    // died, as many as the scoreboard counts.
     let said = slots.iter().any(|s| s.released.is_some());
     for p in &untimed {
         let chain = &chains[&p.index];
@@ -654,7 +673,7 @@ pub fn assign_lives(slots: &[LifeSlot], players: &[LifePlayer]) -> Option<LifeAs
             owner.insert(s.slot_id, (p.index, k));
             let last = k == chain.len() - 1;
             let died = if said {
-                s.released.is_some()
+                p.died_at(s.released)
             } else {
                 (!last
                     || p.deaths >= p.spawns
@@ -681,7 +700,7 @@ pub fn assign_lives(slots: &[LifeSlot], players: &[LifePlayer]) -> Option<LifeAs
         }
         owner.insert(s.slot_id, (p.index, usize::MAX));
         let Some(times) = &p.death_ms else {
-            if s.released.is_some() {
+            if p.died_at(s.released) {
                 deaths.insert(s.slot_id, None);
             }
             continue;

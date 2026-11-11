@@ -118,9 +118,11 @@ pub struct RosterEntry {
     /// first listing for a joiner (minus infinity for a player there from
     /// the start) to their leaving (infinity for one who stays).
     pub in_match: Option<(f64, f64)>,
-    /// The frames the scoreboard counts each of the player's deaths at, one
-    /// per death; None without a scoreboard.
-    pub death_frames: Option<Vec<i64>>,
+    /// Each of the player's deaths the scoreboard counts, as the earliest
+    /// frame it can be at and the frame the scoreboard counts it at; None
+    /// without a scoreboard. A bot with no row has none: the match stats
+    /// count no deaths for a bot the scoreboard leaves out.
+    pub death_frames: Option<Vec<(i64, i64)>>,
 }
 
 impl RosterEntry {

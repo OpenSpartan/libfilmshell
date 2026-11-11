@@ -12,23 +12,29 @@ fn films() -> Vec<(String, Film)> {
     read_all(&common::film_dirs(), |d| Film::from_chunks(common::load(d)))
 }
 
-/// `read` over the films in `dirs` in parallel: a film takes a second or
-/// more.
+/// `read` over the films in `dirs`, in their order, at most eight at a time
+/// (one per core on a smaller machine): a film takes a second or more, and up
+/// to four times its inflated size in memory while it is read.
 fn read_all(dirs: &[PathBuf], read: impl Fn(&Path) -> Result<Film, Error> + Sync) -> Vec<(String, Film)> {
-    let read = &read;
-    std::thread::scope(|s| {
-        let jobs: Vec<_> = dirs
-            .iter()
-            .map(|d| {
-                s.spawn(move || {
-                    let name = d.file_name().unwrap().to_string_lossy()[..8].to_string();
-                    let film = read(d).unwrap_or_else(|e| panic!("{name}: {e}"));
-                    (name, film)
-                })
-            })
-            .collect();
-        jobs.into_iter().map(|j| j.join().unwrap()).collect()
-    })
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let next = AtomicUsize::new(0);
+    let workers = std::thread::available_parallelism().map_or(4, |n| n.get()).min(8).min(dirs.len());
+    let work = || {
+        let mut read_here = Vec::new();
+        loop {
+            let i = next.fetch_add(1, Ordering::Relaxed);
+            let Some(d) = dirs.get(i) else { break read_here };
+            let name = d.file_name().unwrap().to_string_lossy()[..8].to_string();
+            let film = read(d).unwrap_or_else(|e| panic!("{name}: {e}"));
+            read_here.push((i, name, film));
+        }
+    };
+    let mut films: Vec<(usize, String, Film)> = std::thread::scope(|s| {
+        let jobs: Vec<_> = (0..workers).map(|_| s.spawn(work)).collect();
+        jobs.into_iter().flat_map(|j| j.join().unwrap()).collect()
+    });
+    films.sort_by_key(|f| f.0);
+    films.into_iter().map(|(_, name, film)| (name, film)).collect()
 }
 
 fn corpus() -> &'static [(String, Film)] {
@@ -467,28 +473,43 @@ fn scoreboard_totals_agree_with_the_match_stats() {
     assert!(agree * 100 >= rows * 95, "{agree} of {rows}");
 }
 
-/// Matches of one human against bots, where no death of the human times the
-/// lives: each life's player and death come from the film, so every
-/// player's deaths, the bots' included, are the ones the match stats count
-/// (in the roster's order, the film's).
+/// Matches of one human with bots, where the bots' lives, deaths and kills
+/// come from the film alone: Attrition, Elimination, Infection, Juggernaut,
+/// Headhunter, Land Grab and Stockpile.
+const BOT_MATCHES: [&str; 11] = [
+    "813ff0a6", "f2b9163d", "d970bde6", "70b4b566", "7ddc2dc0", "81093849", "f1886e4e", "23a4bb69", "6cf896a6",
+    "d34dc219", "6aa44ce6",
+];
+
+/// Each player's deaths, the bots' included, are the match stats' Deaths
+/// (in the roster's order, the film's): for 98% of players, and for every
+/// player in [`BOT_MATCHES`].
 #[test]
 fn lives_die_as_the_match_stats_count() {
-    for prefix in ["813ff0a6", "f2b9163d"] {
-        let Some(dir) = common::film(prefix) else { continue };
-        let f = &corpus().iter().find(|(n, _)| n == prefix).unwrap().1;
-        let stats: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(dir.join("match-metadata.json")).unwrap()).unwrap();
-        for (i, s) in stats["Players"].as_array().unwrap().iter().enumerate() {
-            let want = s["PlayerTeamStats"][0]["Stats"]["CoreStats"]["Deaths"].as_u64().unwrap() as usize;
-            let got = f.lives_of(PlayerId(i as u8)).filter(|l| l.died).count();
-            assert_eq!(got, want, "{prefix}: player {i}");
+    let exact = BOT_MATCHES;
+    let (mut players, mut agree) = (0usize, 0usize);
+    for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
+        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
+        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        let rows = stats["Players"].as_array().cloned().unwrap_or_default();
+        if rows.len() != f.players().len() {
+            continue;
+        }
+        for (i, s) in rows.iter().enumerate() {
+            let Some(want) = s["PlayerTeamStats"][0]["Stats"]["CoreStats"]["Deaths"].as_u64() else { continue };
+            let got = f.lives_of(PlayerId(i as u8)).filter(|l| l.died).count() as u64;
+            players += 1;
+            agree += usize::from(got == want);
+            let exact = exact.contains(&name.as_str());
+            assert!(got == want || !exact, "{name}: player {i} died {got} times, the stats say {want}");
         }
     }
+    assert!(corpus().is_empty() || agree * 100 >= players * 98, "{agree} of {players} players");
 }
 
 /// Each player's kills of players on the other team that the scoreboard
-/// counts, inferred kills included, are the match stats' Kills. Exact on the
-/// matches against bots, whose bot deaths have no kill event.
+/// counts, inferred kills included, are the match stats' Kills. Exact on
+/// [`BOT_MATCHES`], whose bot deaths have no kill event.
 #[test]
 fn kills_count_as_the_match_stats_do() {
     let (mut players, mut agree) = (0usize, 0usize);
@@ -523,7 +544,7 @@ fn kills_count_as_the_match_stats_do() {
             if got != want {
                 println!("MISS {name} {} p{i}: {got} want {want}", f.variant().map_or("", |v| v.name.as_str()));
             }
-            if got != want && ["813ff0a6", "f2b9163d", "d970bde6", "70b4b566", "7ddc2dc0"].contains(&name.as_str()) {
+            if got != want && BOT_MATCHES.contains(&name.as_str()) {
                 panic!("{name}: player {i} has {got} kills, the stats say {want}");
             }
         }

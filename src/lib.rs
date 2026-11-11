@@ -80,16 +80,17 @@
 //! # Checked against the match stats
 //!
 //! A film doesn't carry the stats the Halo services keep for its match (the
-//! match stats), and the library doesn't read them; its tests do. Over 91
+//! match stats), and the library doesn't read them; its tests do. Over 95
 //! films (film version 41: Slayer, Juggernaut, Headhunter, CTF, Big Team
-//! Battle, King of the Hill, Strongholds, Land Grab, Oddball, Infection,
-//! Firefight, the minigames, Attrition and Elimination, Extraction,
-//! Escalation, Grifball) they check that the level, every player's kills
-//! and deaths over the match, and each team's score agree with the match
-//! stats: kills agree for 99% of players, every player's kills do in the
-//! matches against bots (Attrition, Elimination, Infection, Juggernaut,
-//! Headhunter), and every player's deaths in the Attrition and Elimination
-//! ones.
+//! Battle, King of the Hill, Strongholds, Land Grab, Oddball, Stockpile,
+//! Infection, Firefight, the minigames, Attrition and Elimination,
+//! Extraction, Escalation, Grifball) they check that the level, every
+//! player's kills and deaths over the match, and each team's score agree
+//! with the match stats. Kills and deaths each agree for 99% of players,
+//! bots included, and for every player in the Attrition, Elimination,
+//! Infection, Juggernaut, Headhunter, Land Grab and Stockpile matches of one
+//! human with bots, where the bots' lives, deaths and kills come from the
+//! film alone.
 //!
 //! # Features
 //!

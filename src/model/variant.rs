@@ -37,6 +37,8 @@ pub enum GameMode {
     /// VIP. Told apart by its event script as films of older builds carry
     /// it; no film of the current format has been read yet.
     Vip,
+    /// Stockpile: teams carry power seeds to their stockpiles.
+    Stockpile,
     /// Scripts the library doesn't tell apart.
     Other,
 }
@@ -65,6 +67,8 @@ impl GameMode {
             GameMode::Infection
         } else if has("vipevents.lua") {
             GameMode::Vip
+        } else if has("stockpile.lua") || has("btbstockpileevents.lua") {
+            GameMode::Stockpile
         } else if has("slayerevents.lua") || has("btbslayerevents.lua") {
             GameMode::Slayer
         } else {
@@ -92,6 +96,7 @@ impl GameMode {
             GameMode::Escalation => "Escalation Slayer",
             GameMode::Infection => "Infection",
             GameMode::Vip => "VIP",
+            GameMode::Stockpile => "Stockpile",
             GameMode::Other => "Other",
         }
     }
@@ -347,6 +352,7 @@ mod tests {
         assert_eq!(mode(&["vipevents.lua", "vipoptions.lua", "pvpevents.lua"]), GameMode::Vip);
         assert_eq!(mode(&["btbflagevents.lua", "flageventstubs.lua", "ctfbtboptions.lua"]), GameMode::CaptureTheFlag);
         assert_eq!(mode(&["attritionevents.lua", "eliminationconfig.lua"]), GameMode::Attrition);
+        assert_eq!(mode(&["btbstockpileevents.lua", "stockpile.lua", "bigteambattle.lua"]), GameMode::Stockpile);
         assert_eq!(mode(&["slayerevents.lua"]), GameMode::Slayer);
         assert_eq!(mode(&["pvpevents.lua"]), GameMode::Other);
     }
