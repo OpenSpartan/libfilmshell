@@ -445,7 +445,7 @@ fn game_events(film: &Container, p: &Params, c: Option<&Calibration>, holders: &
                 .collect();
             let event = GameEvent {
                 id: g.id,
-                small: g.small,
+                sequence: g.small,
                 values,
                 text: g.extra.map(|x| StringId(x.0)),
                 arguments,
@@ -729,7 +729,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let team_of = |pi: i32| roster.players.get(pi as usize).and_then(|p| p.team).map(|t| t as i32);
     let zone_input = match (zones::mode(&scripts), walk, &calib) {
         (Some(m), Some(p), Some(_)) => {
-            let evs = zones::read(&film, (&p).into(), m, team_of);
+            let evs = zones::read(&film, (&p).into(), m, |slot, frame| holders.api(slot as u32, frame) as i32, team_of);
             let places = zones::event_places(&evs);
             let crates = zones::crates(&film);
             let mut ids: Vec<u32> = places.keys().copied().collect();
@@ -975,8 +975,9 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 events.push((frame, Event::Action(Action { player, kind })));
             }
         }
-        for &(frame, pi) in &a.headshots {
-            if let Some(p) = pid(pi) {
+        for &(frame, slot) in &a.headshots {
+            let pi = holders.api(slot as u32, frame) as i32;
+            if let Some(p) = pid(pi).filter(|_| paths.iter().any(|q| q.player_index == pi)) {
                 events.push((frame, Event::Headshot(Headshot { player: p })));
             }
         }
@@ -1041,9 +1042,11 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             });
         }
         // Flags, placed where the event says, else at the player's latest
-        // sample in the two seconds before.
+        // sample in the two seconds before. The events name players by their
+        // engine slots, as game events do.
         if let Some(p) = &walk {
-            for o in objectives::read(&film, p.into(), mode == GameMode::CaptureTheFlag) {
+            for mut o in objectives::read(&film, p.into(), mode == GameMode::CaptureTheFlag) {
+                o.player = holders.api(o.player as u32, o.frame) as i32;
                 let position = match o.at {
                     Some(q) => {
                         let (x, y) = window_to_world(q, w, c);
@@ -1066,7 +1069,8 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         }
         // Power seeds, placed as flags are.
         if let Some(p) = walk.filter(|_| scripts.contains("btbstockpileevents.lua")) {
-            for o in objectives::read_seeds(&film, (&p).into()) {
+            for mut o in objectives::read_seeds(&film, (&p).into()) {
+                o.player = holders.api(o.player as u32, o.frame) as i32;
                 let position = match o.at {
                     Some(q) => {
                         let (x, y) = window_to_world(q, w, c);
@@ -1712,7 +1716,15 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         let Some(p) = pid(paths[k].player_index) else { continue };
         let s = states.entry(p).or_default();
         s.ammo =
-            a.ammo.iter().map(|&(f, slot, loaded, reserve)| Ammo { tick: tick(f), slot, loaded, reserve }).collect();
+            a.ammo
+                .iter()
+                .map(|&(f, slot, loaded, reserve)| Ammo {
+                    tick: tick(f),
+                    slot,
+                    loaded: u32::try_from(loaded).ok(),
+                    reserve: u32::try_from(reserve).ok(),
+                })
+                .collect();
         s.energy = a.energy.iter().map(|&(f, slot, percent)| Energy { tick: tick(f), slot, percent }).collect();
         s.heat = a.heat.iter().map(|&(f, slot, percent, flags)| Heat { tick: tick(f), slot, percent, flags }).collect();
         s.grenades = a.grenades.iter().map(|&(f, counts)| GrenadeCount { tick: tick(f), counts }).collect();

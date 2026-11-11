@@ -169,8 +169,16 @@ pub struct ZoneEvent {
 }
 
 /// The film's events in frame order. `layout` is how the level lays out a
-/// position, `team_of` gives a player's team.
-pub fn read(film: &Film, layout: Layout, mode: Mode, team_of: impl Fn(i32) -> Option<i32>) -> Vec<ZoneEvent> {
+/// position, `player_of` maps an engine slot at a frame to the player's
+/// index (the events' masks name engine slots), and `team_of` gives a
+/// player's team.
+pub fn read(
+    film: &Film,
+    layout: Layout,
+    mode: Mode,
+    player_of: impl Fn(i32, i64) -> i32,
+    team_of: impl Fn(i32) -> Option<i32>,
+) -> Vec<ZoneEvent> {
     let ids = table(mode);
     let mut out = Vec::new();
     for_each_event_view(film, layout, |frame, evs| {
@@ -182,7 +190,7 @@ pub fn read(film: &Film, layout: Layout, mode: Mode, team_of: impl Fn(i32) -> Op
                 continue;
             }
             let s = seen.entry(g.id).or_default();
-            s.0.extend((0..32).filter(|p| g.last & (0x8000_0000u32 >> p) != 0));
+            s.0.extend((0..32).filter(|p| g.last & (0x8000_0000u32 >> p) != 0).map(|p| player_of(p, frame as i64)));
             for (k, v) in g.values.iter().flatten() {
                 match *v {
                     Value::Word(6, w) if *k == ZONE_KEY && w & ZONE_BIT != 0 => s.1 = Some(w & !ZONE_BIT),

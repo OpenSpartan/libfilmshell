@@ -2,7 +2,7 @@
 //! (82), the game's scoring and announcement events.
 //!
 //! The event's id is an index into the game's event list, its last 32 bits
-//! a mask of the players it is about (bit 31 - player index). Six ids are
+//! a mask of the players it is about (bit 31 - engine slot). Six ids are
 //! the flag events in Capture the Flag, three the power seed events in Big
 //! Team Stockpile. The same ids turn up in other modes with other meanings,
 //! so each table is read only in its mode. A grab carries where the flag
@@ -51,6 +51,8 @@ const STOCKPILE: [(u32, u8); 3] = [
 pub struct Objective {
     pub frame: i64,
     pub kind: u8,
+    /// The player's engine slot, which can differ from their roster index
+    /// (`holders` maps it).
     pub player: i32,
     /// Position codes in the level box, when the event carries them.
     pub at: Option<[u32; 3]>,

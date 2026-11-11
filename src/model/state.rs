@@ -1,6 +1,43 @@
 use super::Tick;
 use crate::TagId;
-use crate::game::Grenade;
+use crate::game::{Grenade, Weapon};
+
+/// An objective a player carries. The game puts an item for it in the
+/// carrier's weapon slots, where it stays whichever weapon they hold: that
+/// item is how a carrier is known.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+pub enum Carried {
+    /// A Capture the Flag flag. Its item is a pistol of the flag's own
+    /// (`magnum_pistol_ctf`), which the game gives the carrier on the grab.
+    Flag,
+    /// An Oddball skull.
+    Skull,
+    /// Grifball's ball.
+    Ball,
+    /// A Stockpile power seed.
+    PowerSeed,
+}
+
+impl Carried {
+    /// The flag carrier's pistol tags.
+    const FLAG_PISTOLS: [TagId; 2] = [TagId(0x2a392328), TagId(0x0001_6415)];
+
+    /// The objective a weapon slot's item stands for, if any.
+    pub fn from_item(tag: TagId) -> Option<Carried> {
+        if Self::FLAG_PISTOLS.contains(&tag) {
+            return Some(Carried::Flag);
+        }
+        match Weapon::from_tag(tag)? {
+            Weapon::GenericSkull | Weapon::GenericSkullEscalation => Some(Carried::Skull),
+            Weapon::GenericBall => Some(Carried::Ball),
+            Weapon::GenericPowerSeed => Some(Carried::PowerSeed),
+            _ => None,
+        }
+    }
+}
 
 /// A player's movement input from `tick` on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,10 +67,13 @@ pub struct Ammo {
     pub tick: Tick,
     /// The weapon slot, 0 to 3.
     pub slot: u32,
-    /// Rounds in the magazine.
-    pub loaded: i32,
-    /// Rounds in reserve.
-    pub reserve: i32,
+    /// Rounds in the magazine, 0 for a weapon that has none (an energy
+    /// weapon's charge is its [`Energy`]); None until the game sends them.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub loaded: Option<u32>,
+    /// Rounds in reserve; None until the game sends them.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub reserve: Option<u32>,
 }
 
 /// An energy weapon's charge from `tick` on.
@@ -182,6 +222,12 @@ impl PlayerState {
     /// The weapon in the held slot at `tick`.
     pub fn weapon_at(&self, tick: Tick) -> Option<TagId> {
         self.weapon_in(self.held_slot(tick)?, tick)
+    }
+
+    /// The objective carried at `tick`: the one whose item is in a weapon
+    /// slot ([`Carried`]).
+    pub fn carrying(&self, tick: Tick) -> Option<Carried> {
+        (0..4).find_map(|slot| self.weapon_in(slot, tick).and_then(Carried::from_item))
     }
 
     /// The magazine and reserve of `slot` at `tick`.

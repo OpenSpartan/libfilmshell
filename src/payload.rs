@@ -655,13 +655,15 @@ fn resolve(walker: &mut Walker, c: &[u8], start: usize, end: usize, depth: u32) 
 }
 
 /// The event views of every type-0 payload of `film`: f(frame index, the
-/// events read). Packet framing only.
+/// events read), game events the game sent again left out
+/// ([`events::Resends`]). Packet framing only.
 pub fn for_each_event_view(film: &Film, widths: impl Into<events::Layout>, mut f: impl FnMut(usize, &[Event])) {
     let widths = widths.into();
     if film.framing != crate::container::Framing::Packets {
         return;
     }
     let mut out = Vec::new();
+    let mut resends = events::Resends::default();
     for fr in film.frames() {
         if fr.end - fr.start < 2 {
             continue;
@@ -669,6 +671,7 @@ pub fn for_each_event_view(film: &Film, widths: impl Into<events::Layout>, mut f
         out.clear();
         let mut r = Bits { c: fr.chunk, at: 8 * fr.start as i64 + 1 };
         let _ = events::walk(&mut r, widths, &mut out);
+        out.retain(|e| if let events::Body::Game(g) = &e.body { resends.fresh(fr.index, g) } else { true });
         f(fr.index, &out);
     }
 }

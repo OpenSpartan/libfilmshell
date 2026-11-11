@@ -62,7 +62,8 @@ pub struct FilmActions {
     /// Detonations: frame, the projectile (entity, generation) when the
     /// event names it, and the level codes.
     pub blasts: Vec<(i64, Option<(u32, u32)>, [u32; 3])>,
-    /// Headshot kills: frame and player index.
+    /// Headshot kills: frame and the player's engine slot (`holders` maps
+    /// it to the player).
     pub headshots: Vec<(i64, i32)>,
 }
 
@@ -86,8 +87,9 @@ pub fn reader<'a>(
     // Per life: the last spartan-ability state and weapon slot seen.
     let mut ability: HashMap<i32, u32> = HashMap::new();
     let mut weapon_slot: HashMap<i32, u32> = HashMap::new();
-    move |frame, _, p| {
-        let frame = frame as i64;
+    let mut resends = crate::events::Resends::default();
+    move |frame_index, _, p| {
+        let frame = frame_index as i64;
         for e in &p.events {
             // A kind-2 handle (an 8-bit biped index), else a unit handle.
             let life = e.handles[0].and_then(|h| match e.kind {
@@ -120,10 +122,8 @@ pub fn reader<'a>(
                     continue;
                 }
                 Body::Game(g) if pvp && g.id == HEADSHOT => {
-                    for pi in (0..32).filter(|p| g.last & (0x8000_0000u32 >> p) != 0) {
-                        if by_index.contains_key(&pi) {
-                            out.headshots.push((frame, pi));
-                        }
+                    if resends.fresh(frame_index, &g) {
+                        out.headshots.extend((0..32).filter(|p| g.last & (0x8000_0000u32 >> p) != 0).map(|pi| (frame, pi)));
                     }
                     continue;
                 }

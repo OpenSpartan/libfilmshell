@@ -654,6 +654,112 @@ fn hijacks_count_as_the_match_stats_do() {
     assert_eq!(from, hijacks, "hijacks naming the player thrown out");
 }
 
+/// Each player's flag events are the match stats' CaptureTheFlagStats, and
+/// a grab or steal gives its player the flag on that tick.
+#[test]
+fn flag_events_count_as_the_match_stats_do() {
+    let (mut checked, mut grabs, mut carried) = (0, 0, 0);
+    for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
+        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
+        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        for p in f.players() {
+            let Some(row) = stats_row(&stats, p) else { continue };
+            let st = &row["PlayerTeamStats"][0]["Stats"]["CaptureTheFlagStats"];
+            if st.is_null() {
+                continue;
+            }
+            for (kind, key) in [
+                (FlagEventKind::Grab, "FlagGrabs"),
+                (FlagEventKind::Steal, "FlagSteals"),
+                (FlagEventKind::Capture, "FlagCaptures"),
+                (FlagEventKind::Return, "FlagReturns"),
+                (FlagEventKind::CarrierKilled, "FlagCarriersKilled"),
+                (FlagEventKind::CaptureAssist, "FlagCaptureAssists"),
+            ] {
+                let want = st[key].as_u64().unwrap_or(0) as usize;
+                let got = f
+                    .events()
+                    .iter()
+                    .filter(|e| matches!(&e.event, Event::Flag(x) if x.kind == kind && x.player == p.id))
+                    .count();
+                assert_eq!(got, want, "{name}: player {} {key}", p.id);
+                checked += got;
+            }
+        }
+        for e in f.events() {
+            let Event::Flag(x) = &e.event else { continue };
+            if matches!(x.kind, FlagEventKind::Grab | FlagEventKind::Steal) {
+                grabs += 1;
+                let state = f.player_state(x.player);
+                carried += usize::from(
+                    state.is_some_and(|s| (0..=2).any(|d| s.carrying(Tick(e.tick.0 + d)) == Some(Carried::Flag))),
+                );
+            }
+        }
+    }
+    assert!(corpus().is_empty() || checked > 0);
+    assert!(carried * 100 >= grabs * 99, "{carried} of {grabs} grabs give the player the flag");
+}
+
+/// How long each player carried the flag, the skull or a power seed, alive
+/// with its item in their slots, is the match stats' time as its carrier:
+/// within a second, and a few seconds over where the film counts carrying
+/// outside a round.
+#[test]
+fn carriers_carry_as_long_as_the_match_stats_say() {
+    fn seconds(v: &serde_json::Value) -> Option<f64> {
+        let (mut total, mut digits) = (0.0, String::new());
+        for c in v.as_str()?.strip_prefix("PT")?.chars() {
+            let unit = match c {
+                'H' => 3600.0,
+                'M' => 60.0,
+                'S' => 1.0,
+                _ => {
+                    digits.push(c);
+                    continue;
+                }
+            };
+            total += digits.parse::<f64>().ok()? * unit;
+            digits.clear();
+        }
+        Some(total)
+    }
+    let (mut players, mut close) = (0, 0);
+    for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
+        let (item, group, key) = match f.mode() {
+            GameMode::CaptureTheFlag => (Carried::Flag, "CaptureTheFlagStats", "TimeAsFlagCarrier"),
+            GameMode::Oddball => (Carried::Skull, "OddballStats", "TimeAsSkullCarrier"),
+            GameMode::Stockpile => (Carried::PowerSeed, "StockpileStats", "TimeAsPowerSeedCarrier"),
+            _ => continue,
+        };
+        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
+        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        for p in f.players() {
+            let Some(want) = stats_row(&stats, p).and_then(|r| seconds(&r["PlayerTeamStats"][0]["Stats"][group][key]))
+            else {
+                continue;
+            };
+            let Some(state) = f.player_state(p.id) else { continue };
+            let ticks = (0..=f.clock().end().0)
+                .map(Tick)
+                .filter(|&t| state.carrying(t) == Some(item) && f.alive_at(p.id, t))
+                .count();
+            let got = ticks as f64 / f64::from(Tick::PER_SECOND);
+            if want == 0.0 && got == 0.0 {
+                continue;
+            }
+            players += 1;
+            close += usize::from((got - want).abs() <= 1.0);
+            assert!(
+                got - want > -1.0 && got - want < 10.0,
+                "{name}: player {} carried {got:.1} s, stats {want:.1} s",
+                p.id
+            );
+        }
+    }
+    assert!(close * 100 >= players * 95, "{close} of {players} carriers within a second");
+}
+
 /// Every vehicle destroy the scripts score is tied to a vehicle of its type,
 /// and the riders killed with it rode it.
 #[test]

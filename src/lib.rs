@@ -44,12 +44,13 @@
 //! Everything is read up front, so playback can seek to any tick: at any
 //! [`Tick`], [`Film::players_at`] gives every living player with their
 //! sample (where they were, their aim, health and shield), the weapon in
-//! their hands and the vehicle they ride, and [`Film::events_in`] what
-//! happened in a stretch of time. [`Film::life_at`], [`Film::weapon_at`] and
-//! [`Film::vehicle_at`] look up one thing. The rest of the map at a tick is
-//! [`Film::vehicles_at`], [`Film::grenades_at`], [`Film::ground_weapons_at`]
-//! and [`Film::world_objects_at`], with [`Zone::state_at`] for a zone mode.
-//! [`Clock`] maps the film's frames to ticks.
+//! their hands, the objective they carry and the vehicle they ride, and
+//! [`Film::events_in`] what happened in a stretch of time. [`Film::life_at`],
+//! [`Film::weapon_at`] and [`Film::vehicle_at`] look up one thing. The rest
+//! of the map at a tick is [`Film::vehicles_at`], [`Film::grenades_at`],
+//! [`Film::ground_weapons_at`] and [`Film::world_objects_at`], with
+//! [`Zone::state_at`] for a zone mode. [`Clock`] maps the film's frames to
+//! ticks.
 //!
 //! A viewer's loop, one tick at a time:
 //!

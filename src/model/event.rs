@@ -644,8 +644,10 @@ pub enum GameEventArgument {
 pub struct GameEvent {
     /// The event's id: its response's position in the mode's event tree.
     pub id: u32,
-    /// The 8 bits after the id; what they mean isn't known.
-    pub small: u32,
+    /// Its 8-bit sequence number, one more than the event sent before it.
+    /// An event the game sent again repeats its number; the library keeps
+    /// one of the two.
+    pub sequence: u32,
     /// Its values, each under its property's name.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub values: Vec<(StringId, GameEventValue)>,

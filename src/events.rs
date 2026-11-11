@@ -172,8 +172,9 @@ pub enum Param {
     Word(u32, u32),
 }
 
-/// PlayerGameEventSmall (82): a 32-bit id and 8 bits, up to 7 keyed values,
-/// an optional 32-bit id with up to 7 parameters, and a last 32 bits.
+/// PlayerGameEventSmall (82): a 32-bit id and an 8-bit sequence number, up
+/// to 7 keyed values, an optional 32-bit id with up to 7 parameters, and a
+/// last 32 bits.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GameEvent {
     pub id: u32,
@@ -181,6 +182,34 @@ pub struct GameEvent {
     pub values: [Option<(u32, Value)>; 7],
     pub extra: Option<(u32, [Option<Param>; 7])>,
     pub last: u32,
+}
+
+/// Game events the game sent again. Each one carries an 8-bit sequence
+/// number, one more than the event before; a film can record an event a
+/// second time 10 to 25 ticks later, sequence number and all. A repeat of
+/// one of the last 128 events within `RESEND_FRAMES` is that.
+#[derive(Debug, Default)]
+pub struct Resends {
+    recent: std::collections::VecDeque<(usize, GameEvent)>,
+}
+
+impl Resends {
+    const RESEND_FRAMES: usize = 60;
+
+    /// Whether `g`, read in `frame`, is new rather than sent again.
+    pub fn fresh(&mut self, frame: usize, g: &GameEvent) -> bool {
+        while self.recent.front().is_some_and(|x| x.0 + Self::RESEND_FRAMES < frame) {
+            self.recent.pop_front();
+        }
+        if self.recent.iter().any(|x| x.1 == *g) {
+            return false;
+        }
+        if self.recent.len() == 128 {
+            self.recent.pop_front();
+        }
+        self.recent.push_back((frame, *g));
+        true
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

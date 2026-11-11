@@ -21,6 +21,6 @@ pub use objects::{
 };
 pub use player::{Player, PlayerKind, TeamChange};
 pub use scoreboard::{EngineState, MatchClock, Scoreboard, Stat, StatChange, StatOwner};
-pub use state::{Ammo, Energy, EquipmentCharge, GrenadeCount, Heat, HeldSlot, Input, PlayerState, WeaponSlot};
+pub use state::{Ammo, Carried, Energy, EquipmentCharge, GrenadeCount, Heat, HeldSlot, Input, PlayerState, WeaponSlot};
 pub use time::{Clock, Hitch, Tick};
 pub use variant::{GameMode, GameVariant, Loadout, Rule, StatDefinition, StatDisplay, StatSettings, VariantOption};

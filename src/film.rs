@@ -298,10 +298,14 @@ impl Film {
         let on_foot = state.filter(|_| !sample.in_vehicle);
         let weapon = on_foot.and_then(|s| s.weapon_at(tick));
         let ammo = on_foot.and_then(|s| s.ammo_in(s.held_slot(tick)?, tick));
+        let energy = on_foot.and_then(|s| s.energy_in(s.held_slot(tick)?, tick));
+        let heat = on_foot.and_then(|s| s.heat_in(s.held_slot(tick)?, tick));
         // Counts from before this life's spawn are an earlier life's.
         let start = life.start().unwrap_or(tick);
         let grenades = state.and_then(|s| s.grenades_at(tick)).filter(|g| g.tick >= start);
-        Some(PlayerAt { player: self.player(player)?, life, sample, weapon, ammo, grenades, ride, vehicle })
+        let carrying = state.and_then(|s| s.carrying(tick));
+        let player = self.player(player)?;
+        Some(PlayerAt { player, life, sample, weapon, ammo, energy, heat, grenades, carrying, ride, vehicle })
     }
 
     /// [`Film::player_at`] for every player alive at `tick`, in id order:
@@ -522,8 +526,15 @@ pub struct PlayerAt<'a> {
     pub weapon: Option<TagId>,
     /// The rounds in that weapon and in reserve, as last sent.
     pub ammo: Option<&'a Ammo>,
+    /// That weapon's charge, for an energy weapon.
+    pub energy: Option<&'a Energy>,
+    /// That weapon's heat, for a weapon that heats up.
+    pub heat: Option<&'a Heat>,
     /// The grenades they carry, as sent since they spawned.
     pub grenades: Option<&'a GrenadeCount>,
+    /// The objective they carry: a flag, the skull, Grifball's ball or a
+    /// power seed.
+    pub carrying: Option<Carried>,
     /// The ride they are on.
     pub ride: Option<&'a Ride>,
     /// The track of the vehicle they are in.
