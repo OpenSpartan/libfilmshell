@@ -18,6 +18,9 @@
 mod damage;
 #[rustfmt::skip]
 mod damage_data;
+pub(crate) mod events;
+#[rustfmt::skip]
+mod events_data;
 mod items;
 #[rustfmt::skip]
 mod items_data;

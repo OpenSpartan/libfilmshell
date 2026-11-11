@@ -698,6 +698,27 @@ pub struct Velocity {
     pub direction: Option<u32>,
 }
 
+/// A unit's damage report in its object-dead-state component, as the
+/// writer (`143203460`) sends it: the damage that killed it and who dealt it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DamageReport {
+    /// The damage effect's tag.
+    pub tag: Option<u32>,
+    /// The report's 8-bit flags.
+    pub flags: u32,
+    /// `absolute-participant-index`: the unit's own participant.
+    pub participant: Option<u32>,
+    /// `killer-absolute-participant-index`: the participant who killed it.
+    pub killer: Option<u32>,
+    /// The two fields after the participants: one of 10 values in 4 bits,
+    /// and 3 bits. What they mean isn't traced.
+    pub kind: (u32, u32),
+    /// The optional 32-bit id after them.
+    pub source: Option<u32>,
+    /// The last optional 32-bit id.
+    pub last: Option<u32>,
+}
+
 /// What the known components of one update carry. Raw codes are kept next
 /// to the converted values where the conversion isn't checked yet.
 #[derive(Clone, Debug, Default)]
@@ -753,6 +774,9 @@ pub struct Fields {
     /// compares, `1431aef58`), when parent state is listed: Some(Some(seat))
     /// seated, Some(None) not.
     pub seat: Option<Option<u32>>,
+    /// Object dead state: whether the object is dead, and a unit's damage
+    /// report.
+    pub dead: Option<(bool, Option<DamageReport>)>,
     /// A unit's weapon slots' rounds loaded, by slot as `weapons` (the `n`th
     /// row of weapon-state-ammo): the rounds (0 when the reader gets none)
     /// and a 0 to 1 fraction the reader takes for some weapons.
@@ -2277,18 +2301,22 @@ impl Reader<'_> {
                     self.skip(3);
                 }
             }
-            // `[dead:1]`, then for units a damage report: who and how (ids,
-            // enums, a 10-bit direction, the place, two 5-bit amounts).
+            // `[dead:1]`, then for units a damage report (`143203460`): the
+            // damage tag, flags, the unit's and its killer's participants,
+            // two small enums, an optional source, a 10-bit direction, the
+            // place, two 5-bit amounts and another id.
             DeadState => {
-                self.skip(1);
+                let dead = self.flag();
+                let mut report = None;
                 if self.object_type == 0x23 || self.object_type == 0x28 {
-                    self.opt(32);
+                    let tag = self.opt(32);
                     let flags = self.bits(8);
-                    self.unless(5);
-                    self.unless(5);
-                    self.skip(4 + 3);
+                    let participant = self.unless(5);
+                    let killer = self.unless(5);
+                    let kind = (self.bits(4), self.bits(3));
+                    let mut source = None;
                     if self.flag() {
-                        self.opt(32);
+                        source = self.opt(32);
                         self.skip(3);
                         self.unless(6);
                     }
@@ -2299,11 +2327,13 @@ impl Reader<'_> {
                         self.skip(2 + 3 * 14);
                     }
                     self.skip(5 + 5);
-                    self.opt(32);
+                    let last = self.opt(32);
+                    report = Some(DamageReport { tag, flags, participant, killer, kind, source, last });
                 }
                 if self.object_type == 0x23 {
                     self.skip(1);
                 }
+                f.dead = Some((dead, report));
             }
             // `[unit:1]`, else a 15-bit scale and `[animated:1]` (a 15-bit
             // target, a 12-bit time and a 5-bit curve).

@@ -1613,6 +1613,86 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             r.to = r.to.min(until);
         }
     }
+    // Vehicle destroys and hijacks: the mode scripts' personal scores.
+    if let Some(group) = crate::game::events::group(&scripts) {
+        let hits: Vec<(Tick, Option<usize>, Option<PlayerId>, Option<u32>)> = fired
+            .as_ref()
+            .map_or(&[][..], |f| &f.vehicle_hits[..])
+            .iter()
+            .map(|&(frame, v, attacker, tag)| {
+                let at = tick(frame);
+                let id = EntityId(ex.vehicle_ident.resolve(v) as u16);
+                let track = vehicles
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, t)| t.entity == id && t.on_map_at(at))
+                    .max_by_key(|(_, t)| t.span().map(|s| s.0))
+                    .map(|(i, _)| i);
+                (at, track, attacker.and_then(|k| pid(paths[k].player_index)), tag)
+            })
+            .collect();
+        let kills: Vec<(Tick, PlayerId)> = events
+            .iter()
+            .filter_map(|e| if let Event::Kill(k) = &e.event { Some((e.tick, k.victim)) } else { None })
+            .collect();
+        let ride_at = |p: PlayerId, t: Tick| rides.iter().rfind(|r| r.player == p && r.from <= t && t <= r.to);
+        let mut scored = Vec::new();
+        for e in &events {
+            let Event::GameEvent(g) = &e.event else { continue };
+            let t = e.tick;
+            if let Some(&(_, vehicle)) = group.destroys.iter().find(|d| d.0 == g.id) {
+                for player in g.players.iter() {
+                    // The last hit on a vehicle of that type in the 2 s
+                    // before, the player's own first.
+                    let recent: Vec<_> = hits
+                        .iter()
+                        .filter(|h| h.0 <= t + 3 && h.0.0 + 120 >= t.0)
+                        .filter(|h| h.1.is_some_and(|i| vehicles[i].vehicle() == Some(vehicle)))
+                        .collect();
+                    let hit = recent.iter().rfind(|h| h.2 == Some(player)).or(recent.last());
+                    let track = hit.and_then(|h| h.1);
+                    let killed = kills
+                        .iter()
+                        .filter(|(kt, victim)| {
+                            kt.0.abs_diff(t.0) <= 3
+                                && track.is_some()
+                                && ride_at(*victim, kt.saturating_sub(2)).is_some_and(|r| r.vehicle == track)
+                        })
+                        .map(|&(_, v)| v)
+                        .collect();
+                    let damage = hit.and_then(|h| h.3).map(TagId);
+                    let d = VehicleDestroyed { player, vehicle, track, damage, killed };
+                    scored.push(TimedEvent { tick: t, event: Event::VehicleDestroyed(d) });
+                }
+            }
+            if let Some(&(_, vehicle)) = group.hijacks.iter().find(|h| h.0 == g.id) {
+                for player in g.players.iter() {
+                    let ride = rides
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, r)| r.player == player && r.from.0.abs_diff(t.0) <= 120)
+                        .filter(|(_, r)| r.vehicle.is_some_and(|i| vehicles[i].vehicle() == Some(vehicle)))
+                        .min_by_key(|(_, r)| r.from.0.abs_diff(t.0))
+                        .map(|(i, _)| i);
+                    // The hijacker boards through a hijack seat while the
+                    // rider stays seated until thrown out, a second or two
+                    // after the event.
+                    let from = ride.and_then(|i| {
+                        let mine = rides[i];
+                        rides
+                            .iter()
+                            .filter(|r| r.player != player && r.vehicle == mine.vehicle && r.from <= mine.from)
+                            .filter(|r| t <= r.to && r.to.0 <= t.0 + 180)
+                            .min_by_key(|r| r.to)
+                            .map(|r| r.player)
+                    });
+                    scored.push(TimedEvent { tick: t, event: Event::Hijack(Hijack { player, vehicle, ride, from }) });
+                }
+            }
+        }
+        events.extend(scored);
+        events.sort_by_key(|e| e.tick);
+    }
 
     // What each player pressed and carried.
     let mut states: BTreeMap<PlayerId, PlayerState> = BTreeMap::new();

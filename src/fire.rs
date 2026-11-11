@@ -64,6 +64,10 @@ pub struct FilmFire {
     /// Parallel to `hits`: the victim's life slot, the damage tag and the
     /// body's first 5-bit scale (`hit_damage.rs`).
     pub hit_details: Vec<(i32, Option<u32>, u32)>,
+    /// damage_aftermath events on vehicles: frame, the vehicle's id (a part's
+    /// when the hit landed on a part), the attacker's path as for `hits`, and
+    /// the damage tag.
+    pub vehicle_hits: Vec<(i64, i32, Option<usize>, Option<u32>)>,
     /// Per path: each grenade or object thrown (biped_throw_initiate), its
     /// frame and the 3-bit grenade type (None: a thrown object named by tag).
     /// The thrower is the first handle (an 8-bit biped index and generation,
@@ -99,6 +103,7 @@ pub fn read(film: &Film, layout: Layout, paths: &[PlayerPath], extra: &[u32]) ->
     let mut damage = Vec::new();
     let mut hits = Vec::new();
     let mut hit_details = Vec::new();
+    let mut vehicle_hits = Vec::new();
     let mut throws = vec![Vec::new(); paths.len()];
     let mut exits = vec![Vec::new(); paths.len()];
     let mut voice = Vec::new();
@@ -162,6 +167,9 @@ pub fn read(film: &Film, layout: Layout, paths: &[PlayerPath], extra: &[u32]) ->
                             damage.push((frame as i64, victim, t));
                         }
                     }
+                    if let Some(v) = e.handles[0].and_then(|h| h.vehicle_slot()) {
+                        vehicle_hits.push((frame as i64, v, attacker, d.tag));
+                    }
                 }
                 _ => {}
             }
@@ -181,6 +189,7 @@ pub fn read(film: &Film, layout: Layout, paths: &[PlayerPath], extra: &[u32]) ->
         damage,
         hits,
         hit_details,
+        vehicle_hits,
         throws,
         exits,
         voice,

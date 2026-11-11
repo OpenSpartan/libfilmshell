@@ -40,6 +40,10 @@ pub enum Event {
     Teleport(Teleport),
     /// A player got out of a vehicle.
     VehicleExit(VehicleExit),
+    /// A player destroyed a vehicle of another team.
+    VehicleDestroyed(VehicleDestroyed),
+    /// A player hijacked a vehicle.
+    Hijack(Hijack),
     /// A player used equipment that put an object down.
     EquipmentUse(EquipmentUse),
     /// The announcer or a mode script played a voice line.
@@ -107,6 +111,10 @@ pub enum EventKind {
     Teleport,
     /// [`Event::VehicleExit`].
     VehicleExit,
+    /// [`Event::VehicleDestroyed`].
+    VehicleDestroyed,
+    /// [`Event::Hijack`].
+    Hijack,
     /// [`Event::EquipmentUse`].
     EquipmentUse,
     /// [`Event::VoiceLine`].
@@ -143,6 +151,8 @@ impl Event {
             Event::Action(_) => EventKind::Action,
             Event::Teleport(_) => EventKind::Teleport,
             Event::VehicleExit(_) => EventKind::VehicleExit,
+            Event::VehicleDestroyed(_) => EventKind::VehicleDestroyed,
+            Event::Hijack(_) => EventKind::Hijack,
             Event::EquipmentUse(_) => EventKind::EquipmentUse,
             Event::VoiceLine(_) => EventKind::VoiceLine,
             Event::Chatter(_) => EventKind::Chatter,
@@ -172,6 +182,8 @@ impl Event {
             Event::Action(a) => one(a.player),
             Event::Teleport(t) => one(t.player),
             Event::VehicleExit(x) => one(x.player),
+            Event::VehicleDestroyed(d) => one(d.player),
+            Event::Hijack(h) => [Some(h.player), h.from, None],
             Event::EquipmentUse(u) => one(u.player),
             Event::Chatter(c) => [c.speaker, None, None],
             Event::Flag(f) => one(f.player),
@@ -183,6 +195,7 @@ impl Event {
         };
         let mask = match self {
             Event::GameEvent(g) => g.players,
+            Event::VehicleDestroyed(d) => d.killed,
             _ => PlayerMask::default(),
         };
         few.into_iter().flatten().chain(mask.iter())
@@ -449,6 +462,62 @@ pub struct VehicleExit {
     pub vehicle: EntityId,
     /// The seat, 0 the driver's.
     pub seat: u32,
+}
+
+/// A vehicle destroyed by a player of another team, as the mode scripts
+/// score it.
+///
+/// When damage puts a vehicle in its doom state, the game passes the mode
+/// scripts the player it credits; they give that player a personal score for
+/// the vehicle's type when the vehicle belongs to a team and the player is
+/// hostile to it. A vehicle with no team, or one a friend destroyed, has no
+/// event. The match stats count vehicle destroys by another rule, and the
+/// two don't agree player by player.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct VehicleDestroyed {
+    /// The player credited.
+    pub player: PlayerId,
+    /// The vehicle's type, as the scripts score it: a Gungoose is a
+    /// Mongoose, a Rocket Warthog and a Razorback are Warthogs.
+    pub vehicle: crate::game::Vehicle,
+    /// The vehicle's track, an index into
+    /// [`Film::vehicles`](crate::Film::vehicles): the vehicle of that type
+    /// hit last in the 2 s before, the player's own hit first. None when no
+    /// such hit is recorded.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub track: Option<usize>,
+    /// The damage effect of that hit.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub damage: Option<TagId>,
+    /// The riders who died with it: killed within three ticks of it while
+    /// seated in it.
+    pub killed: PlayerMask,
+}
+
+/// A hijack, as the mode scripts score it: the game passes them the vehicle,
+/// the player getting in and the one thrown out, and they give the player
+/// getting in a personal score for the vehicle's type.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct Hijack {
+    /// The hijacker.
+    pub player: PlayerId,
+    /// The vehicle's type, as for [`VehicleDestroyed::vehicle`].
+    pub vehicle: crate::game::Vehicle,
+    /// The hijacker's ride, an index into [`Film::rides`](crate::Film::rides):
+    /// their ride in a vehicle of that type that starts nearest the hijack,
+    /// within 2 s.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub ride: Option<usize>,
+    /// The player thrown out: of the riders already in the vehicle when the
+    /// hijacker boarded (through a seat of its own, while the rider stays
+    /// seated), the one whose ride ends first, within 3 s of the hijack. The
+    /// film's event doesn't name them.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub from: Option<PlayerId>,
 }
 
 /// Equipment that put an object down, attributed to the player nearest it.

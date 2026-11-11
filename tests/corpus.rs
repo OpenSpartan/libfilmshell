@@ -611,6 +611,71 @@ fn power_seeds_count_as_the_match_stats_do() {
     assert!(corpus().is_empty() || seen > 0);
 }
 
+/// A player's match stats row: by XUID, or a bot's by its bot id.
+fn stats_row<'a>(stats: &'a serde_json::Value, p: &Player) -> Option<&'a serde_json::Value> {
+    let key = match &p.kind {
+        PlayerKind::Human { xuid, .. } => format!("xuid({xuid})"),
+        PlayerKind::Bot { bot_id, .. } => format!("bid({bot_id}.0)"),
+        _ => return None,
+    };
+    stats["Players"].as_array()?.iter().find(|r| r["PlayerId"] == key)
+}
+
+/// Each player's hijacks are the match stats' Hijacks, and each one starts
+/// the hijacker's ride in a vehicle of its type, taken from a player of
+/// another team thrown out of it.
+#[test]
+fn hijacks_count_as_the_match_stats_do() {
+    let (mut hijacks, mut rides, mut from) = (0, 0, 0);
+    for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
+        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
+        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        for p in f.players() {
+            let Some(row) = stats_row(&stats, p) else { continue };
+            let want = row["PlayerTeamStats"][0]["Stats"]["CoreStats"]["Hijacks"].as_u64().unwrap_or(0) as usize;
+            let got = f.events().iter().filter(|e| matches!(&e.event, Event::Hijack(h) if h.player == p.id)).count();
+            assert_eq!(got, want, "{name}: player {} hijacks", p.id);
+        }
+        for e in f.events() {
+            let Event::Hijack(h) = &e.event else { continue };
+            hijacks += 1;
+            if let Some(r) = h.ride.map(|i| f.rides()[i]) {
+                rides += 1;
+                assert_eq!(f.ride_vehicle(&r).and_then(|v| v.vehicle()), Some(h.vehicle), "{name} {}", e.tick);
+            }
+            if let Some(out) = h.from {
+                from += 1;
+                let team = |p: PlayerId| f.player(p).and_then(|p| p.team_at(e.tick));
+                assert_ne!(team(out), team(h.player), "{name} {}: {} hijacked a teammate", e.tick, h.player);
+            }
+        }
+    }
+    assert!(corpus().is_empty() || (hijacks > 0 && rides == hijacks), "{rides} of {hijacks} hijacks start a ride");
+    assert_eq!(from, hijacks, "hijacks naming the player thrown out");
+}
+
+/// Every vehicle destroy the scripts score is tied to a vehicle of its type,
+/// and the riders killed with it rode it.
+#[test]
+fn destroyed_vehicles_are_found() {
+    let (mut destroyed, mut tracked, mut killed) = (0, 0, 0);
+    for (name, f) in corpus() {
+        for e in f.events() {
+            let Event::VehicleDestroyed(d) = &e.event else { continue };
+            destroyed += 1;
+            let Some(v) = d.track.map(|i| &f.vehicles()[i]) else { continue };
+            tracked += 1;
+            assert_eq!(v.vehicle(), Some(d.vehicle), "{name} {}", e.tick);
+            for p in d.killed.iter() {
+                killed += 1;
+                assert!(f.kills().any(|(t, k)| k.victim == p && t.0.abs_diff(e.tick.0) <= 3), "{name} {}: {p}", e.tick);
+            }
+        }
+    }
+    assert!(corpus().is_empty() || (destroyed > 0 && tracked == destroyed), "{tracked} of {destroyed} destroys found");
+    eprintln!("{destroyed} vehicles destroyed, {killed} riders killed with them");
+}
+
 /// Infection moves a survivor to the infected when killed: the victim's team
 /// changes at the kill, and every counted kill is between enemies the tick
 /// before.

@@ -45,6 +45,11 @@ The first release, 0.1.0.
   Escalation, Infection and Stockpile among them; `game::modes` lists each mode's options and their
   defaults. Capture the Flag's flag events and Big Team Stockpile's power seed events (steals,
   deposits, carriers killed) are in the event stream, named by the modes' scripts.
+- `Event::VehicleDestroyed` and `Event::Hijack`: the personal scores the modes' scripts give for
+  destroying a vehicle of another team and for hijacking one. A destroy names the vehicle's track
+  (the vehicle of its type hit last), the damage and the riders killed with it; a hijack the
+  hijacker's ride and the player thrown out. On the test films each player's hijacks equal the
+  match stats'; the match stats count vehicle destroys by another rule.
 - `filmshell::game` holds the game's own tables: weapons, vehicles, medals, damage effects, and
   levels with their English names, the services' level ids and their quantization boxes.
 - `filmshell::format` exposes the raw layers, with the game's names for every event and entity

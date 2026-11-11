@@ -62,6 +62,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 let vehicle = film.vehicle_at(x.vehicle, e.tick).and_then(|v| v.vehicle());
                 format!("got out of {}", vehicle.map_or("a vehicle", |v| v.name()))
             }
+            Event::VehicleDestroyed(d) if d.player == me => match d.killed.len() {
+                0 => format!("destroyed a {}", d.vehicle),
+                n => format!("destroyed a {}, killing {n} riding it", d.vehicle),
+            },
+            Event::VehicleDestroyed(d) => format!("died in a {} destroyed by {}", d.vehicle, name(d.player)),
+            Event::Hijack(h) if h.player == me => match h.from {
+                Some(out) => format!("hijacked a {} from {}", h.vehicle, name(out)),
+                None => format!("hijacked a {}", h.vehicle),
+            },
+            Event::Hijack(h) => format!("thrown out of a {} by {}", h.vehicle, name(h.player)),
             _ => continue,
         };
         println!("{}  {line}", e.tick);
