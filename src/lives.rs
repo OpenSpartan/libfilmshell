@@ -511,14 +511,23 @@ pub fn assign_lives(slots: &[LifeSlot], players: &[LifePlayer]) -> Option<LifeAs
             }
         }
         if let Some(ee) = q.e_exp {
-            let e = s.end - ee;
+            // Where the player let go of the life, when the film says: a body
+            // in a vehicle can send records after its death.
+            let e = s.released.unwrap_or(s.end) - ee;
             if e > t.end_late_max {
-                return FORBIDDEN;
-            }
-            c += f64::min(
+                // A slot the film names its player for can outlast the death:
+                // a body left seated in a moving vehicle sends the vehicle's
+                // records until it is deleted.
+                if !named || s.start > ee {
+                    return FORBIDDEN;
+                }
+                c += f64::min(t.early_cap, 0.5 * t.end_late_max);
+            } else {
+                c += f64::min(
                 t.early_cap,
-                if e >= -t.end_soft { 0.5 * e.abs() } else { 0.5 * t.end_soft + 0.25 * (-e - t.end_soft) },
-            );
+                    if e >= -t.end_soft { 0.5 * e.abs() } else { 0.5 * t.end_soft + 0.25 * (-e - t.end_soft) },
+                );
+            }
         } else if !q.left {
             c += f64::min(t.early_cap, 0.25 * f64::max(0.0, match_end - t.survivor_window - s.end));
         }
@@ -712,7 +721,8 @@ pub fn assign_lives(slots: &[LifeSlot], players: &[LifePlayer]) -> Option<LifeAs
             .collect();
         let at_end = times.iter().copied().filter(|ms| !taken.contains(ms)).find(|&ms| {
             let d = tick_of(ms);
-            s.end <= d + t.end_late_max && s.end >= d - NAMED_DEATH_EARLY_TICKS
+            let end = s.released.unwrap_or(s.end);
+            end <= d + t.end_late_max && end >= d - NAMED_DEATH_EARLY_TICKS
         });
         if let Some(ms) = at_end {
             deaths.insert(s.slot_id, Some(ms));

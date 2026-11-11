@@ -355,7 +355,13 @@ fn roster_entries(roster: &Roster, log: &crate::statlog::Log, hl_ticks: &[u32]) 
     // takes it down, and the next death counts up from there. A rise by one
     // is a death at that frame, the rest of a bigger rise deaths since the
     // count's last change; the count can first be sent with deaths on it (a
-    // bot's with two), which happened any time before.
+    // bot's with two), which happened any time before in its round. A round
+    // after the first begins with its first value on any row.
+    let mut round_starts: HashMap<u32, i64> = HashMap::new();
+    for c in log.changes.iter().filter(|c| c.round > 0) {
+        let f = round_starts.entry(c.round).or_insert(c.frame);
+        *f = (*f).min(c.frame);
+    }
     let death_frames = |id: usize| {
         let mut out = Vec::new();
         // Per round, the count and the frame it changed at.
@@ -365,7 +371,7 @@ fn roster_entries(roster: &Roster, log: &crate::statlog::Log, hl_ticks: &[u32]) 
             let rise = (c.value - prev.map_or(0, |p| p.0)).max(0) as usize;
             let (earliest, at_frame) = match prev {
                 Some((_, f)) => (f, usize::from(rise > 0)),
-                None => (i64::MIN, 0),
+                None => (round_starts.get(&c.round).copied().unwrap_or(i64::MIN), 0),
             };
             out.extend(std::iter::repeat_n((earliest, c.frame), rise - at_frame));
             out.extend(std::iter::repeat_n((c.frame, c.frame), at_frame));
@@ -818,12 +824,27 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         .filter(|c| c.slot == DEATHS_SLOT)
         .map(|c| (c.kind, c.id, c.frame))
         .collect();
-    let scored = |victim: PlayerId, frame: i64| {
+    // Or the killer's kills: a row the mode stops updating can be the
+    // victim's.
+    let kill_frames: Vec<(u32, i64)> = {
+        let mut had: HashMap<(u32, u32), i32> = HashMap::new();
+        stat_log
+            .changes
+            .iter()
+            .filter(|c| c.kind == 0 && c.slot == KILLS_SLOT)
+            .filter(|c| had.insert((c.id, c.round), c.value).unwrap_or(0) < c.value)
+            .map(|c| (c.id, c.frame))
+            .collect()
+    };
+    let scored = |victim: PlayerId, killer: Option<PlayerId>, frame: i64| {
         let team = roster.players.get(victim.0 as usize).and_then(|p| p.team);
         let row = |kind: u32, id: u32| {
             death_frames.iter().any(|&(k, i, f)| k == kind && i == id && (f - frame).abs() <= DEATH_FRAMES)
         };
-        (!stat_log.changes.is_empty()).then(|| row(0, victim.0 as u32) || team.is_some_and(|t| row(1, t)))
+        let killed = killer.filter(|&k| k != victim).is_some_and(|k| {
+            kill_frames.iter().any(|&(i, f)| i == k.0 as u32 && (f - frame).abs() <= DEATH_FRAMES)
+        });
+        (!stat_log.changes.is_empty()).then(|| row(0, victim.0 as u32) || team.is_some_and(|t| row(1, t)) || killed)
     };
     // What dealt a death at `frame` to the victim's path `vk`: the last hit's
     // cause, and its weapon, else the killer's (path `kk`) last shot.
@@ -872,7 +893,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 assistant_damage_percent: assistant.map(|_| d.assistant_percent),
                 suicide: d.suicide,
                 headshot: None,
-                scored: scored(victim, frame).or(at_end.then_some(false)),
+                scored: scored(victim, killer, frame).or(at_end.then_some(false)),
                 cause,
                 weapon,
                 position: vk.and_then(|k| at_frame(k, frame)),
@@ -1321,10 +1342,11 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         }
     }
     let has_teams = roster.players.iter().any(|p| p.team.is_some());
+    // Teams just before the death: Infection moves its victim at the kill.
     let team_then = |p: PlayerId, frame: i64| {
         team_history
             .get(p.0 as usize)
-            .and_then(|h| crate::teams::at(h, frame))
+            .and_then(|h| crate::teams::at(h, frame - 1))
             .or(roster.players.get(p.0 as usize).and_then(|r| r.team))
     };
     let enemies = |a: PlayerId, b: PlayerId, frame: i64| a != b && (!has_teams || team_then(a, frame) != team_then(b, frame));
@@ -1421,7 +1443,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 assistant_damage_percent: assist.map(|a| (a.1 * 100.0) as u32),
                 suicide: killer == Some(victim),
                 headshot: None,
-                scored: scored(victim, frame),
+                scored: scored(victim, killer, frame),
                 cause,
                 weapon,
                 position: at_frame(vk, frame),
@@ -1509,10 +1531,21 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 (None, Some(xuid)) => PlayerKind::Human { xuid: Xuid(xuid), gamertag: p.gamertag.clone() },
                 (None, None) => return None,
             };
+            let team = p.team.and_then(|t| u8::try_from(t).ok()).map(TeamId);
+            // A team game's players only: in free for all every designator
+            // names team 0.
+            let mut teams: Vec<TeamChange> = Vec::new();
+            for &(frame, t) in team_history.get(i).into_iter().flatten().filter(|_| has_teams) {
+                let Ok(t) = u8::try_from(t) else { continue };
+                if teams.last().is_none_or(|c| c.team.0 != t) {
+                    teams.push(TeamChange { tick: tick(frame), team: TeamId(t) });
+                }
+            }
             Some(Player {
                 id: PlayerId(u8::try_from(i).ok()?),
                 kind,
-                team: p.team.and_then(|t| u8::try_from(t).ok()).map(TeamId),
+                team,
+                teams,
                 present_at_start: p.present_at_start,
                 joined: p.first.filter(|_| !p.present_at_start).map(tick),
                 left: p.left.map(tick),

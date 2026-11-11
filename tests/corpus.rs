@@ -482,7 +482,7 @@ const BOT_MATCHES: [&str; 11] = [
 ];
 
 /// Each player's deaths, the bots' included, are the match stats' Deaths
-/// (in the roster's order, the film's): for 98% of players, and for every
+/// (in the roster's order, the film's): for 99% of players, and for every
 /// player in [`BOT_MATCHES`].
 #[test]
 fn lives_die_as_the_match_stats_count() {
@@ -504,7 +504,24 @@ fn lives_die_as_the_match_stats_count() {
             assert!(got == want || !exact, "{name}: player {i} died {got} times, the stats say {want}");
         }
     }
-    assert!(corpus().is_empty() || agree * 100 >= players * 98, "{agree} of {players} players");
+    assert!(corpus().is_empty() || agree * 100 >= players * 99, "{agree} of {players} players");
+}
+
+/// Infection moves a survivor to the infected when killed: the victim's team
+/// changes at the kill, and every counted kill is between enemies the tick
+/// before.
+#[test]
+fn infection_moves_its_victims_to_the_infected() {
+    let Some((_, f)) = corpus().iter().find(|(n, _)| n == "d970bde6") else { return };
+    let mut moved = 0;
+    for (t, k) in f.kills().filter(|(_, k)| k.is_scored()) {
+        let Some(killer) = k.credited_killer() else { continue };
+        let (Some(victim), Some(killer)) = (f.player(k.victim), f.player(killer)) else { continue };
+        let before = Tick(t.0 - 1);
+        assert_ne!(victim.team_at(before), killer.team_at(before), "{t}");
+        moved += usize::from(victim.team_at(t) != victim.team_at(before));
+    }
+    assert!(moved > 0);
 }
 
 /// Each player's kills of players on the other team that the scoreboard
@@ -521,7 +538,9 @@ fn kills_count_as_the_match_stats_do() {
         if rows.len() != f.players().len() {
             continue;
         }
-        let team = |id: PlayerId| f.player(id).and_then(|p| p.team);
+        // Teams just before the kill: Infection and some minigames move
+        // players between teams, Infection at the kill itself.
+        let team = |id: PlayerId, t: Tick| f.player(id).and_then(|p| p.team_at(Tick(t.0.saturating_sub(1))));
         for (i, s) in rows.iter().enumerate() {
             // CoreStats counts AI kills too (PveStats); PvpStats are players'.
             // Firefight has no PvpStats: its kills are all of AI.
@@ -536,9 +555,7 @@ fn kills_count_as_the_match_stats_do() {
             let got = f
                 .kills()
                 .filter(|(_, k)| k.killer == Some(p) && k.victim != p && k.scored != Some(false))
-                // Infection moves players between teams: their final teams
-                // aren't the teams they had at each kill.
-                .filter(|(_, k)| f.mode() == GameMode::Infection || team(k.victim) != team(p) || team(p).is_none())
+                .filter(|&(t, k)| team(k.victim, t) != team(p, t) || team(p, t).is_none())
                 .count() as u64;
             players += 1;
             agree += usize::from(got == want);
@@ -552,7 +569,7 @@ fn kills_count_as_the_match_stats_do() {
     }
     println!("{agree} of {players} players");
     assert!(wrong.is_empty(), "{wrong:#?}");
-    assert!(corpus().is_empty() || agree * 100 >= players * 95, "{agree} of {players} players");
+    assert!(corpus().is_empty() || agree * 100 >= players * 99, "{agree} of {players} players");
 }
 
 /// Between two readings of the match clock with the same limit, the time

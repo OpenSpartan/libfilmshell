@@ -38,9 +38,16 @@ pub struct Player {
     pub kind: PlayerKind,
     /// The player's team: from their HighlightEvents records, else from the
     /// team their engine player id carries while they hold it. None in free
-    /// for all.
+    /// for all. A player can change teams during a match (Infection moves a
+    /// survivor to the infected when killed): this is the last, and
+    /// [`Player::team_at`] the one at a tick.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub team: Option<TeamId>,
+    /// Each team the player was on, from the tick they joined it, in tick
+    /// order: the team designator the game replicates for their participant.
+    /// Empty in free for all.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
+    pub teams: Vec<TeamChange>,
     /// In the match from its start.
     pub present_at_start: bool,
     /// When a player who joined in progress first appears.
@@ -72,4 +79,23 @@ impl Player {
     pub fn is_bot(&self) -> bool {
         matches!(self.kind, PlayerKind::Bot { .. })
     }
+
+    /// The player's team at `tick`: the last of [`Player::teams`] by then,
+    /// else the first, else [`Player::team`]. A death that moves a player to
+    /// another team (Infection's) moves them at the kill's tick, so the
+    /// teams a kill was between are those of the tick before.
+    pub fn team_at(&self, tick: Tick) -> Option<TeamId> {
+        self.teams.iter().rfind(|c| c.tick <= tick).or(self.teams.first()).map(|c| c.team).or(self.team)
+    }
+}
+
+/// A player's team from a tick on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct TeamChange {
+    /// When the player joined the team.
+    pub tick: Tick,
+    /// The team.
+    pub team: TeamId,
 }

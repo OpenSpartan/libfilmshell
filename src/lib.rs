@@ -86,11 +86,13 @@
 //! Infection, Firefight, the minigames, Attrition and Elimination,
 //! Extraction, Escalation, Grifball) they check that the level, every
 //! player's kills and deaths over the match, and each team's score agree
-//! with the match stats. Kills and deaths each agree for 99% of players,
-//! bots included, and for every player in the Attrition, Elimination,
-//! Infection, Juggernaut, Headhunter, Land Grab and Stockpile matches of one
-//! human with bots, where the bots' lives, deaths and kills come from the
-//! film alone.
+//! with the match stats. Kills agree for 646 of 647 players and deaths for
+//! 667 of 668, bots included, and for every player in the Attrition,
+//! Elimination, Infection, Juggernaut, Headhunter, Land Grab and Stockpile
+//! matches of one human with bots, where the bots' lives, deaths and kills
+//! come from the film alone. The one player who differs had their scoreboard
+//! row cleared partway through the match: the film counts all of their
+//! deaths, the match stats only those before it.
 //!
 //! # Features
 //!
