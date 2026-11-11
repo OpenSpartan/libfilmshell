@@ -37,7 +37,8 @@ pub enum GameMode {
     /// VIP. Recognised by `vipevents.lua`, which films of older builds
     /// carry; no VIP film of the current format has been read yet.
     Vip,
-    /// Stockpile: teams carry power seeds to their stockpiles.
+    /// Stockpile: teams carry power seeds to their stockpiles. On a Big Team
+    /// Stockpile film the events include each seed's [`SeedEvent`](crate::SeedEvent)s.
     Stockpile,
     /// Scripts the library doesn't tell apart.
     Other,

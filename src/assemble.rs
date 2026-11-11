@@ -1059,6 +1059,26 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 }
             }
         }
+        // Power seeds, placed as flags are.
+        if let Some(p) = walk.filter(|_| scripts.contains("btbstockpileevents.lua")) {
+            for o in objectives::read_seeds(&film, (&p).into()) {
+                let position = match o.at {
+                    Some(q) => {
+                        let (x, y) = window_to_world(q, w, c);
+                        Some(Position::new(x, y))
+                    }
+                    None => path_of(o.player).and_then(|k| at_frame(k, o.frame)),
+                };
+                let kind = match o.kind {
+                    objectives::SEED_STEAL => SeedEventKind::Steal,
+                    objectives::SEED_DEPOSIT => SeedEventKind::Deposit,
+                    _ => SeedEventKind::CarrierKilled,
+                };
+                if let Some(player) = pid(o.player) {
+                    events.push((o.frame, Event::Seed(SeedEvent { kind, player, position })));
+                }
+            }
+        }
         // Equipment uses: the player nearest the object it put down.
         if walk.is_some() {
             for u in deploys {

@@ -517,6 +517,41 @@ fn lives_die_as_the_match_stats_count() {
     assert!(wrong.is_empty(), "{wrong:#?}");
 }
 
+/// Each player's power seed events in Stockpile are the match stats'
+/// StockpileStats: seeds deposited, seeds stolen, carriers killed.
+#[test]
+fn power_seeds_count_as_the_match_stats_do() {
+    let mut seen = 0;
+    for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
+        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
+        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        let rows = stats["Players"].as_array().cloned().unwrap_or_default();
+        if rows.len() != f.players().len()
+            || rows.iter().all(|r| r["PlayerTeamStats"][0]["Stats"]["StockpileStats"].is_null())
+        {
+            continue;
+        }
+        for (i, row) in rows.iter().enumerate() {
+            let st = &row["PlayerTeamStats"][0]["Stats"]["StockpileStats"];
+            for (kind, key) in [
+                (SeedEventKind::Deposit, "PowerSeedsDeposited"),
+                (SeedEventKind::Steal, "PowerSeedsStolen"),
+                (SeedEventKind::CarrierKilled, "PowerSeedCarriersKilled"),
+            ] {
+                let want = st[key].as_u64().unwrap_or(0) as usize;
+                let got = f
+                    .events()
+                    .iter()
+                    .filter(|e| matches!(&e.event, Event::Seed(s) if s.kind == kind && s.player == PlayerId(i as u8)))
+                    .count();
+                assert_eq!(got, want, "{name}: player {i} {key}");
+                seen += got;
+            }
+        }
+    }
+    assert!(corpus().is_empty() || seen > 0);
+}
+
 /// Infection moves a survivor to the infected when killed: the victim's team
 /// changes at the kill, and every counted kill is between enemies the tick
 /// before.

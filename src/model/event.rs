@@ -52,6 +52,8 @@ pub enum Event {
     GameEvent(GameEvent),
     /// Something happened to a flag.
     Flag(FlagEvent),
+    /// Something happened to a power seed in Stockpile.
+    Seed(SeedEvent),
     /// Something happened at a zone or a hill, or to the skull.
     Zone(ZoneEvent),
     /// A player's respawn countdown started.
@@ -117,6 +119,8 @@ pub enum EventKind {
     GameEvent,
     /// [`Event::Flag`].
     Flag,
+    /// [`Event::Seed`].
+    Seed,
     /// [`Event::Zone`].
     Zone,
     /// [`Event::RespawnCountdown`].
@@ -145,6 +149,7 @@ impl Event {
             Event::HudMessage(_) => EventKind::HudMessage,
             Event::GameEvent(_) => EventKind::GameEvent,
             Event::Flag(_) => EventKind::Flag,
+            Event::Seed(_) => EventKind::Seed,
             Event::Zone(_) => EventKind::Zone,
             Event::RespawnCountdown(_) => EventKind::RespawnCountdown,
             Event::Headshot(_) => EventKind::Headshot,
@@ -170,6 +175,7 @@ impl Event {
             Event::EquipmentUse(u) => one(u.player),
             Event::Chatter(c) => [c.speaker, None, None],
             Event::Flag(f) => one(f.player),
+            Event::Seed(s) => one(s.player),
             Event::Zone(z) => [z.player, None, None],
             Event::RespawnCountdown(r) => one(r.player),
             Event::Headshot(h) => one(h.player),
@@ -616,6 +622,39 @@ pub enum FlagEventKind {
     CarrierKilled,
     /// An assist on a capture.
     CaptureAssist,
+}
+
+/// A power seed scoring event in Stockpile: the mode's scripts name each
+/// one, and each player's count of each kind is the match stats'. Picking a
+/// seed up is an [`Event::Pickup`] of the seed
+/// ([`game::Weapon::GenericPowerSeed`](crate::game::Weapon::GenericPowerSeed)).
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct SeedEvent {
+    /// What happened.
+    pub kind: SeedEventKind,
+    /// Who did it.
+    pub player: PlayerId,
+    /// Where: the event's own position, else the player's.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub position: Option<Position>,
+}
+
+/// What happened to a power seed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+pub enum SeedEventKind {
+    /// Taken from the other team's stockpile: the match stats'
+    /// PowerSeedsStolen.
+    Steal,
+    /// Delivered to the player's team's stockpile: the match stats'
+    /// PowerSeedsDeposited.
+    Deposit,
+    /// Its carrier killed: the match stats' PowerSeedCarriersKilled.
+    CarrierKilled,
 }
 
 /// A zone, hill or skull event.

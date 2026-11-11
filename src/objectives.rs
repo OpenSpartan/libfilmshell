@@ -1,12 +1,12 @@
-//! Capture the Flag events from PlayerGameEventSmall (82), the game's
-//! scoring and announcement events.
+//! Capture the Flag's and Stockpile's events from PlayerGameEventSmall
+//! (82), the game's scoring and announcement events.
 //!
 //! The event's id is an index into the game's event list, its last 32 bits
 //! a mask of the players it is about (bit 31 - player index). Six ids are
-//! the flag events in Capture the Flag. The same ids turn up in other modes
-//! with other meanings, so they are read only when the mode is CTF. A grab
-//! carries where the flag was, and the second event of a return where the
-//! returner stood.
+//! the flag events in Capture the Flag, three the power seed events in Big
+//! Team Stockpile. The same ids turn up in other modes with other meanings,
+//! so each table is read only in its mode. A grab carries where the flag
+//! was, and the second event of a return where the returner stood.
 
 use crate::container::Film;
 use crate::events::{Body, Layout, Value};
@@ -32,6 +32,21 @@ const CTF: [(u32, u8); 6] = [
 /// The return's second event, which carries the returner's position.
 const RETURN_AT: u32 = 0x2bf;
 
+/// Power seed kinds.
+pub const SEED_STEAL: u8 = 0;
+pub const SEED_DEPOSIT: u8 = 1;
+pub const SEED_CARRIER_KILLED: u8 = 2;
+
+/// Event id to kind in Big Team Stockpile (`btbstockpileevents.lua`), the
+/// responses of the mode's event walk that score, with the stat each id
+/// counts toward. A pickup's response is an announcer line, sent for some
+/// pickups only: the seed's own pickup events count them.
+const STOCKPILE: [(u32, u8); 3] = [
+    (0x332, SEED_STEAL),          // onCapacitorStolenScore: PowerSeedsStolen
+    (0x329, SEED_DEPOSIT),        // capacitorDepositedPersonalScoreResponse: PowerSeedsDeposited
+    (0x337, SEED_CARRIER_KILLED), // onCarrierKilledResponsePlayer: PowerSeedCarriersKilled
+];
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Objective {
     pub frame: i64,
@@ -39,6 +54,23 @@ pub struct Objective {
     pub player: i32,
     /// Position codes in the level box, when the event carries them.
     pub at: Option<[u32; 3]>,
+}
+
+/// The power seed events of a Big Team Stockpile film, in frame order, as
+/// [`Objective`]s with the `SEED_` kinds.
+pub fn read_seeds(film: &Film, layout: Layout) -> Vec<Objective> {
+    let mut out = Vec::new();
+    for_each_event_view(film, layout, |frame, evs| {
+        for e in evs {
+            let Body::Game(g) = e.body else { continue };
+            let Some(&(_, kind)) = STOCKPILE.iter().find(|c| c.0 == g.id) else { continue };
+            let at = g.values.iter().flatten().find_map(|(_, v)| if let Value::Pos(p) = v { *p } else { None });
+            for p in (0..32).filter(|p| g.last & (0x8000_0000u32 >> p) != 0) {
+                out.push(Objective { frame: frame as i64, kind, player: p, at });
+            }
+        }
+    });
+    out
 }
 
 /// The film's objective events in frame order; empty unless `ctf`.

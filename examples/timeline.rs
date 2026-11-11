@@ -9,7 +9,7 @@
 
 mod common;
 
-use filmshell::{ActionKind, Event, Film, PlayerId, Tick};
+use filmshell::{ActionKind, Event, Film, FlagEventKind, PlayerId, SeedEventKind, Tick};
 
 fn main() -> std::process::ExitCode {
     common::main(run)
@@ -41,6 +41,23 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             Event::Pickup(p) => format!("picked up {}", p.item.name().unwrap_or("an item")),
             Event::Action(a) if a.kind == ActionKind::Reload => "reloaded".to_string(),
             Event::Medal(m) => format!("earned {}", m.medal().map_or("a medal", |m| m.name())),
+            Event::Flag(f) => match f.kind {
+                FlagEventKind::Grab => "picked up the flag",
+                FlagEventKind::Steal => "took the flag from its stand",
+                FlagEventKind::Capture => "captured the flag",
+                FlagEventKind::Return => "returned the flag",
+                FlagEventKind::CarrierKilled => "killed the flag carrier",
+                FlagEventKind::CaptureAssist => "assisted a capture",
+                _ => continue,
+            }
+            .to_string(),
+            Event::Seed(s) => match s.kind {
+                SeedEventKind::Steal => "stole a power seed",
+                SeedEventKind::Deposit => "deposited a power seed",
+                SeedEventKind::CarrierKilled => "killed a power seed carrier",
+                _ => continue,
+            }
+            .to_string(),
             Event::VehicleExit(x) => {
                 let vehicle = film.vehicle_at(x.vehicle, e.tick).and_then(|v| v.vehicle());
                 format!("got out of {}", vehicle.map_or("a vehicle", |v| v.name()))

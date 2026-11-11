@@ -37,7 +37,8 @@ The first release, 0.1.0.
   player between samples.
 - `GameMode` names the mode a film's scripts run, Attrition and Elimination, Extraction,
   Escalation, Infection and Stockpile among them; `game::modes` lists each mode's options and their
-  defaults.
+  defaults. Capture the Flag's flag events and Big Team Stockpile's power seed events (steals,
+  deposits, carriers killed) are in the event stream, named by the modes' scripts.
 - `filmshell::game` holds the game's own tables: weapons, vehicles, medals, damage effects, and
   levels with their English names, the services' level ids and their quantization boxes.
 - `filmshell::format` exposes the raw layers, with the game's names for every event and entity
