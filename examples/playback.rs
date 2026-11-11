@@ -1,5 +1,6 @@
 //! The match at one moment: where everyone was, their shield and health,
-//! and what they held, with its rounds, or rode.
+//! and what they held, with its rounds, or rode; then the vehicles, the
+//! grenades in the air and the weapons on the ground.
 //!
 //! ```text
 //! cargo run --release --example playback -- path/to/film 90
@@ -24,7 +25,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     for p in film.players() {
         let name = p.name().unwrap_or("unnamed");
         let Some(now) = film.player_at(p.id, at) else {
-            println!("{name:<16} not on the map");
+            println!("{name:<20} not on the map");
             continue;
         };
         let s = now.sample;
@@ -42,7 +43,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             (None, None) => String::new(),
         };
         let vitals = percent("shield", s.shield) + &percent("health", s.health);
-        println!("{name:<16} {place}{vitals}  {doing}");
+        println!("{name:<20} {place}{vitals}  {doing}");
+    }
+
+    for (v, at) in film.vehicles_at(at) {
+        let name = v.vehicle().map_or("a vehicle", |v| v.name());
+        println!("{name:<20} {:7.1} {:7.1}", at.x, at.y);
+    }
+    for (g, at) in film.grenades_at(at) {
+        let name = g.grenade.map_or("a grenade", |g| g.name());
+        let thrower = film.player_name(g.player).unwrap_or("someone");
+        println!("{name:<20} {:7.1} {:7.1}  thrown by {thrower}", at.x, at.y);
+    }
+    for w in film.ground_weapons_at(at) {
+        let name = w.tag.name().unwrap_or("a weapon");
+        println!("{name:<20} {:7.1} {:7.1}  on the ground", w.position.x, w.position.y);
     }
     Ok(())
 }

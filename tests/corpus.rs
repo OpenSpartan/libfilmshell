@@ -303,6 +303,43 @@ fn garbage_replay_chunks_are_refused() {
     }
 }
 
+/// Damaged chunks never make the reader panic: a film reads or is refused.
+/// Each run damages one inflated chunk of a real film, the header every
+/// fourth run, in one of four ways: a few flipped bits, thousands, the chunk
+/// cut short, or a stretch of it overwritten with noise.
+#[test]
+fn damaged_chunks_never_panic() {
+    let mut x = 0x9e37_79b9_7f4a_7c15u64;
+    let mut next = |n: usize| {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        (x % n as u64) as usize
+    };
+    for prefix in ["dc2ce439", "c3790060"] {
+        let Some(dir) = common::film(prefix) else { return };
+        let base = common::load_folder(&dir).unwrap();
+        for run in 0..8 {
+            let mut chunks = base.clone();
+            let c = if run % 4 == 0 { 0 } else { 1 + next(chunks.len() - 1) };
+            let data = chunks[c].data.to_mut();
+            let len = data.len();
+            match run % 4 {
+                0 => (0..1 + next(64)).for_each(|_| data[next(len)] ^= 1 << next(8)),
+                1 => (0..1000 + next(8000)).for_each(|_| data[next(len)] ^= 1 << next(8)),
+                2 => data.truncate(next(len)),
+                _ => {
+                    let at = next(len);
+                    let n = (1 + next(4096)).min(len - at);
+                    data[at..at + n].iter_mut().for_each(|b| *b = next(256) as u8);
+                }
+            }
+            let read = std::panic::catch_unwind(|| Film::from_chunks(chunks).map(|f| f.events().len()));
+            assert!(read.is_ok(), "{prefix} run {run}, chunk {c}: the reader panicked");
+        }
+    }
+}
+
 /// Chunk files are told apart by their bytes: the highlights chunk is the
 /// last, and a folder without it reads as a film with no highlights.
 #[test]
@@ -338,6 +375,7 @@ fn rides_come_from_the_parent_state() {
             assert!(r.from <= r.to, "{name}: {r:?}");
             let lives: Vec<&Life> = f.lives_of(r.player).filter(|l| f.life_rides(l).any(|x| x == r)).collect();
             assert_eq!(lives.len(), 1, "{name}: {r:?} is in one life");
+            assert!(!lives[0].is_over_at(r.to), "{name}: {r:?} outlasts its life");
         }
         for e in f.events() {
             let Event::VehicleExit(x) = &e.event else { continue };
@@ -359,6 +397,27 @@ fn rides_come_from_the_parent_state() {
         }
     }
     assert!(exits > 0 && inside == exits, "{inside} of {exits} exits end a ride");
+}
+
+/// A vehicle stays on the map from its first record until it is removed,
+/// which is never before that record, and a ride in it ends while it is
+/// there. Most vehicles are removed before the film ends.
+#[test]
+fn ridden_vehicles_are_on_the_map() {
+    let (mut removed, mut tracks) = (0, 0);
+    for (name, f) in corpus() {
+        for v in f.vehicles() {
+            let (_, last) = v.span().unwrap();
+            assert!(v.removed.is_none_or(|r| r >= last), "{name}: vehicle {} removed before its last record", v.entity);
+            tracks += 1;
+            removed += usize::from(v.removed.is_some());
+        }
+        for r in f.rides() {
+            let Some(v) = f.ride_vehicle(r) else { continue };
+            assert!(v.on_map_at(r.to), "{name}: {r:?} outlasts vehicle {}", v.entity);
+        }
+    }
+    assert!(removed * 100 >= tracks * 75, "{removed} of {tracks} vehicles removed");
 }
 
 /// Every death a player's HighlightEvents records is a life of theirs that

@@ -41,6 +41,8 @@ pub struct Vehicles {
     tags: HashMap<i32, Vec<(i64, u32)>>,
     /// Per part id: (its tag, its vehicle's id).
     parent: HashMap<i32, (u32, i32)>,
+    /// Per id, the frames of its deletes, in order.
+    deletes: HashMap<i32, Vec<i64>>,
 }
 
 impl Vehicles {
@@ -57,10 +59,14 @@ impl Vehicles {
     pub fn reader(&mut self) -> impl FnMut(usize, &[u8], &Payload) + '_ {
         move |i, _, p| {
             for op in &p.ops {
-                if let (OpKind::Create { tag: Some(t) }, Some(id)) = (&op.kind, id(op.index, op.generation)) {
-                    if op.entity_type.is_none_or(|e| e == VEHICLE) {
-                        self.tags.entry(id).or_default().push((i as i64, *t));
-                    }
+                let Some(id) = id(op.index, op.generation).filter(|_| op.entity_type.is_none_or(|e| e == VEHICLE))
+                else {
+                    continue;
+                };
+                match &op.kind {
+                    OpKind::Create { tag: Some(t) } => self.tags.entry(id).or_default().push((i as i64, *t)),
+                    OpKind::Delete => self.deletes.entry(id).or_default().push(i as i64),
+                    _ => {}
                 }
             }
         }
@@ -111,6 +117,16 @@ impl Vehicles {
     /// tags, in order.
     pub fn starts(&self, id: i32) -> &[(i64, u32)] {
         self.tags.get(&id).map_or(&[], Vec::as_slice)
+    }
+
+    /// When the vehicle `id` named at `frame` left the map: its first delete
+    /// at or after `frame`, or the id's next start, when that comes first
+    /// (the id then names another vehicle, so this one is gone). None if
+    /// neither follows.
+    pub fn removed(&self, id: i32, frame: i64) -> Option<i64> {
+        let delete = self.deletes.get(&id).and_then(|d| d.iter().find(|&&f| f >= frame).copied());
+        let start = self.starts(id).iter().map(|s| s.0).find(|&f| f > frame);
+        delete.into_iter().chain(start).min()
     }
 
     /// Ties each part in a snapshot to the vehicle standing where it does.

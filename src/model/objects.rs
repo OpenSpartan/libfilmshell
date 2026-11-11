@@ -21,8 +21,10 @@ impl PathPoint {
     }
 }
 
-/// A vehicle's track: one vehicle object from its creation, or the film's
-/// start, to its last position record.
+/// A vehicle's track: one vehicle object, its positions from its first
+/// record to its last, and when it left the map. A vehicle sends its position
+/// when it moves, so one parked stays where its last record put it, often
+/// for minutes, until the game deletes it.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
@@ -35,6 +37,12 @@ pub struct VehicleTrack {
     /// Where it was, in tick order.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub track: Vec<PathPoint>,
+    /// When it left the map, so not inclusive: the game deleted it (a wreck
+    /// is deleted some seconds after it was destroyed), or its id was given
+    /// to another vehicle. None if it was there to the end, or the film's
+    /// delete wasn't read.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub removed: Option<Tick>,
 }
 
 impl VehicleTrack {
@@ -43,16 +51,21 @@ impl VehicleTrack {
         game::Vehicle::from_tag(self.tag)
     }
 
-    /// The first and last ticks of the track, both inclusive.
+    /// The ticks of the track's first and last records, both inclusive.
     pub fn span(&self) -> Option<(Tick, Tick)> {
         Some((self.track.first()?.tick, self.track.last()?.tick))
     }
 
-    /// Where the vehicle was at `tick`: its last position at or before it.
-    /// None before the track starts and after it ends.
+    /// Whether the vehicle was on the map at `tick`: from its first record
+    /// until it was [removed](VehicleTrack::removed).
+    pub fn on_map_at(&self, tick: Tick) -> bool {
+        self.track.first().is_some_and(|p| p.tick <= tick) && self.removed.is_none_or(|r| tick < r)
+    }
+
+    /// Where the vehicle was at `tick`: its last position at or before it,
+    /// while it was [on the map](VehicleTrack::on_map_at).
     pub fn position_at(&self, tick: Tick) -> Option<Position> {
-        let (_, end) = self.span()?;
-        if tick > end {
+        if !self.on_map_at(tick) {
             return None;
         }
         let i = self.track.partition_point(|p| p.tick <= tick).checked_sub(1)?;
@@ -133,6 +146,12 @@ impl WorldObject {
     pub fn item(&self) -> Option<Item> {
         game::item(self.tag)
     }
+
+    /// Whether the snapshots had it on the map at `tick`: from
+    /// [`from`](WorldObject::from) until [`to`](WorldObject::to).
+    pub fn on_map_at(&self, tick: Tick) -> bool {
+        self.from <= tick && self.to.is_none_or(|t| tick < t)
+    }
 }
 
 /// A weapon lying on the ground after it was dropped or spawned, where it
@@ -155,6 +174,14 @@ pub struct GroundWeapon {
     pub taken: bool,
 }
 
+impl GroundWeapon {
+    /// Whether it lay on the ground at `tick`: from
+    /// [`from`](GroundWeapon::from) until [`to`](GroundWeapon::to).
+    pub fn on_map_at(&self, tick: Tick) -> bool {
+        self.from <= tick && self.to.is_none_or(|t| tick < t)
+    }
+}
+
 /// A thrown grenade's flight.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -172,6 +199,27 @@ pub struct GrenadeFlight {
     pub end: Tick,
     /// Whether `end` is the grenade's deletion.
     pub deleted: bool,
+}
+
+impl GrenadeFlight {
+    /// Where the grenade was at `tick`, from its path's first point to
+    /// [`end`](GrenadeFlight::end): between the two points around `tick`,
+    /// in proportion to the time between them, then at the last point. The
+    /// path is thinned, so this is the flight's line, not each tick's
+    /// recorded position. None outside the flight.
+    pub fn position_at(&self, tick: Tick) -> Option<Position> {
+        let first = self.path.first()?;
+        if tick < first.tick || tick > self.end {
+            return None;
+        }
+        let i = self.path.partition_point(|p| p.tick <= tick);
+        let a = self.path[i - 1];
+        let Some(b) = self.path.get(i) else { return Some(a.position) };
+        let f = (tick.0 - a.tick.0) as f64 / (b.tick.0 - a.tick.0) as f64;
+        let mid = |a: f64, b: f64| a + (b - a) * f;
+        let (p, q) = (a.position, b.position);
+        Some(Position { x: mid(p.x, q.x), y: mid(p.y, q.y), z: p.z.zip(q.z).map(|(a, b)| mid(a, b)).or(p.z) })
+    }
 }
 
 /// The ground a zone covers, in world units.
@@ -255,6 +303,14 @@ pub struct Zone {
     pub states: Vec<ZoneState>,
 }
 
+impl Zone {
+    /// Its state at `tick`: the last to start at or before it. None before
+    /// the first.
+    pub fn state_at(&self, tick: Tick) -> Option<&ZoneState> {
+        self.states[..self.states.partition_point(|s| s.tick <= tick)].last()
+    }
+}
+
 /// King of the Hill's points on the current hill.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -269,6 +325,14 @@ pub struct HillScore {
     pub points: Vec<HillPoints>,
 }
 
+impl HillScore {
+    /// `team`'s points on the current hill at `tick`: its last change at or
+    /// before it, 0 before the first.
+    pub fn points_at(&self, team: TeamId, tick: Tick) -> u32 {
+        self.points.iter().take_while(|p| p.tick <= tick).filter(|p| p.team == team).last().map_or(0, |p| p.points)
+    }
+}
+
 /// A team's points on the current King of the Hill hill, from `tick` on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -280,4 +344,78 @@ pub struct HillPoints {
     pub team: TeamId,
     /// The points.
     pub points: u32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn at(t: u32, x: f64) -> PathPoint {
+        PathPoint::new(Tick(t), Position::new(x, 0.0))
+    }
+
+    #[test]
+    fn a_parked_vehicle_stays_until_removed() {
+        let v = VehicleTrack {
+            entity: EntityId(1),
+            tag: TagId(0),
+            track: vec![at(10, 1.0), at(20, 2.0)],
+            removed: Some(Tick(100)),
+        };
+        assert_eq!(v.position_at(Tick(9)), None);
+        assert_eq!(v.position_at(Tick(15)).map(|p| p.x), Some(1.0));
+        assert_eq!(v.position_at(Tick(99)).map(|p| p.x), Some(2.0));
+        assert_eq!(v.position_at(Tick(100)), None);
+        let kept = VehicleTrack { removed: None, ..v };
+        assert!(kept.on_map_at(Tick(1_000_000)));
+    }
+
+    #[test]
+    fn a_grenade_moves_along_its_path() {
+        let g = GrenadeFlight {
+            player: PlayerId(0),
+            grenade: None,
+            path: vec![at(10, 0.0), at(20, 10.0)],
+            end: Tick(30),
+            deleted: true,
+        };
+        assert_eq!(g.position_at(Tick(9)), None);
+        assert_eq!(g.position_at(Tick(10)).map(|p| p.x), Some(0.0));
+        assert_eq!(g.position_at(Tick(15)).map(|p| p.x), Some(5.0));
+        assert_eq!(g.position_at(Tick(25)).map(|p| p.x), Some(10.0));
+        assert_eq!(g.position_at(Tick(31)), None);
+    }
+
+    #[test]
+    fn states_and_points_hold_until_they_change() {
+        let state = |t: u32, progress: u32| ZoneState {
+            tick: Tick(t),
+            owner: None,
+            capturing: None,
+            progress,
+            contested: false,
+            inside: PlayerMask(0),
+        };
+        let zone = Zone {
+            entity: 0,
+            position: Position::new(0.0, 0.0),
+            letter: Some('A'),
+            shape: None,
+            states: vec![state(10, 0), state(20, 50)],
+        };
+        assert_eq!(zone.state_at(Tick(9)), None);
+        assert_eq!(zone.state_at(Tick(19)).map(|s| s.progress), Some(0));
+        assert_eq!(zone.state_at(Tick(20)).map(|s| s.progress), Some(50));
+
+        let points = |t: u32, team: u8, points: u32| HillPoints { tick: Tick(t), team: TeamId(team), points };
+        let hill = HillScore {
+            points_to_win: 100,
+            hills_to_win: 3,
+            points: vec![points(10, 0, 5), points(12, 1, 3), points(20, 0, 0)],
+        };
+        assert_eq!(hill.points_at(TeamId(0), Tick(9)), 0);
+        assert_eq!(hill.points_at(TeamId(0), Tick(15)), 5);
+        assert_eq!(hill.points_at(TeamId(1), Tick(15)), 3);
+        assert_eq!(hill.points_at(TeamId(0), Tick(20)), 0);
+    }
 }

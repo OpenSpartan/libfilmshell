@@ -554,8 +554,13 @@ fn mark_headshots(events: &mut [TimedEvent]) {
 /// The vehicle tracks: each tagged vehicle's position records, split where
 /// its id stands for a new vehicle, by first frame then id. Records with no
 /// known tag are chance matches of the scanner and are left out.
-fn vehicle_tracks(ex: &ExtractionResult, c: &Calibration) -> Vec<(i32, u32, Vec<WorldPosition>)> {
+fn vehicle_tracks(ex: &ExtractionResult, c: &Calibration) -> Vec<(i32, u32, Vec<WorldPosition>, Option<i64>)> {
     let mut out = Vec::new();
+    // Each track with the frame its vehicle left the map.
+    let mut track = |id: i32, tag: u32, pts: &[MotionPoint]| {
+        let gone = pts.last().and_then(|p| ex.vehicle_ident.removed(id, p.frame));
+        out.push((id, tag, apply_calibration(pts, c), gone));
+    };
     for (&id, v) in &ex.vehicles {
         let mut v = v.clone();
         v.sort_by_key(|s| s.gp);
@@ -565,13 +570,13 @@ fn vehicle_tracks(ex: &ExtractionResult, c: &Calibration) -> Vec<(i32, u32, Vec<
             let k = starts.iter().rposition(|x| x.0 <= s.tick).unwrap_or(0);
             let Some(tag) = ex.vehicle_ident.tag(id, s.tick) else { continue };
             if let Some((_, t, pts)) = cur.take_if(|c| c.0 != k || c.1 != tag) {
-                out.push((id, t, apply_calibration(&pts, c)));
+                track(id, t, &pts);
             }
             let p = MotionPoint { frame: s.tick, raw1: s.c1, raw2: s.c2, gp: s.gp, in_vehicle: false, vehicle: id };
             cur.get_or_insert_with(|| (k, tag, Vec::new())).2.push(p);
         }
         if let Some((_, t, pts)) = cur {
-            out.push((id, t, apply_calibration(&pts, c)));
+            track(id, t, &pts);
         }
     }
     out.sort_by_key(|t| (t.2[0].frame, t.0));
@@ -1259,10 +1264,11 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         rides.sort_by_key(|r| (r.from, r.player));
         vehicles = tracks
             .into_iter()
-            .map(|(id, tag, pts)| VehicleTrack {
+            .map(|(id, tag, pts, gone)| VehicleTrack {
                 entity: EntityId(id as u16),
                 tag: TagId(tag),
                 track: pts.iter().map(|p| PathPoint::new(tick(p.frame), Position::new(p.x, p.y))).collect(),
+                removed: gone.map(tick),
             })
             .collect();
     }
@@ -1595,6 +1601,17 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     }
     for l in lives.iter_mut().filter(|l| l.player.is_none() && l.died) {
         l.until = l.end();
+    }
+    // A ride is part of a life: a body left seated in a vehicle rides on
+    // after the death, the life doesn't.
+    for r in &mut rides {
+        let life = lives
+            .iter()
+            .filter(|l| l.player == Some(r.player))
+            .find(|l| l.start().is_some_and(|s| s <= r.from) && !l.is_over_at(r.from));
+        if let Some(until) = life.and_then(|l| l.until) {
+            r.to = r.to.min(until);
+        }
     }
 
     // What each player pressed and carried.

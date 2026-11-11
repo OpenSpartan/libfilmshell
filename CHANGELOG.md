@@ -34,7 +34,13 @@ The first release, 0.1.0.
 - Playback: `Film::players_at` gives every living player at a tick with their life, sample,
   weapon and its rounds, grenades, ride and vehicle; `life_at`, `sample_at`, `weapon_at`,
   `ride_at`, `vehicle_at` and `events_in` look up one thing, and `Life::position_at` places a
-  player between samples.
+  player between samples. The rest of the map at a tick: `vehicles_at` (a parked vehicle stays
+  where it stopped until the game deletes it, `VehicleTrack::removed`), `grenades_at`,
+  `ground_weapons_at` and `world_objects_at`; `Zone::state_at` and `HillScore::points_at`.
+- A ride ends when its vehicle is deleted, and with the rider's life: a driver killed with their
+  tank stays seated in the wreck, but the ride stops at the death.
+- Damaged chunks never panic: the tests read real films with flipped bits, cut-short chunks and
+  stretches of noise, and each one reads or is refused.
 - `GameMode` names the mode a film's scripts run, Attrition and Elimination, Extraction,
   Escalation, Infection and Stockpile among them; `game::modes` lists each mode's options and their
   defaults. Capture the Flag's flag events and Big Team Stockpile's power seed events (steals,

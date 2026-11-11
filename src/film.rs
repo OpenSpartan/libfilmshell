@@ -331,15 +331,17 @@ impl Film {
         &self.vehicles
     }
 
-    /// The track of the vehicle `entity` names at `tick`: of the tracks with
-    /// that id, the last to start at or before `tick`. Ids are reused, so
-    /// the tick picks the vehicle; a vehicle may stop sending positions while
-    /// still in use, so the track can end before `tick`.
+    /// The track of the vehicle `entity` names at `tick`, while that vehicle
+    /// is on the map ([`VehicleTrack::on_map_at`]). Ids are reused, so the
+    /// tick picks the vehicle.
     pub fn vehicle_at(&self, entity: EntityId, tick: Tick) -> Option<&VehicleTrack> {
-        self.vehicles
-            .iter()
-            .filter(|v| v.entity == entity && v.span().is_some_and(|(from, _)| from <= tick))
-            .max_by_key(|v| v.span().map(|s| s.0))
+        self.vehicles.iter().filter(|v| v.entity == entity && v.on_map_at(tick)).max_by_key(|v| v.span().map(|s| s.0))
+    }
+
+    /// Every vehicle on the map at `tick`, with where it was, in the order
+    /// of [`Film::vehicles`]: driven, ridden or standing empty.
+    pub fn vehicles_at(&self, tick: Tick) -> impl Iterator<Item = (&VehicleTrack, Position)> + '_ {
+        self.vehicles.iter().filter_map(move |v| Some((v, v.position_at(tick)?)))
     }
 
     /// Every ride, in tick order.
@@ -372,14 +374,32 @@ impl Film {
         &self.world
     }
 
+    /// What the snapshots had on the map at `tick`
+    /// ([`WorldObject::on_map_at`]).
+    pub fn world_objects_at(&self, tick: Tick) -> impl Iterator<Item = &WorldObject> + '_ {
+        self.world.iter().filter(move |o| o.on_map_at(tick))
+    }
+
     /// Weapons that lay on the ground.
     pub fn ground_weapons(&self) -> &[GroundWeapon] {
         &self.ground
     }
 
+    /// The weapons lying on the ground at `tick`
+    /// ([`GroundWeapon::on_map_at`]).
+    pub fn ground_weapons_at(&self, tick: Tick) -> impl Iterator<Item = &GroundWeapon> + '_ {
+        self.ground.iter().filter(move |g| g.on_map_at(tick))
+    }
+
     /// Thrown grenades' flights, in throw order.
     pub fn grenade_flights(&self) -> &[GrenadeFlight] {
         &self.grenades
+    }
+
+    /// The grenades in the air at `tick`, with where each was
+    /// ([`GrenadeFlight::position_at`]), in throw order.
+    pub fn grenades_at(&self, tick: Tick) -> impl Iterator<Item = (&GrenadeFlight, Position)> + '_ {
+        self.grenades.iter().filter_map(move |g| Some((g, g.position_at(tick)?)))
     }
 
     /// The zones or hills of a zone mode.

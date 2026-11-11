@@ -8,7 +8,9 @@
 //! client applies it with `1406c8990`, which seats the unit in that seat of
 //! that vehicle (`1410dd658`) or unseats it. So a biped attached to a vehicle
 //! is a rider in it, in the seat named, from the update that attaches it to
-//! the one that detaches it, attaches it elsewhere or deletes it.
+//! the one that detaches it, attaches it elsewhere or deletes it, or to the
+//! vehicle's own deletion: a body left seated in a destroyed vehicle sends no
+//! update when the wreck goes.
 //!
 //! The parent is a kind-1 handle: `[unit:1]`, a 9-bit unit index (bipeds
 //! 0-255, vehicles 256-511) and a 2-bit generation, so a vehicle parent's id
@@ -48,12 +50,13 @@ pub struct Span {
 }
 
 /// How a span ended: detached, attached to another parent or seat,
-/// deleted, or the film ended.
+/// deleted, its parent deleted, or the film ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum End {
     Detach,
     Change,
     Delete,
+    ParentDelete,
     Film,
 }
 
@@ -126,6 +129,15 @@ pub fn reader(actor_control: u32, seen: &mut Seen) -> impl FnMut(usize, &[u8], &
                 OpKind::Delete => {
                     if let Some(o) = seen.open.remove(&key) {
                         seen.close(key, o, frame, End::Delete);
+                    }
+                    // What hung from a deleted vehicle hangs from nothing.
+                    if let Some(gone) = crate::vehicles::id(op.index, op.generation) {
+                        let mut on: Vec<_> = seen.open.iter().filter(|(_, o)| o.1 == gone).map(|(&k, &o)| (k, o)).collect();
+                        on.sort_unstable();
+                        for (k, o) in on {
+                            seen.open.remove(&k);
+                            seen.close(k, o, frame - 1, End::ParentDelete);
+                        }
                     }
                     continue;
                 }
