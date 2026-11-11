@@ -167,9 +167,10 @@ impl Event {
     }
 
     /// The players the event is about: a kill's victim, killer and
-    /// assistant, a hit's attacker and victim, a game event's players, the
-    /// player who acted for the rest. A voice line's or a HUD message's
-    /// audience isn't counted.
+    /// assistant, a hit's attacker and victim, a destroyed vehicle's
+    /// destroyer and the riders killed with it, a hijack's hijacker and the
+    /// player thrown out, a game event's players, the player who acted for
+    /// the rest. A voice line's or a HUD message's audience isn't counted.
     pub fn players(&self) -> impl Iterator<Item = PlayerId> + use<> {
         let one = |p: PlayerId| [Some(p), None, None];
         let few = match self {

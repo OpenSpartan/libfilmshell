@@ -271,10 +271,11 @@ impl Film {
     }
 
     /// Everything playback draws for `player` at `tick`: their life and
-    /// sample then, the weapon in their hands, and the ride and vehicle
-    /// they're in. None while they aren't alive ([`Film::life_at`]). The
-    /// sample is the last at or before `tick`; [`Life::position_at`] places
-    /// the player between samples.
+    /// sample then, the weapon in their hands with its rounds, charge or
+    /// heat, their grenades, the objective they carry, and the ride and
+    /// vehicle they're in. None while they aren't alive
+    /// ([`Film::life_at`]). The sample is the last at or before `tick`;
+    /// [`Life::position_at`] places the player between samples.
     ///
     /// ```no_run
     /// # fn run(film: &filmshell::Film, id: filmshell::PlayerId) {
@@ -407,7 +408,8 @@ impl Film {
         self.grenades.iter().filter_map(move |g| Some((g, g.position_at(tick)?)))
     }
 
-    /// Every other projectile's flight, in the order they were fired.
+    /// Every projectile's flight but thrown grenades' (those are
+    /// [`Film::grenade_flights`]), in the order they were fired.
     pub fn projectiles(&self) -> &[ProjectileFlight] {
         &self.projectiles
     }

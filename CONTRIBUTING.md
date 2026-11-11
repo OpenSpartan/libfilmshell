@@ -23,7 +23,7 @@ nothing. With the variable set, a missing film fails the tests.
 FILMSHELL_TEST_FILMS=/path/to/films cargo test --release --all-features
 ```
 
-The tests read eight films at a time and keep every film read: on 95 films they take about two
+The tests read eight films at a time and keep every film read: on 95 films they take about three
 minutes and 6 GB of memory.
 
 CI runs them against a private set of films, since films carry every player's gamertag and XUID.

@@ -1,7 +1,7 @@
 //! The match at one moment: where everyone was, their shield and health,
-//! what they held, with its rounds, or rode, and what objective they
-//! carried; then the vehicles, the grenades and other projectiles in the
-//! air and the weapons on the ground.
+//! what they held, with its rounds, charge or heat, or rode, and what
+//! objective they carried; then the vehicles, the grenades and other
+//! projectiles in the air and the weapons on the ground.
 //!
 //! ```text
 //! cargo run --release --example playback -- path/to/film 90
