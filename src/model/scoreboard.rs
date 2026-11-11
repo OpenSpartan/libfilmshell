@@ -119,12 +119,46 @@ pub struct MatchClock {
     pub limit: f64,
     /// Seconds left.
     pub left: f64,
-    /// The timer's 5-bit state as the game sends it. Seen on the test
-    /// films: 1 while stopped; 6 while running in timed modes, where a mode
-    /// like Oddball also stops it while no one scores; 19 while running in
-    /// the rounds of Attrition and Elimination, which have no time limit.
-    /// What the bits mean isn't known.
+    /// The timer's 5-bit state as the game sends it: an index into the
+    /// game's table of timer rates ([`MatchClock::rate`]). On the test films
+    /// it is 1 while stopped, 6 counting down at the normal rate in timed
+    /// modes (Oddball stops it while no one scores), and 19 counting up at
+    /// the normal rate in the rounds of Attrition and Elimination, which
+    /// have no time limit.
     pub state: u32,
+}
+
+/// The game's timer rates: index 2 to 14 counts down, 15 to 27 counts up.
+const CLOCK_RATES: [f64; 13] = [0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 3.0, 4.0, 5.0, 10.0];
+
+impl MatchClock {
+    /// Seconds of clock per second of game time: negative while it counts
+    /// down, 0 while it stands still, 1 for a state past the table (the
+    /// game's default).
+    pub fn rate(&self) -> f64 {
+        match self.state {
+            0 | 1 => 0.0,
+            s @ 2..=14 => -CLOCK_RATES[s as usize - 2],
+            s @ 15..=27 => CLOCK_RATES[s as usize - 15],
+            _ => 1.0,
+        }
+    }
+
+    /// Whether the timer is stopped, as the game's scripts ask it
+    /// (`IsRoundTimerStopped`): state 1.
+    pub fn is_stopped(&self) -> bool {
+        self.state == 1
+    }
+
+    /// Whether the time left is going down.
+    pub fn is_counting_down(&self) -> bool {
+        self.rate() < 0.0
+    }
+
+    /// Whether the time is going up (a round with no time limit).
+    pub fn is_counting_up(&self) -> bool {
+        self.rate() > 0.0
+    }
 }
 
 /// The engine's state at a seek snapshot, every 20 s.

@@ -23,7 +23,9 @@ The first release, 0.1.0.
   bot removed to make room for a joiner doesn't die. Each player's deaths, the bots' included,
   equal the match stats' for 99% of players on the test films.
 - The scoreboard has every value the game sends, with the round it is for (`StatChange::round`);
-  `Scoreboard::total_stat` adds the rounds up, as the match stats do.
+  `Scoreboard::total_stat` adds the rounds up, as the match stats do. The match clock's state is
+  the index of its rate in the game's table: `MatchClock::rate`, `is_stopped`, `is_counting_down`
+  and `is_counting_up`.
 - Playback: `Film::players_at` gives every living player at a tick with their life, sample,
   weapon and its rounds, grenades, ride and vehicle; `life_at`, `sample_at`, `weapon_at`,
   `ride_at`, `vehicle_at` and `events_in` look up one thing.

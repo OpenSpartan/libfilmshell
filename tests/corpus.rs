@@ -553,6 +553,26 @@ fn kills_count_as_the_match_stats_do() {
     assert!(corpus().is_empty() || agree * 100 >= players * 95, "{agree} of {players} players");
 }
 
+/// Between two readings of the match clock with the same limit, the time
+/// left moves by the timer's rate: on 95% of them (the mode's scripts can
+/// also set the time outright).
+#[test]
+fn the_match_clock_runs_at_its_rate() {
+    let (mut intervals, mut agree) = (0usize, 0usize);
+    for (_, f) in corpus() {
+        for w in f.scoreboard().match_clock.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            let seconds = (b.tick.0 as f64 - a.tick.0 as f64) / 60.0;
+            if a.limit != b.limit || seconds < 1.0 {
+                continue;
+            }
+            intervals += 1;
+            agree += usize::from((b.left - a.left - a.rate() * seconds).abs() <= 1.0 + 0.02 * seconds);
+        }
+    }
+    assert!(corpus().is_empty() || agree * 100 >= intervals * 93, "{agree} of {intervals}");
+}
+
 /// The deaths the game deals everyone alive at a match's end are never
 /// counted, also in films whose scoreboard isn't read.
 #[test]
