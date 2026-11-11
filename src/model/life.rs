@@ -88,6 +88,9 @@ pub struct Sample {
     /// Aim yaw in radians, -π to π, in world axes (from +x toward +y).
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub yaw: Option<f64>,
+    /// Aim pitch in radians, up positive, within ±π/2.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub pitch: Option<f64>,
     /// On-foot speed, world units a second; None in a vehicle.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub speed: Option<f64>,
@@ -209,6 +212,7 @@ mod tests {
             raw: [0.0; 2],
             position: Some(Position::new(t as f64, 0.0)),
             yaw: None,
+            pitch: None,
             speed: None,
             health: None,
             shield: None,

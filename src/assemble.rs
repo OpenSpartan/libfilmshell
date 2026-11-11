@@ -75,6 +75,7 @@ struct WorldPath {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct SampleState {
     yaw: Option<f64>,
+    pitch: Option<f64>,
     z: Option<f64>,
     speed: Option<f64>,
     health: Option<f64>,
@@ -200,6 +201,7 @@ fn sample_states(
                     SampleState {
                         // Engine (cos, sin) to world (-sx sin, sy cos).
                         yaw: s.aim.map(|(y, _)| (calib.scale_y * y.cos()).atan2(-calib.scale_x * y.sin())),
+                        pitch: s.aim.map(|(_, p)| p),
                         speed: s.speed.filter(|_| !m.in_vehicle).map(|v| v * WORLD_PER_ENGINE),
                         z: level
                             .filter(|_| calib.source == CalibSource::LevelTable)
@@ -1510,6 +1512,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         raw: [p.raw1, p.raw2],
         position: wpos.map(|w| Position { x: w.x, y: w.y, z: st.and_then(|s| s.z) }),
         yaw: st.and_then(|s| s.yaw),
+        pitch: st.and_then(|s| s.pitch),
         speed: st.and_then(|s| s.speed),
         health: st.and_then(|s| s.health),
         shield: st.and_then(|s| s.shield),

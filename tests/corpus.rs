@@ -760,6 +760,28 @@ fn carriers_carry_as_long_as_the_match_stats_say() {
     assert!(close * 100 >= players * 95, "{close} of {players} carriers within a second");
 }
 
+/// Aim pitch is up positive: a player hitting someone well above or below
+/// them aims that way.
+#[test]
+fn players_aim_up_at_higher_targets() {
+    let (mut hits, mut toward) = (0, 0);
+    for (_, f) in corpus() {
+        for e in f.events() {
+            let Event::Hit(h) = &e.event else { continue };
+            let Some(a) = h.attacker else { continue };
+            let (Some(at), Some(to)) = (f.sample_at(a, e.tick), f.sample_at(h.victim, e.tick)) else { continue };
+            let (Some(p), Some(q), Some(pitch)) = (at.position, to.position, at.pitch) else { continue };
+            let (Some(za), Some(zv)) = (p.z, q.z) else { continue };
+            let elevation = (zv - za).atan2(p.distance(&q));
+            if p.distance(&q) >= 5.0 && elevation.abs() >= 0.15 {
+                hits += 1;
+                toward += usize::from(elevation.signum() == pitch.signum());
+            }
+        }
+    }
+    assert!(corpus().is_empty() || toward * 100 >= hits * 75, "{toward} of {hits} hits aimed toward the victim");
+}
+
 /// Every vehicle destroy the scripts score is tied to a vehicle of its type,
 /// and the riders killed with it rode it.
 #[test]
