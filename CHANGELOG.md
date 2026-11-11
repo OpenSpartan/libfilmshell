@@ -14,9 +14,11 @@ The first release, 0.1.0.
   player's inputs, weapons and ammunition. Films recorded before film version 41 are refused
   (`Error::UnknownHeader`).
 - Every death is a `Kill` with its killer, cause and weapon, including the deaths the game sends no
-  kill event for, a bot's among them (`Kill::inferred`). On the test films each player's kills of
-  other players equal the match stats' for 99% of players, and for all of them in matches against
-  bots.
+  kill event for, a bot's (`Kill::inferred`). Those are credited as the game credits them: the kill
+  its scoreboard counted, else its rule (the fatal hit's attacker when an enemy, else the last enemy
+  to hit the victim in the 6 s before), with the assistant by its rule (a fifth of the victim's
+  shield and health). On the test films each player's kills of other players equal the match
+  stats' for 99% of players, and for all of them in matches against bots.
 - A life belongs to the player the film names as controlling it, else to the player whose death
   times in the highlights chunk it matches; none starts before its player joined or after they
   left. A player letting go of a life is a death only when the scoreboard counts one then, so a

@@ -513,6 +513,7 @@ fn lives_die_as_the_match_stats_count() {
 #[test]
 fn kills_count_as_the_match_stats_do() {
     let (mut players, mut agree) = (0usize, 0usize);
+    let mut wrong = Vec::new();
     for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
         let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
         let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
@@ -545,11 +546,12 @@ fn kills_count_as_the_match_stats_do() {
                 println!("MISS {name} {} p{i}: {got} want {want}", f.variant().map_or("", |v| v.name.as_str()));
             }
             if got != want && BOT_MATCHES.contains(&name.as_str()) {
-                panic!("{name}: player {i} has {got} kills, the stats say {want}");
+                wrong.push(format!("{name}: player {i} has {got} kills, the stats say {want}"));
             }
         }
     }
     println!("{agree} of {players} players");
+    assert!(wrong.is_empty(), "{wrong:#?}");
     assert!(corpus().is_empty() || agree * 100 >= players * 95, "{agree} of {players} players");
 }
 
@@ -571,6 +573,24 @@ fn the_match_clock_runs_at_its_rate() {
         }
     }
     assert!(corpus().is_empty() || agree * 100 >= intervals * 93, "{agree} of {intervals}");
+}
+
+/// The assistant a kill names, by its event or by the game's rule where the
+/// game sent none, earns one of the assists the scoreboard counts: no player
+/// is named more often than their Assists, which also count the assisters a
+/// kill doesn't name.
+#[test]
+fn named_assists_are_counted_assists() {
+    for (name, f) in corpus() {
+        if f.scoreboard().changes.is_empty() {
+            continue;
+        }
+        for p in f.players() {
+            let named = f.kills().filter(|(_, k)| k.assistant == Some(p.id) && k.is_scored()).count() as i32;
+            let counted = f.scoreboard().total_stat(StatOwner::Player(p.id), Stat::Assists);
+            assert!(named <= counted, "{name}: {} named {named} times, {counted} assists", p.id);
+        }
+    }
 }
 
 /// The deaths the game deals everyone alive at a match's end are never

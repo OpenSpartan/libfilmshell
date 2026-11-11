@@ -56,9 +56,10 @@ const EXIT_SLACK: i64 = 90;
 /// Two rides in the same seat at most this many ticks apart are one: the
 /// game renews an attachment within a tick or two.
 const RIDE_GAP_TICKS: i64 = 3;
-/// Statborg slots of kills, deaths and spawns.
+/// Statborg slots of kills, deaths, suicides and spawns.
 const KILLS_SLOT: u32 = 4;
 const DEATHS_SLOT: u32 = 5;
+const SUICIDES_SLOT: u32 = 8;
 const SPAWNS_SLOT: u32 = 21;
 /// Frames between a kill and the scoreboard counting the death.
 const DEATH_FRAMES: i64 = 6;
@@ -507,9 +508,13 @@ const MATCH_END_SLACK: i64 = 3;
 /// Frames after a death that its kill event, or the fatal hit, can come.
 const INFERRED_KILL_FRAMES: i64 = 60;
 
-/// How long before a death without a kill event the last hit on the victim
-/// still names the killer: 2 s.
-const INFERRED_HIT_TICKS: u32 = 120;
+/// How recent a hit must be to make its attacker the killer, as the game
+/// credits a kill: 6 s.
+const KILL_CREDIT_TICKS: u32 = 360;
+
+/// The share of a victim's shield and health a player must have taken to
+/// assist in the kill.
+const ASSIST_SHARE: f64 = 0.2;
 
 /// Marks each kill the game counted as a headshot: the headshot event for
 /// its killer nearest it within [`HEADSHOT_TICKS`], each event used once.
@@ -613,6 +618,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let mut attach_seen = crate::attach::Seen::default();
     let mut controls = crate::owners::Controls::new();
     let mut designators = crate::teams::Designators::default();
+    let mut team_history: Vec<Vec<(i64, u32)>> = Vec::new();
     if let Some(p) = walk {
         let actor_control = crate::registry::Schema::read(&film.chunks[0]).biped.actor_control;
         vitals_marks = Vitals::start(&film, &p, level);
@@ -638,7 +644,9 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         // Teams for the players HighlightEvents doesn't give one: bots, and
         // people without records.
         let team_rows = stat_log.changes.iter().any(|c| c.kind == 1);
-        crate::teams::assign(&mut roster, &crate::teams::finish(&film, designators), team_rows);
+        let series = crate::teams::finish(&film, designators);
+        crate::teams::assign(&mut roster, &series, team_rows);
+        team_history = crate::teams::history(&roster, &series);
     }
     let vitals = walk.map(|_| Vitals::finish(vitals_marks));
     let splashes = walk.map(|_| crate::splash::finish(splash_seen)).unwrap_or_default();
@@ -799,6 +807,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let path_of = |player: i32| paths.iter().position(|p| p.player_index == player);
 
     let mut events: Vec<(i64, Event)> = Vec::new();
+    let hit_damage = fired.as_ref().zip(vitals.as_ref()).map(|(ff, v)| crate::hit_damage::read(ff, v)).unwrap_or_default();
 
     // A death the scoreboard counts moves the victim's deaths within a few
     // frames of the kill, or, where the mode stops updating a player's row
@@ -877,7 +886,6 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 events.push((frame, Event::Shot(Shot { player, weapon: TagId(ff.weapons[w].id) })));
             }
         }
-        let hit_damage = vitals.as_ref().map(|v| crate::hit_damage::read(ff, v)).unwrap_or_default();
         let hit_weapons = crate::weapon_stats::hit_weapons(ff, &ex.frame_ticks);
         for (i, &(frame, attacker, victim)) in ff.hits.iter().enumerate() {
             let Some(victim) = pid(paths[victim].player_index) else { continue };
@@ -1271,24 +1279,36 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         Some(d) => d.clone(),
         None => small_lobby_deaths(&film, roster.players.len(), Some(&entries), level),
     };
-    // The game sends no kill event for some deaths, a bot's among them. Such
-    // a death is still a kill: at the frame its player let go of the life
-    // (else its last sample), by the player whose kill the scoreboard counts
-    // then, else by the attacker of the last hit on the victim in the 2 s
-    // before (a downed player in Elimination can die later than that).
+    // The game sends no kill event for a bot's death: the event goes to the
+    // victim's player, and a bot has none. Such a death is still a kill, at
+    // the frame its player let go of the life (else its last sample).
     //
-    // Each kill the scoreboard counts, (player, frame), once per kill (the
-    // rows are per round); a kill event spends its own.
-    let mut kill_counts: Vec<(u32, i64)> = Vec::new();
-    let mut kills_had: HashMap<(u32, u32), i32> = HashMap::new();
-    for c in stat_log.changes.iter().filter(|c| c.kind == 0 && c.slot == KILLS_SLOT) {
-        let had = kills_had.insert((c.id, c.round), c.value).unwrap_or(0);
-        if c.value > had {
-            kill_counts.extend(std::iter::repeat_n((c.id, c.frame), (c.value - had) as usize));
+    // Who killed is the game's decision, and the scoreboard records it: a
+    // kill counted then for the killer (once per count, the rows being per
+    // round; a kill event spends its own), else a suicide counted for the
+    // victim. Without either (the match over, no scoreboard) the game's own
+    // rule decides from the film's hits: the fatal hit's attacker when an
+    // enemy, else the most recent enemy to hit the victim in the 6 s
+    // before, else the most recent player to. The film can miss the fatal
+    // hit, so the scoreboard comes first. The assists are the other enemies
+    // whose hits on the life in the 6 s before add up to a fifth of its
+    // shield and health; the largest is the assistant. (The game's test has
+    // no time limit, but its damage records go: counting older hits names
+    // assists the scoreboard never counts.)
+    let rises = |slot: u32| {
+        let mut out: Vec<(u32, i64)> = Vec::new();
+        let mut had: HashMap<(u32, u32), i32> = HashMap::new();
+        for c in stat_log.changes.iter().filter(|c| c.kind == 0 && c.slot == slot) {
+            let prev = had.insert((c.id, c.round), c.value).unwrap_or(0);
+            if c.value > prev {
+                out.extend(std::iter::repeat_n((c.id, c.frame), (c.value - prev) as usize));
+            }
         }
-    }
-    let mut spent = vec![false; kill_counts.len()];
+        out
+    };
+    let (kill_counts, suicide_counts) = (rises(KILLS_SLOT), rises(SUICIDES_SLOT));
     let near = |frame: i64, f: i64| (f - frame).abs() <= DEATH_FRAMES;
+    let mut spent = vec![false; kill_counts.len()];
     for (frame, e) in &events {
         let Event::Kill(k) = e else { continue };
         let Some(killer) = k.killer.filter(|&c| c != k.victim) else { continue };
@@ -1299,6 +1319,16 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             spent[i] = true;
         }
     }
+    let has_teams = roster.players.iter().any(|p| p.team.is_some());
+    let team_then = |p: PlayerId, frame: i64| {
+        team_history
+            .get(p.0 as usize)
+            .and_then(|h| crate::teams::at(h, frame))
+            .or(roster.players.get(p.0 as usize).and_then(|r| r.team))
+    };
+    let enemies = |a: PlayerId, b: PlayerId, frame: i64| a != b && (!has_teams || team_then(a, frame) != team_then(b, frame));
+    let (body_max, shield_max) = crate::damage::spartan();
+    let vitality = body_max + if vitals.as_ref().is_some_and(|v| v.shieldless()) { 0.0 } else { shield_max };
     if let Some(ff) = &fired {
         let recorded: Vec<(i64, PlayerId)> = events
             .iter()
@@ -1307,8 +1337,9 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 _ => None,
             })
             .collect();
-        // (victim, its path, frame, the last hit's attacker)
-        let mut unrecorded: Vec<(PlayerId, usize, i64, Option<PlayerId>)> = Vec::new();
+        // (victim, its path, frame, the game's rule's killer, each enemy's
+        // share of the life's shield and health)
+        let mut unrecorded: Vec<(PlayerId, usize, i64, Option<PlayerId>, Vec<(PlayerId, f64)>)> = Vec::new();
         for (vk, p) in paths.iter().enumerate() {
             let Some(victim) = pid(p.player_index) else { continue };
             let starts = p.life_starts.clone().unwrap_or_else(|| vec![0]);
@@ -1323,45 +1354,70 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 if recorded.iter().any(|&(f, v)| v == victim && f >= first && f <= frame + INFERRED_KILL_FRAMES) {
                     continue;
                 }
-                let attacker = ff
-                    .hits
-                    .iter()
+                let by = |i: usize| ff.hits[i].1.and_then(|k| pid(paths[k].player_index));
+                let on_life = |i: usize| ff.hits[i].2 == vk && ff.hits[i].0 <= frame + INFERRED_KILL_FRAMES;
+                let recent: Vec<usize> = (0..ff.hits.len())
                     .rev()
-                    .filter(|h| h.2 == vk && h.0 <= frame + INFERRED_KILL_FRAMES)
-                    .find(|h| fire::within_ticks(&ex.frame_ticks, h.0, frame.max(h.0), INFERRED_HIT_TICKS))
-                    .and_then(|h| h.1);
-                unrecorded.push((victim, vk, frame, attacker.and_then(|k| pid(paths[k].player_index))));
+                    .filter(|&i| on_life(i))
+                    .take_while(|&i| {
+                        fire::within_ticks(&ex.frame_ticks, ff.hits[i].0, frame.max(ff.hits[i].0), KILL_CREDIT_TICKS)
+                    })
+                    .collect();
+                let killer = match recent.first().and_then(|&i| by(i)) {
+                    Some(a) if enemies(a, victim, frame) => Some(a),
+                    _ => recent
+                        .iter()
+                        .filter_map(|&i| by(i))
+                        .find(|&a| enemies(a, victim, frame))
+                        .or_else(|| recent.iter().find_map(|&i| by(i))),
+                };
+                let mut dealt: Vec<(PlayerId, f64)> = Vec::new();
+                for i in recent.iter().copied().filter(|&i| ff.hit_details[i].0 == slot) {
+                    let Some(a) = by(i).filter(|&a| enemies(a, victim, frame)) else { continue };
+                    let d = hit_damage.get(i).map_or(0.0, |h| h.shield + h.body) / vitality;
+                    match dealt.iter_mut().find(|x| x.0 == a) {
+                        Some(x) => x.1 += d,
+                        None => dealt.push((a, d)),
+                    }
+                }
+                unrecorded.push((victim, vk, frame, killer, dealt));
             }
         }
         // Deaths and counted kills pair up nearest first over all of them, so
         // a chain of kills frames apart (Infection's) pairs each death with
-        // its own; at equal distance the last hit's attacker goes first.
+        // its own; at equal distance the rule's killer goes first.
         let mut pairs: Vec<(i64, bool, usize, usize)> = Vec::new();
-        for (d, &(victim, _, frame, hit_by)) in unrecorded.iter().enumerate() {
+        for (d, &(victim, _, frame, rule, _)) in unrecorded.iter().enumerate() {
             for (i, &(id, f)) in kill_counts.iter().enumerate() {
                 if !spent[i] && id != victim.0 as u32 && near(frame, f) {
-                    pairs.push(((f - frame).abs(), pid(id as i32) != hit_by, d, i));
+                    pairs.push(((f - frame).abs(), pid(id as i32) != rule, d, i));
                 }
             }
         }
         pairs.sort_unstable();
-        let mut counted: Vec<Option<PlayerId>> = vec![None; unrecorded.len()];
+        let mut credited: Vec<Option<PlayerId>> = vec![None; unrecorded.len()];
         for (_, _, d, i) in pairs {
-            if counted[d].is_none() && !spent[i] {
+            if credited[d].is_none() && !spent[i] {
                 spent[i] = true;
-                counted[d] = pid(kill_counts[i].0 as i32);
+                credited[d] = pid(kill_counts[i].0 as i32);
             }
         }
-        for (&(victim, vk, frame, hit_by), counted) in unrecorded.iter().zip(counted) {
-            let killer = counted.or(hit_by);
+        for (&(victim, vk, frame, rule, ref dealt), credited) in unrecorded.iter().zip(credited) {
+            let suicide = suicide_counts.iter().any(|&(id, f)| id == victim.0 as u32 && near(frame, f));
+            let killer = credited.or(suicide.then_some(victim)).or(rule);
+            let assist = dealt
+                .iter()
+                .copied()
+                .filter(|&(a, share)| Some(a) != killer && share >= ASSIST_SHARE)
+                .max_by(|a, b| a.1.total_cmp(&b.1));
             let kk = killer.and_then(|k| path_of(k.0 as i32));
             let (cause, weapon) = cause_and_weapon(ff, Some(vk), kk, frame);
             let kill = Kill {
                 victim,
                 killer,
                 killer_damage_percent: None,
-                assistant: None,
-                assistant_damage_percent: None,
+                assistant: assist.map(|a| a.0),
+                assistant_damage_percent: assist.map(|a| (a.1 * 100.0) as u32),
                 suicide: killer == Some(victim),
                 headshot: None,
                 scored: scored(victim, frame),

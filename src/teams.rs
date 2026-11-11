@@ -126,3 +126,37 @@ pub fn assign(roster: &mut Roster, designators: &HashMap<u32, Vec<(i64, u32)>>, 
         roster.players[i].team = team;
     }
 }
+
+/// Each roster player's team over the match, `(frame, team)` in frame order:
+/// their participant's designator while they hold its id. Infection moves a
+/// player to the infected when killed, so the team at a frame can differ from
+/// the last.
+pub fn history(roster: &Roster, designators: &HashMap<u32, Vec<(i64, u32)>>) -> Vec<Vec<(i64, u32)>> {
+    let mut out = vec![Vec::new(); roster.players.len()];
+    for a in &roster.ids {
+        let Some(series) = designators.get(&a.id) else { continue };
+        let Some(teams) = out.get_mut(a.player as usize) else { continue };
+        let until = roster
+            .ids
+            .iter()
+            .filter(|b| b.id == a.id && b.frame > a.frame && b.player != a.player)
+            .map(|b| b.frame)
+            .min()
+            .unwrap_or(i64::MAX);
+        let tenure = series.iter().filter(|&&(f, _)| f < until);
+        // The value held when the tenure began, then each change in it.
+        let held = tenure.clone().rfind(|&&(f, _)| f <= a.frame).copied();
+        let changes = tenure.filter(|&&(f, _)| f > a.frame).copied();
+        teams.extend(held.into_iter().chain(changes).filter_map(|(f, v)| Some((f.max(a.frame), v.checked_sub(1)?))));
+    }
+    for teams in &mut out {
+        teams.sort_unstable();
+    }
+    out
+}
+
+/// The team in `history` at `frame`: the last one given by then, else the
+/// first.
+pub fn at(history: &[(i64, u32)], frame: i64) -> Option<u32> {
+    history.iter().rfind(|&&(f, _)| f <= frame).or(history.first()).map(|&(_, t)| t)
+}
