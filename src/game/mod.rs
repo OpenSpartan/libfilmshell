@@ -38,6 +38,7 @@ mod sandbox;
 mod sandbox_data;
 
 pub use damage::{DamageAmount, DamageCause, DamageEffect, Vitality, damage_effect, spartan_vitality};
+pub use events::GameResponse;
 pub use items::{
     Equipment, Grenade, Item, ObjectKind, TagInfo, Vehicle, Weapon, item, tag_info, tags, weapon_variant_name,
 };

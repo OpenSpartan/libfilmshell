@@ -9,7 +9,7 @@
 
 mod common;
 
-use filmshell::{ActionKind, Event, Film, FlagEventKind, PlayerId, SeedEventKind, Tick};
+use filmshell::{ActionKind, Event, Film, FlagEventKind, GameEventArgument, PlayerId, SeedEventKind, Tick};
 
 fn main() -> std::process::ExitCode {
     common::main(run)
@@ -72,6 +72,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 None => format!("hijacked a {}", h.vehicle),
             },
             Event::Hijack(h) => format!("thrown out of a {} by {}", h.vehicle, name(h.player)),
+            // The mode's own scoring, in the game's words, its players filled
+            // in from the event's arguments.
+            Event::GameEvent(g) => match film.game_response(g).and_then(|r| r.score) {
+                Some((points, text)) if !text.is_empty() => {
+                    let mut players = g.arguments.iter().filter_map(|a| match a {
+                        GameEventArgument::Player(p) => Some(p.map_or("someone", name)),
+                        _ => None,
+                    });
+                    let words: Vec<&str> = text
+                        .split(' ')
+                        .map(|w| if w.starts_with("%p") { players.next().unwrap_or("someone") } else { w })
+                        .collect();
+                    format!("{points:+} {}", words.join(" "))
+                }
+                _ => continue,
+            },
             _ => continue,
         };
         println!("{}  {line}", e.tick);

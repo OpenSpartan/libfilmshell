@@ -2026,6 +2026,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         ground,
         grenades: grenade_flights,
         projectiles: projectile_flights,
+        event_group: crate::game::events::group(&scripts),
         zones: zones_out,
         hill_score,
         events,

@@ -798,6 +798,55 @@ fn projectiles_start_at_their_shooters() {
     assert!(corpus().is_empty() || near * 100 >= placed * 90, "{near} of {placed} projectiles start at their shooter");
 }
 
+/// The personal score a player's game events give, by their responses in
+/// the mode's event tree, is the match stats' PersonalScore: for every
+/// player of the modes whose event views read whole, and for nearly every
+/// player of arena Slayer, whose minigames score their own way.
+#[test]
+fn game_responses_score_as_the_match_stats_do() {
+    let (mut slayer, mut slayer_equal, mut exact) = (0, 0, 0);
+    for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
+        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
+        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        let big_team = f.variant().is_some_and(|v| v.scripts.iter().any(|s| s == "bigteambattle.lua"));
+        let must_equal = matches!(
+            f.mode(),
+            GameMode::CaptureTheFlag
+                | GameMode::Oddball
+                | GameMode::KingOfTheHill
+                | GameMode::Stockpile
+                | GameMode::Attrition
+                | GameMode::Extraction
+        );
+        let arena_slayer = f.mode() == GameMode::Slayer && !big_team;
+        if !must_equal && !arena_slayer {
+            continue;
+        }
+        let mut points: HashMap<PlayerId, i64> = HashMap::new();
+        for e in f.events() {
+            let Event::GameEvent(g) = &e.event else { continue };
+            let Some((n, _)) = f.game_response(g).and_then(|r| r.score) else { continue };
+            for p in g.players.iter() {
+                *points.entry(p).or_default() += i64::from(n);
+            }
+        }
+        for p in f.players() {
+            let Some(row) = stats_row(&stats, p) else { continue };
+            let want = row["PlayerTeamStats"][0]["Stats"]["CoreStats"]["PersonalScore"].as_i64().unwrap_or(0);
+            let got = points.get(&p.id).copied().unwrap_or(0);
+            if must_equal {
+                assert_eq!(got, want, "{name}: player {} personal score", p.id);
+                exact += 1;
+            } else {
+                slayer += 1;
+                slayer_equal += usize::from(got == want);
+            }
+        }
+    }
+    assert!(corpus().is_empty() || exact > 0);
+    assert!(slayer_equal * 100 >= slayer * 90, "{slayer_equal} of {slayer} Slayer players");
+}
+
 /// Every vehicle destroy the scripts score is tied to a vehicle of its type,
 /// and the riders killed with it rode it.
 #[test]

@@ -56,6 +56,11 @@ The first release, 0.1.0.
   films each player's flag events equal the match stats' (1,338 counts).
 - `Film::projectiles` and `Film::projectiles_at`: every projectile but thrown grenades, from where
   it was created, with the player who fired it, or who rode the vehicle or turret that did.
+- `Film::game_response` says what a mode script's game event is: its response in the mode's event
+  tree, with the medal, the personal score and its text, the announcer's words and whether it
+  writes to the kill feed (`game::GameResponse`). On the test films each player's personal score
+  from them equals the match stats' on every Capture the Flag, Oddball, King of the Hill,
+  Stockpile, Attrition and Extraction film, and for 93% of arena Slayer players.
 - `GameEvent::sequence`, the events' sequence number. An event the game sent again, which a film can
   record twice a few ticks apart, is kept once.
 - `Event::VehicleDestroyed` and `Event::Hijack`: the personal scores the modes' scripts give for

@@ -27,6 +27,7 @@ pub struct Film {
     pub(crate) ground: Vec<GroundWeapon>,
     pub(crate) grenades: Vec<GrenadeFlight>,
     pub(crate) projectiles: Vec<ProjectileFlight>,
+    pub(crate) event_group: Option<&'static crate::game::events::EventGroup>,
     pub(crate) zones: Vec<Zone>,
     pub(crate) hill_score: Option<HillScore>,
     pub(crate) events: Vec<TimedEvent>,
@@ -428,6 +429,28 @@ impl Film {
     /// King of the Hill's points on the current hill.
     pub fn hill_score(&self) -> Option<&HillScore> {
         self.hill_score.as_ref()
+    }
+
+    /// What a mode script's game event is in this film's mode: its
+    /// response in the mode's event tree, with the medal, personal score,
+    /// announcer words and kill feed line it stands for. None when the
+    /// film's scripts are no mode the library has the tree of, or the
+    /// event's id has no response there.
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film) {
+    /// use filmshell::Event;
+    ///
+    /// for e in film.events() {
+    ///     let Event::GameEvent(g) = &e.event else { continue };
+    ///     if let Some((points, text)) = film.game_response(g).and_then(|r| r.score) {
+    ///         println!("{} +{points} {text}", e.tick);
+    ///     }
+    /// }
+    /// # }
+    /// ```
+    pub fn game_response(&self, event: &GameEvent) -> Option<&'static crate::game::GameResponse> {
+        self.event_group?.response(event.id, event.text.map(|t| t.0))
     }
 
     /// Every event, in tick order.
