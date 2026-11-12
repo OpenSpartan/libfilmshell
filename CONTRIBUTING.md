@@ -16,11 +16,11 @@ cargo +1.85 check --all-targets --all-features --locked   # the oldest Rust supp
 Most tests read real films. They live outside this repository: set `FILMSHELL_TEST_FILMS` to a
 folder with one folder per film, each holding the film's chunks (`filmChunk0`, `filmChunk1`, ...,
 compressed as downloaded or inflated as `filmChunk{N}_dec`), its `film-metadata.json` (the
-manifest) and its `match-metadata.json` (the match stats; without it the comparisons with the
-match stats skip the film). Films older than version 41 go in a `films-unsupported` folder next to
-that folder, to check they are refused (checked only with the variable set). Without the variable the tests look in `films/` here
-(ignored by git), and with no films they check nothing. With the variable set, a missing film
-fails the tests.
+manifest) and its `match-metadata.json` (the match stats; without it the comparisons with the match
+stats skip the film). Films older than film version 41 go in a `films-unsupported` folder next to
+that folder, to check they are refused (checked only with the variable set). Without the variable
+the tests look in `films/` here (ignored by git), and with no films they check nothing. With the
+variable set, a missing film fails the tests.
 
 ```sh
 FILMSHELL_TEST_FILMS=/path/to/films cargo test --release --all-features
