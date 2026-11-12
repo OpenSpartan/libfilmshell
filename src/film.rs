@@ -435,7 +435,11 @@ impl Film {
     /// response in the mode's event tree, with the medal, personal score,
     /// announcer words and kill feed line it stands for. None when the
     /// film's scripts are no mode the library has the tree of, or the
-    /// event's id has no response there.
+    /// event's id has no response there. The match stats also count
+    /// personal scores the game gives no name, which have no response here:
+    /// on the test films' Big Team Battle matches they are the whole
+    /// difference between a player's named points and their stats' score
+    /// for 91 of 95 players.
     ///
     /// ```no_run
     /// # fn run(film: &filmshell::Film) {
