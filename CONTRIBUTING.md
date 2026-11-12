@@ -35,7 +35,7 @@ films, CI also runs every example on every film:
 
 ```sh
 cargo build --release --all-features --examples
-sh .github/examples-on-films.sh /path/to/films
+sh .github/examples-on-films.sh /path/to/films 4   # films four at a time
 ```
 
 ## How the format is known
