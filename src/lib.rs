@@ -116,6 +116,22 @@
 //! the game cleared their scoreboard row mid-match (a reconnect), and the
 //! match stats count only what came before; the film goes on to the end.
 //!
+//! They check more of the same way, each per player:
+//!
+//! - Capture the Flag's grabs, steals, captures, returns, carriers killed
+//!   and capture assists ([`FlagEvent`]), and Stockpile's power seeds
+//!   ([`SeedEvent`]), all equal.
+//! - Hijacks ([`Hijack`]) equal.
+//! - Time carrying the flag, the skull or a power seed
+//!   ([`PlayerAt::carrying`]) within a second for 151 of 155 players.
+//! - The personal score of the mode scripts' events
+//!   ([`Film::game_response`]) equal on every Capture the Flag, Oddball, King
+//!   of the Hill, Stockpile, Attrition and Extraction film, and for 93% of
+//!   arena Slayer players.
+//!
+//! Vehicle destroys ([`VehicleDestroyed`]) are the mode scripts' scored ones,
+//! which the match stats don't count the same way.
+//!
 //! # Features
 //!
 //! - `serde`: derives `Serialize` and `Deserialize` on the model's types
