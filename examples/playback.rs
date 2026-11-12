@@ -32,7 +32,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let s = now.sample;
         let place =
             now.life.position_at(at).map_or("unknown place".to_string(), |w| format!("{:7.1} {:7.1}", w.x, w.y));
-        // Small lobbies' films send no shield or health.
+        // In small lobbies the library doesn't read shield or health.
         let percent =
             |label: &str, v: Option<f64>| v.map_or(String::new(), |v| format!("  {label} {:>3.0}", v * 100.0));
         let doing = match (now.vehicle, now.weapon) {
@@ -40,7 +40,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             // An objective's item is shown as what is carried.
             (None, Some(w)) if Carried::from_item(w).is_some() => String::new(),
             (None, Some(w)) => {
-                // Rounds, else an energy weapon's charge or a weapon's heat.
+                // An energy weapon's charge, else its rounds, else its heat.
                 let rounds = match (now.ammo.map(|a| (a.loaded, a.reserve)), now.energy, now.heat) {
                     (_, Some(e), _) => format!(" charge {}%", e.percent),
                     (Some((Some(loaded), Some(reserve))), ..) if loaded + reserve > 0 => format!(" {loaded}/{reserve}"),
@@ -74,8 +74,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         println!("{name:<20} {:7.1} {:7.1}  thrown by {thrower}", at.x, at.y);
     }
     for (p, at) in film.projectiles_at(at) {
-        // A projectile's weapon: the one whose direct hit its damage is,
-        // else what its shooter held when it appeared.
+        // A projectile's weapon: the weapon its direct-hit damage effect
+        // belongs to, else what its shooter held when it was fired.
         let fired = p.path.first().map(|q| q.tick);
         let weapon = p
             .stats()

@@ -50,10 +50,10 @@ The first release, 0.1.0.
   seed a player carries, from the item the game puts in the carrier's weapon slots. On the test
   films each player's time carrying is the match stats' time as carrier, within a second for 151 of
   155.
-- Events name players by engine slot, which joins and leaves can set apart from player ids: the
-  mode scripts' events, and the player index in a shot's, a hit's or a throw's body, which is what
-  names the player of one fired from a vehicle. Every reader maps them to player ids. On the test
-  films each player's flag events equal the match stats' (1,338 counts).
+- Events name players by engine slot, which a joiner can take over from a player who left: the mode
+  scripts' events, and the player index in a shot's, hit's or throw's body (the only name a shot
+  fired from a vehicle has). Every reader maps them to player ids. On the test films each player's
+  flag events equal the match stats' (1,338 counts).
 - `Film::projectiles` and `Film::projectiles_at`: every projectile but thrown grenades, from where
   it was created, with the player who fired it, or who rode the vehicle or turret that did.
 - `Film::game_response` says what a mode script's game event is: its response in the mode's event

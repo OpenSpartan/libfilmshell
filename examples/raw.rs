@@ -1,6 +1,6 @@
-//! A look at a film's raw layers: its packets by kind, the event types of
-//! its tick packets, and how many entities each frame creates, updates and
-//! deletes.
+//! A look at a film's raw layers: its encoding, its packets by kind, the
+//! event types of its tick packets, how many creates, updates and deletes
+//! its entity views hold in all, and its seek snapshots.
 //!
 //! ```text
 //! cargo run --release --example raw -- path/to/film

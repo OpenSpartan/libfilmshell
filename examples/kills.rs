@@ -17,8 +17,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let film = Film::from_chunks(common::load_folder(dir.as_ref())?)?;
     let name = |id: PlayerId| film.player_name(id).unwrap_or("someone");
 
-    // The deaths everyone still alive takes when the match ends are kills
-    // the scoreboard doesn't count.
+    // Leaves out the deaths the game deals everyone alive when a round or
+    // the match ends.
     let mut any = false;
     for (tick, kill) in film.kills().filter(|(_, k)| k.is_scored()) {
         any = true;

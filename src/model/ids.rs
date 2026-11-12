@@ -9,9 +9,9 @@ use std::str::FromStr;
 /// up with [`Film::player`](crate::Film::player) rather than by indexing
 /// [`Film::players`](crate::Film::players).
 ///
-/// The film itself names players by engine player id, which a joiner can
-/// take over from someone who left; the library maps those to the player
-/// who held the id at the time.
+/// The film itself names players by engine slot, which a joiner can take
+/// over from someone who left; the library maps those to the player who
+/// held the slot at the time.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PlayerId(pub u8);
@@ -32,7 +32,8 @@ impl fmt::Display for PlayerId {
 /// A biped's or a vehicle's id: `(generation - 1) * 256 + index`, the index
 /// counted within the object's kind (a raw entity index less 512 for a
 /// biped, less 768 for a vehicle, as [`format`](crate::format) gives them),
-/// so bipeds and vehicles have separate ids. The game reuses an id once its
+/// so bipeds and vehicles count ids separately: a biped and a vehicle can
+/// share a number. The game reuses an id once its
 /// object is gone, so an id is unique only among the objects that exist at
 /// the same time: a biped's id names one life, a vehicle's one
 /// [`VehicleTrack`](crate::VehicleTrack).
@@ -189,7 +190,8 @@ impl FromStr for Guid {
 
 /// A position in world units. A world unit is a foot; the game's files use
 /// engine units of ten world units. `x` and `y` are horizontal; `z` is up,
-/// known when positions convert with the level's box
+/// and only life samples carry it, when their film's positions convert with
+/// the level's box
 /// ([`CoordinateSource::LevelBox`](crate::CoordinateSource::LevelBox)).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

@@ -52,7 +52,7 @@ impl SpawnPad {
 /// [`game::levels`](crate::game::levels), as the game's files hold it: in
 /// engine units, `[x, y, z]` with `z` up. World positions are ten times
 /// engine units with the horizontal axes turned: world x is `-10 * y`,
-/// world y is `10 * x`. The widths of the film's position fields follow
+/// world y is `10 * x`, world z is `10 * z`. The widths of the film's position fields follow
 /// from the box.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LevelBounds {
@@ -103,8 +103,9 @@ impl Hints {
 
     /// The level's play-space box, in place of the catalogue's. A box whose
     /// corners aren't finite, whose low corner isn't below its high one, or
-    /// that spans a million engine units or more is ignored, and so is one
-    /// whose field widths differ from the film's:
+    /// that spans a million engine units or more replaces any box given
+    /// before with none; one whose field widths differ from the film's is
+    /// not used:
     /// [`Film::coordinates`](crate::Film::coordinates) says which fit ran
     /// instead.
     #[must_use]

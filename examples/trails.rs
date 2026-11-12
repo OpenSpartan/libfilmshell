@@ -1,4 +1,5 @@
-//! Draws every life's path and every kill as an SVG map, coloured by team.
+//! Draws every life's path and every scored kill as an SVG map, coloured by
+//! team.
 //!
 //! ```text
 //! cargo run --release --example trails -- path/to/film > map.svg

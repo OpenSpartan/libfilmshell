@@ -56,7 +56,7 @@ pub enum Event {
     GameEvent(GameEvent),
     /// Something happened to a flag.
     Flag(FlagEvent),
-    /// Something happened to a power seed in Stockpile.
+    /// Something happened to a power seed in Big Team Stockpile.
     Seed(SeedEvent),
     /// Something happened at a zone or a hill, or to the skull.
     Zone(ZoneEvent),
@@ -67,8 +67,8 @@ pub enum Event {
 }
 
 /// A headshot kill the game counted: the mode script's headshot event, which
-/// the scoreboard's headshot kills count. Sent on the tick of the kill, which
-/// [`Kill::headshot`] marks, inferred kills included. PvP modes only.
+/// the scoreboard's headshot kills count. Sent within 2 ticks of the kill,
+/// which [`Kill::headshot`] marks, inferred kills included. PvP modes only.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
@@ -169,7 +169,7 @@ impl Event {
     /// The players the event is about: a kill's victim, killer and
     /// assistant, a hit's attacker and victim, a destroyed vehicle's
     /// destroyer and the riders killed with it, a hijack's hijacker and the
-    /// player thrown out, a game event's players, the player who acted for
+    /// player thrown out, the players a game event was sent to, the player who acted for
     /// the rest. A voice line's or a HUD message's audience isn't counted.
     pub fn players(&self) -> impl Iterator<Item = PlayerId> + use<> {
         let one = |p: PlayerId| [Some(p), None, None];
@@ -222,7 +222,7 @@ pub struct Kill {
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub killer: Option<PlayerId>,
     /// The killer's damage percentage as the kill event carries it, whole
-    /// percent. Values above 100 occur (up to 239 seen), so it isn't a share
+    /// percent. Values above 100 occur (up to 239 on the test films), so it isn't a share
     /// of the damage the victim took. None without a killer: the game then
     /// sends whatever the field held.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
@@ -234,7 +234,7 @@ pub struct Kill {
     /// without an assistant.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub assistant_damage_percent: Option<u32>,
-    /// The death was the victim's own doing.
+    /// Whether the death was the victim's own doing.
     pub suicide: bool,
     /// Whether the game counted the kill as a headshot: a headshot event for
     /// the killer within 2 ticks of the kill. None when the film has no
@@ -261,7 +261,7 @@ pub struct Kill {
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
     /// The film has no kill event for this death: the game sends one only
-    /// for a victim with a player, and a bot has none. The tick is where the
+    /// for a victim with a player, and a bot has none. The tick is when the
     /// victim's player let go of the life, else its last sample. `killer` is
     /// the kill the scoreboard counted then, else the victim when it counted
     /// a suicide, else whom the game's rule credits from the film's hits:
@@ -283,7 +283,8 @@ impl Kill {
     }
 
     /// Whether the scoreboard counted the death: false only for the deaths
-    /// the game deals everyone still alive when a match ends ([`Kill::scored`]).
+    /// the game deals everyone still alive when a round or the match ends
+    /// ([`Kill::scored`]).
     pub fn is_scored(&self) -> bool {
         self.scored != Some(false)
     }
@@ -344,9 +345,9 @@ pub struct Hit {
     pub shield: f64,
     /// Points off the body (a Spartan's full health is 90).
     pub body: f64,
-    /// `shield` and `body` come from the victim's vitals around the hit
-    /// rather than the effect's numbers: 8-bit readings, so within about 2
-    /// points.
+    /// Whether `shield` and `body` come from the victim's vitals around the
+    /// hit rather than the effect's numbers: 8-bit readings, so within about
+    /// 2 points.
     pub from_vitals: bool,
 }
 
@@ -487,8 +488,8 @@ pub struct VehicleDestroyed {
     pub vehicle: crate::game::Vehicle,
     /// The vehicle's track, an index into
     /// [`Film::vehicles`](crate::Film::vehicles): the vehicle of that type
-    /// hit last in the 2 s before, the player's own hit first. None when no
-    /// such hit is recorded.
+    /// hit last in the 2 s before, preferring the credited player's hits. None
+    /// when no such hit is recorded.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub track: Option<usize>,
     /// The damage effect of that hit.
@@ -515,10 +516,10 @@ pub struct Hijack {
     /// within 2 s.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub ride: Option<usize>,
-    /// The player thrown out: of the riders already in the vehicle when the
-    /// hijacker boarded (through a seat of its own, while the rider stays
-    /// seated), the one whose ride ends first, within 3 s of the hijack. The
-    /// film's event doesn't name them.
+    /// The player thrown out: of the riders already seated when the
+    /// hijacker's ride starts (the hijacker boards into a seat of their own
+    /// while the rider is still in theirs), the one whose ride ends first,
+    /// within 3 s of the hijack. The film's event doesn't name them.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub from: Option<PlayerId>,
 }
@@ -662,7 +663,9 @@ pub struct GameEvent {
     /// The text's arguments, in order.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub arguments: Vec<GameEventArgument>,
-    /// The players it is about.
+    /// The players it was sent to: the game sends a response once to each of
+    /// its targets, so a medal's or a personal score's names the player who
+    /// earned it, and a kill feed line's each player who saw it.
     pub players: PlayerMask,
 }
 
@@ -700,8 +703,9 @@ pub enum FlagEventKind {
     CaptureAssist,
 }
 
-/// A power seed scoring event in Stockpile: the mode's scripts name each
-/// one, and each player's count of each kind is the match stats'. Picking a
+/// A power seed scoring event in Big Team Stockpile: the mode's scripts name
+/// each one, and on the test films each player's count of each kind equals
+/// the match stats'. Picking a
 /// seed up is an [`Event::Pickup`] of the seed
 /// ([`game::Weapon::GenericPowerSeed`](crate::game::Weapon::GenericPowerSeed)).
 #[derive(Clone, Copy, Debug, PartialEq)]

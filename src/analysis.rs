@@ -10,9 +10,10 @@ use crate::{Film, TagId};
 /// counted: shots are [`Event::Shot`]s plus the non-grenade projectiles the
 /// player created (the two don't overlap), hits are damage events whose
 /// effect belongs to a weapon, once per attacker, victim and frame of the
-/// film (one or two ticks: [`Clock`](crate::Clock)). Measured
-/// against the match stats, shots and hits are a median 1.00 of the game's
-/// counts, and accuracy is off by a median of 4.4 points (90th percentile 38).
+/// film (one or two ticks: [`Clock`](crate::Clock)). Measured on the test
+/// films against the match stats, for the 605 players with 30 shots or
+/// more, shots and hits are a median 1.00 of theirs, and accuracy is off by
+/// a median of 3.6 percentage points (90th percentile 30).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
@@ -44,7 +45,8 @@ pub struct WeaponProfile {
     pub rounds_per_second: f64,
     /// Shots per trigger pull; 0 for an automatic.
     pub burst: i32,
-    /// Rounds loaded, carried at the start, carried at most.
+    /// The magazine, the rounds carried in all at spawn (the magazine
+    /// included) and the most carried in all.
     pub magazine: Option<[i32; 3]>,
     /// The projectile's initial velocity, world units a second.
     pub velocity: Option<f64>,
@@ -116,7 +118,7 @@ pub struct SpawnRegion {
     pub height: f64,
     /// What a point inside gets.
     pub weight: f64,
-    /// Every source inside counts; else only the strongest.
+    /// Whether every source inside counts; else only the strongest does.
     pub stacks: bool,
     /// The weight's falloff with `d`, the distance over the radius,
     /// piecewise linear: each piece `[up_to, slope, intercept]` is
@@ -132,7 +134,7 @@ pub struct SpawnRegion {
 pub struct SpawnModel {
     /// Scores are compared in steps of this.
     pub step: f64,
-    /// A death counts this many seconds.
+    /// How long, in seconds, a death stays a dead-ally source.
     pub dead_seconds: f64,
     /// The modelled regions, as [`SpawnFactor::sources`] counts them.
     pub regions: Vec<SpawnRegion>,
@@ -200,9 +202,8 @@ pub fn weapon_profiles(film: &Film) -> &[WeaponProfile] {
     &film.analysis.weapons
 }
 
-/// Every respawn that started on a hinted spawn pad, of a player whose
-/// lives the `HighlightEvents` death times placed. Empty unless the film has
-/// five or more players, its positions convert to world units, and the
+/// Every respawn that started on a hinted spawn pad. Empty unless the film
+/// has five or more players, its positions convert to world units, and the
 /// hints carry spawn pads.
 pub fn spawn_factors(film: &Film) -> &[SpawnFactor] {
     &film.analysis.spawn_factors

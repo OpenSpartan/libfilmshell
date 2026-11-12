@@ -33,7 +33,7 @@ impl std::fmt::Display for OptionValue {
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct ModeOption {
-    /// The name variants store it under.
+    /// The option's name in the Options script (one of `keys`).
     pub name: &'static str,
     /// Every name a variant may store it under.
     pub keys: &'static [&'static str],

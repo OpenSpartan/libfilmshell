@@ -51,9 +51,9 @@ impl std::fmt::Display for DamageCause {
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct DamageAmount {
-    /// The lower bound.
+    /// The lower bound, points of damage.
     pub lower: f64,
-    /// The upper bound's minimum and maximum.
+    /// The upper bound's minimum and maximum, points of damage.
     pub upper: [f64; 2],
     /// The Spartan's shield multiplier.
     pub shield_scale: f64,
@@ -73,8 +73,8 @@ impl DamageAmount {
     /// The flag set on an effect whose damage beyond the shield is lost.
     pub const NO_SPILL: u32 = 1 << 23;
 
-    /// One amount whatever the distance or the roll: a direct hit with
-    /// equal bounds.
+    /// Whether it deals one amount whatever the distance or the roll: a
+    /// direct hit with equal bounds.
     pub fn is_fixed(&self) -> bool {
         self.radius == 0.0 && self.lower == self.upper[0] && self.lower == self.upper[1]
     }
@@ -97,8 +97,8 @@ pub struct DamageEffect {
     pub weapon: Option<TagId>,
     /// Its numbers; None for an effect that deals no damage.
     pub amount: Option<DamageAmount>,
-    /// A blast that grenades spawn among other projectiles, so that the
-    /// effect alone doesn't say what set it off.
+    /// Whether the effect is a blast that grenades and other projectiles both
+    /// spawn, so it doesn't say what set it off.
     pub grenade_blast: bool,
     projectiles: &'static [u32],
 }

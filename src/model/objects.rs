@@ -2,8 +2,8 @@ use super::{EntityId, PlayerId, PlayerMask, Position, TeamId, Tick};
 use crate::TagId;
 use crate::game::{self, Grenade, Item};
 
-/// Where something was at a tick: a point of a vehicle's track or a
-/// grenade's path.
+/// Where something was at a tick: a point of a vehicle's track or of a
+/// grenade's or a projectile's path.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
@@ -77,7 +77,8 @@ impl VehicleTrack {
 ///
 /// A biped's parent-state component names the vehicle it is attached to and
 /// its seat, so a ride runs from the update that seats the biped to the one
-/// that unseats it, moves it to another seat or deletes it; the rider's
+/// that unseats it, moves it to another seat or deletes it, and it ends too
+/// at the rider's death and when the vehicle is deleted; the rider's
 /// samples over it are the vehicle's positions. On a film whose biped
 /// updates can't be read, rides are inferred from the exits and from where
 /// the vehicles went.
@@ -170,7 +171,7 @@ pub struct GroundWeapon {
     /// the end.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub to: Option<Tick>,
-    /// Removed by a player picking it up.
+    /// Whether a player picked it up, rather than the game removing it.
     pub taken: bool,
 }
 
@@ -319,7 +320,7 @@ pub struct ZoneState {
     pub capturing: Option<TeamId>,
     /// The capture's progress, 0 to 100.
     pub progress: u32,
-    /// Players of more than one team are inside.
+    /// Whether players of more than one team are inside.
     pub contested: bool,
     /// The players inside.
     pub inside: PlayerMask,

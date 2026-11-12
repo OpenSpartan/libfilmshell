@@ -1022,8 +1022,9 @@ fn team_scores_agree_with_the_match_stats() {
             }
         }
     }
+    println!("{agree} of {teams} teams");
     assert!(corpus().is_empty() || teams > 0);
-    assert!(agree * 100 >= teams * 95, "{agree} of {teams} teams");
+    assert_eq!(agree, teams, "teams whose score agrees");
 }
 
 /// No life starts before its player joined or after they left (a joiner

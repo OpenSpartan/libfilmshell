@@ -184,7 +184,8 @@ pub struct EngineState {
 
 /// The game's scoreboard over the match: every value the statborg (the
 /// game's replicated scoreboard: a row of 56 slots per player and per team)
-/// sends as it changes, and the match clock.
+/// sends as it changes, the match clock, and the engine's state at each
+/// seek snapshot.
 ///
 /// A value belongs to one round ([`StatChange::round`]), and modes that play
 /// rounds restart their rows each round: [`Scoreboard::final_stat`] is the

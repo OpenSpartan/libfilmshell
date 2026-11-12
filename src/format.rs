@@ -13,7 +13,8 @@
 //!   component registry in chunk 0.
 //!
 //! Kind 2 is the chunk's seek snapshot: every live entity with its type and,
-//! for objects, its tag and position. Kind 8 holds the players' structs and
+//! for objects, its tag and position ([`Snapshot`] gives the types and
+//! tags). Kind 8 holds the players' structs and
 //! kind 12 the bots' records.
 //!
 //! This layer follows the format as far as it is understood, so it changes
@@ -122,7 +123,9 @@ pub struct Packet<'a> {
 #[derive(Clone, Copy, Debug)]
 #[non_exhaustive]
 pub struct Frame<'a> {
-    /// The frame's index.
+    /// The frame's index, counting the film's frames from 0: the index
+    /// [`Clock::tick`](crate::Clock::tick) and
+    /// [`Raw::for_each_entity_view`] take.
     pub index: usize,
     /// Its tick.
     pub tick: Tick,
@@ -132,7 +135,9 @@ pub struct Frame<'a> {
     pub chunk_data: &'a [u8],
     /// The payload's first and one-past-last byte in the chunk.
     pub span: (usize, usize),
-    /// The packet's timestamp, microseconds.
+    /// The packet's timestamp, microseconds. Always set: the library frames
+    /// a film by its packets (None is for a frame found by its marker, which
+    /// the library's reading doesn't use).
     pub timestamp_us: Option<u64>,
 }
 
@@ -151,7 +156,7 @@ pub struct Handle {
     pub index: u32,
     /// Its 2-bit generation.
     pub generation: u32,
-    /// The handle names a unit.
+    /// Whether the handle names a unit.
     pub unit: bool,
 }
 
@@ -340,7 +345,8 @@ impl<'a> Raw<'a> {
     }
 
     /// The event view of `frame`, as far as it reads. Empty when the film's
-    /// position field widths aren't known.
+    /// component layouts aren't known (they come with the position field
+    /// widths) or its frames aren't tick packets.
     pub fn events(&self, frame: &Frame<'_>) -> Vec<RawEvent> {
         let Some(p) = self.params else { return Vec::new() };
         if self.film.framing != Framing::Packets || frame.span.1 - frame.span.0 < 2 {
@@ -362,8 +368,8 @@ impl<'a> Raw<'a> {
 
     /// Walks every frame's entity view in order, calling `f` with the frame
     /// index and its entries. Entities alive at a chunk's start are typed
-    /// from its snapshot. Nothing when the film's position field widths
-    /// aren't known.
+    /// from its snapshot. Nothing when the film's component layouts aren't
+    /// known (they come with the position field widths).
     pub fn for_each_entity_view(&self, mut f: impl FnMut(usize, &[EntityEntry])) {
         let Some(p) = self.params else { return };
         let mut walker = crate::payload::Walker::new(&self.film.chunks[0], p);
@@ -421,7 +427,8 @@ pub fn event_name(kind: u32) -> Option<&'static str> {
 
 /// The game's name of entity type `entity_type`, a block of chunk 0's
 /// component registry ("biped", "weapon", "game-engine-statborg"), from the
-/// executable's entity definitions.
+/// executable's entity definitions. The game names types 2 and 10 both
+/// "managed-engine-object".
 pub fn entity_type_name(entity_type: u32) -> Option<&'static str> {
     ENTITY_TYPE_NAMES.get(entity_type as usize).copied().filter(|n| !n.is_empty())
 }

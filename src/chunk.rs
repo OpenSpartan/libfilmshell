@@ -71,7 +71,7 @@ const REPLAY_FIRST: u16 = 1;
 const HIGHLIGHTS_FIRST: u16 = 9;
 
 /// The most bytes one chunk may hold once inflated: 256 MiB, about a hundred
-/// times the largest real chunk.
+/// times the largest chunk of the test films.
 pub const MAX_CHUNK_BYTES: usize = 256 << 20;
 
 /// The most bytes a film's chunks may hold together once inflated: 1 GiB,
@@ -128,7 +128,10 @@ impl<'a> Chunk<'a> {
     /// [`Error::NotAChunkFile`] for a name that isn't a chunk file's;
     /// [`Error::Inflate`] or [`Error::TooLarge`] for compressed bytes that
     /// don't inflate or inflate past [`MAX_CHUNK_BYTES`];
-    /// [`Error::UnknownChunk`] for bytes that are no chunk of a film.
+    /// [`Error::UnknownChunk`] for bytes that are no chunk of a film. Chunk
+    /// 0's bytes aren't checked here: a bad one fails in
+    /// [`Film::from_chunks`](crate::Film::from_chunks) as
+    /// [`Error::UnknownHeader`].
     pub fn from_file(name: &str, data: impl Into<Cow<'a, [u8]>>) -> Result<Chunk<'a>, Error> {
         let index = Chunk::file_index(name).ok_or_else(|| Error::NotAChunkFile { name: name.to_string() })?;
         let mut data = data.into();

@@ -34,8 +34,9 @@ pub enum GameMode {
     /// survivor joins when killed, so a player's
     /// [`Player::team`](crate::Player::team) is the one they ended on.
     Infection,
-    /// VIP. Recognised by `vipevents.lua`, which films of older builds
-    /// carry; no VIP film of the current format has been read yet.
+    /// VIP. Recognised by `vipevents.lua`. Among the test films only those
+    /// older than version 41, which the library refuses, carry it, so no
+    /// VIP film has been read.
     Vip,
     /// Stockpile: teams carry power seeds to their stockpiles. On a Big Team
     /// Stockpile film the events include each seed's [`SeedEvent`](crate::SeedEvent)s.
@@ -117,9 +118,9 @@ pub struct Loadout {
     /// The starting weapons.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub weapons: Vec<TagId>,
-    /// Starting weapons are random.
+    /// Whether the starting weapons are random.
     pub random: bool,
-    /// The starting equipment, a soft asset's tag.
+    /// The starting equipment's tag.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub equipment: Option<TagId>,
 }
@@ -129,7 +130,7 @@ pub struct Loadout {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct VariantOption {
-    /// The option's lower-cased name, as the game hashes it.
+    /// The string id of the option's lower-cased name.
     pub hash: StringId,
     /// The option's name, when the game's option scripts name it.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
@@ -169,7 +170,7 @@ impl Rule {
 pub struct StatDefinition {
     /// The statistic's identifier ("AccuracyPercentage").
     pub name: String,
-    /// `name`, as the game hashes it.
+    /// The string id of `name`.
     pub id: StringId,
     /// The base entry type (2 a best-of, 3 computed).
     pub base: i64,
@@ -229,7 +230,7 @@ pub struct StatSettings {
     /// The scoreboard's columns, as slots.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub scoreboard: Vec<usize>,
-    /// The server runs at 30 Hz.
+    /// Whether the server runs at 30 Hz.
     pub server_30fps: bool,
     /// The variant's tick rate setting as stored, when it sets one; its
     /// unit isn't known.

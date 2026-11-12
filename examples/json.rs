@@ -1,5 +1,6 @@
-//! Writes a film's model as JSON: the players, every life with its samples,
-//! the events and the scoreboard, for a viewer in another language. The
+//! Writes a film's model as JSON: the header, the players, every life with
+//! its samples, the events and the scoreboard, for a viewer in another
+//! language. The
 //! samples make it large: about 60 MB for a 9-minute Big Team Battle match.
 //!
 //! ```text

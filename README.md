@@ -46,10 +46,10 @@ A film has three kinds:
 | 3    | `Highlights` | Last   | Summary of kills, deaths, and medals on the theater timeline         |
 
 Reading a film takes the header and every replay chunk. The highlights chunk is optional, but
-without it a film has no medals, and lives the film doesn't name an owner for can't be matched to
-players by their death times. You can download the chunks yourself with a script or a third-party
-tool, using your own [Spartan token](https://den.dev/blog/halo-api-authentication/), including for
-matches other players participated in.
+without it a film has no medals, and a life whose owner the film doesn't name can't be matched to a
+player by death times. You can download the chunks yourself with a script or a third-party tool,
+using your own [Spartan token](https://den.dev/blog/halo-api-authentication/), including for
+matches you didn't play in.
 
 ## Quick start
 
@@ -105,16 +105,17 @@ cargo run --release --features serde --example json -- path/to/film > film.json
 ```
 
 >[!NOTE]
->Positions are in world units, a foot each; the game's own engine unit is ten. On every level in the library's
+>Positions are in world units, a foot each; the game's engine unit is ten world units. On every level in the library's
 >catalogue they convert exactly. For any other level, give the level's bounds or the map's spawn
 >points with `Hints` and `Film::from_chunks_with`, or read the unconverted coordinates from
 >`Sample::raw`. A `Sample` records where a player was at a given tick, along with their aim, speed,
 >health, and shield.
 
-If you would like to read the raw contents of the film, `Film::raw()` exposes what the actual
-underlying data model is built from: inflated chunks, packets, frames, each frame's events and
-entity updates, and the seek snapshots. It is mostly useful for working on the format
-itself; most applications you will build with `libfilmshell` won't need it.
+If you would like to read the raw contents of the film, `Film::raw()` exposes the layers the data
+model is built from: inflated chunks, packets, frames, each frame's events and entity updates, and
+the seek snapshots. It is mostly useful for working on the format itself; most applications you
+will build with `libfilmshell` won't need it, and `filmshell::format` may change in any minor
+release.
 
 ## License
 

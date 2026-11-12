@@ -10,7 +10,7 @@
 
 mod common;
 
-use filmshell::{Event, Film, GameEventArgument, PlayerId, game};
+use filmshell::{Event, Film, PlayerId, game};
 
 fn main() -> std::process::ExitCode {
     common::main(run)
@@ -32,56 +32,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
         let Some(text) = g.text.and_then(game::text) else { continue };
-        println!("{}  {}", e.tick, fill(text, &g.arguments, &film));
+        println!("{}  {}", e.tick, common::fill(text, &g.arguments, &film));
     }
     Ok(())
-}
-
-/// A text with its markup filled in from the event's arguments, in order:
-/// `%p`, `%pa`, `%pe` and `%ps` a player, `%s` a string, `%i` a number,
-/// `&killfeed_<name>` an icon, shown as `[name]`. Colour (`%c` and a letter,
-/// closed by `%`) and style (`%zy`) are left out.
-fn fill(text: &str, arguments: &[GameEventArgument], film: &Film) -> String {
-    let mut args = arguments.iter();
-    let mut out = String::new();
-    let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
-        match c {
-            '%' => match chars.next() {
-                Some('p') => {
-                    if chars.peek().is_some_and(|c| matches!(c, 'a' | 'e' | 's')) {
-                        chars.next();
-                    }
-                    let player = match args.next() {
-                        Some(GameEventArgument::Player(Some(p))) => film.player_name(*p),
-                        _ => None,
-                    };
-                    out.push_str(player.unwrap_or("someone"));
-                }
-                Some(k @ ('s' | 'i')) => match args.next() {
-                    Some(&GameEventArgument::Word { value, .. }) if k == 's' => {
-                        out.push_str(game::text(filmshell::StringId(value)).unwrap_or("?"))
-                    }
-                    Some(&GameEventArgument::Word { value, .. }) => out.push_str(&value.to_string()),
-                    _ => out.push('?'),
-                },
-                // Colour and style codes take one more letter.
-                Some('c' | 'z') => {
-                    chars.next();
-                }
-                // `%` alone closes coloured text.
-                _ => {}
-            },
-            '&' => {
-                let mut name = String::new();
-                while let Some(&c) = chars.peek().filter(|c| c.is_ascii_alphanumeric() || **c == '_') {
-                    name.push(c);
-                    chars.next();
-                }
-                out.push_str(&format!("[{}]", name.trim_start_matches("killfeed_")));
-            }
-            _ => out.push(c),
-        }
-    }
-    out
 }

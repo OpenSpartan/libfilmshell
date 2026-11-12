@@ -52,7 +52,7 @@ pub struct Input {
     pub left: i8,
     /// The control record's 5-bit stance field, when sent. Bit 4 (0x10) is
     /// the jump button: on the test films, 89% to 98% of the jumps the
-    /// biped's vertical speed shows have it set within 3 ticks. The other
+    /// biped's vertical speed shows have it set within 3 frames. The other
     /// bits' meanings aren't known.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub stance: Option<u8>,
@@ -112,7 +112,8 @@ pub struct Heat {
 pub struct GrenadeCount {
     /// From when.
     pub tick: Tick,
-    /// Frag, plasma, dynamo and spike grenades.
+    /// Frag, plasma, dynamo and spike grenades, in that order (measured on
+    /// the test films).
     pub counts: [u32; 4],
 }
 

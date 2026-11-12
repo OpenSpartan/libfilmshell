@@ -71,8 +71,8 @@ impl Film {
     /// - [`Error::NoChunks`]: none given.
     /// - [`Error::DuplicateChunk`], [`Error::MissingChunks`]: a repeat or a
     ///   gap in their indices.
-    /// - [`Error::UnexpectedKind`]: a header that isn't chunk 0, highlights
-    ///   that aren't the last chunk.
+    /// - [`Error::UnexpectedKind`]: a chunk 0 that isn't the header, a
+    ///   header elsewhere, or highlights that aren't the last chunk.
     /// - [`Error::NoReplay`]: no replay chunk.
     /// - [`Error::Inflate`], [`Error::TooLarge`]: a chunk that doesn't
     ///   inflate, or one larger than [`MAX_CHUNK_BYTES`](crate::MAX_CHUNK_BYTES),
@@ -252,7 +252,7 @@ impl Film {
         self.sample_at(player, tick).is_some()
     }
 
-    /// Every player alive at `tick` with their sample then, in player order:
+    /// Every player alive at `tick` with their sample then, in id order:
     /// one frame of playback. O(players × lives).
     ///
     /// ```no_run
@@ -426,7 +426,8 @@ impl Film {
         &self.zones
     }
 
-    /// King of the Hill's points on the current hill.
+    /// King of the Hill's points on the current hill; None outside King of
+    /// the Hill.
     pub fn hill_score(&self) -> Option<&HillScore> {
         self.hill_score.as_ref()
     }
@@ -434,8 +435,9 @@ impl Film {
     /// What a mode script's game event is in this film's mode: its
     /// response in the mode's event tree, with the medal, personal score,
     /// announcer words and kill feed line it stands for. None when the
-    /// film's scripts are no mode the library has the tree of, or the
-    /// event's id has no response there. The match stats also count
+    /// library has no event tree for the film's scripts, the tree has no
+    /// response for the id, or the event's own text names another response.
+    /// The match stats also count
     /// personal scores the game gives no name, which have no response here:
     /// on the test films' Big Team Battle matches they are the whole
     /// difference between a player's named points and their stats' score

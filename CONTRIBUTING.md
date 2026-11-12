@@ -15,16 +15,19 @@ cargo +1.85 check --all-targets --all-features --locked   # the oldest Rust supp
 
 Most tests read real films. They live outside this repository: set `FILMSHELL_TEST_FILMS` to a
 folder with one folder per film, each holding the film's chunks (`filmChunk0`, `filmChunk1`, ...,
-compressed as downloaded or inflated as `filmChunk{N}_dec`) and its `film-metadata.json`. Without
-the variable the tests look in `films/` here (ignored by git), and with no films they check
-nothing. With the variable set, a missing film fails the tests.
+compressed as downloaded or inflated as `filmChunk{N}_dec`), its `film-metadata.json` (the
+manifest) and its `match-metadata.json` (the match stats; without it the comparisons with the
+match stats skip the film). Films older than version 41 go in a `films-unsupported` folder next to
+that folder, to check they are refused. Without the variable the tests look in `films/` here
+(ignored by git), and with no films they check nothing. With the variable set, a missing film
+fails the tests.
 
 ```sh
 FILMSHELL_TEST_FILMS=/path/to/films cargo test --release --all-features
 ```
 
-The tests read eight films at a time and keep every film read: on 95 films they take about three
-minutes and 6 GB of memory.
+The tests read at most eight films at a time (one per core on a smaller machine) and keep every
+film read: on 95 films they take about three minutes and 6 GB of memory.
 
 CI runs them against a private set of films, since films carry every player's gamertag and XUID.
 Pull requests from forks run everything else; a maintainer runs the films before merging. With the

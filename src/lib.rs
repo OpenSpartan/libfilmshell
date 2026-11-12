@@ -58,16 +58,16 @@
 //! # fn run(film: &filmshell::Film) {
 //! use filmshell::Tick;
 //!
-//! let mut last = Tick(0);
+//! let mut from = Tick(0);
 //! let mut now = Tick(0);
 //! while now <= film.clock().end() {
 //!     for p in film.players_at(now) {
 //!         // Between samples, where the player was this tick.
 //!         let _at = p.life.position_at(now);
 //!     }
-//!     // What happened since the last frame drawn.
-//!     for _event in film.events_in(last..now) {}
-//!     last = now;
+//!     // What happened since the last frame drawn, this tick included.
+//!     for _event in film.events_in(from..=now) {}
+//!     from = now + 1;
 //!     now += 1;
 //! }
 //! # }
@@ -79,7 +79,9 @@
 //!   [`Hints`]) and the model: [`Player`], [`Life`], [`Event`],
 //!   [`Scoreboard`] and the rest.
 //! - [`game`] is what the library knows about the game itself: weapons,
-//!   vehicles, medals, damage effects and levels, as Rust tables.
+//!   vehicles and other objects, damage effects, sandbox numbers, medals,
+//!   levels, mode options, the modes' event trees and the English text of
+//!   the game's text keys, as Rust tables.
 //! - [`format`](mod@format) exposes the raw layers: chunks, packets, frames,
 //!   the event and entity views of a tick packet, the seek snapshots, a bit
 //!   reader.
@@ -110,17 +112,19 @@
 //! Infection, Firefight, the minigames, Attrition and Elimination,
 //! Extraction, Escalation, Grifball) they check that the level, every
 //! player's kills and deaths over the match, and each team's score agree
-//! with the match stats. Every player's kills and deaths agree, bots
-//! included (765 and 786 players), though a bot's lives, deaths and kills
-//! come from the film alone. For one player the comparison stops partway:
+//! with the match stats. Every player's kills of enemy players (765
+//! players) and deaths (786) agree, bots included, though bots have no kill
+//! events or highlights records: their lives, deaths and kills come from
+//! the rest of the film. Every team's score agrees (136 teams). For one
+//! player the comparison stops partway:
 //! the game cleared their scoreboard row mid-match (a reconnect), and the
 //! match stats count only what came before; the film goes on to the end.
 //!
-//! They check more of the same way, each per player:
+//! They also check, per player:
 //!
 //! - Capture the Flag's grabs, steals, captures, returns, carriers killed
-//!   and capture assists ([`FlagEvent`]), and Stockpile's power seeds
-//!   ([`SeedEvent`]), all equal.
+//!   and capture assists ([`FlagEvent`]), and Big Team Stockpile's power
+//!   seeds ([`SeedEvent`]), all equal.
 //! - Hijacks ([`Hijack`]) equal.
 //! - Time carrying the flag, the skull or a power seed
 //!   ([`PlayerAt::carrying`]) within a second for 151 of 155 players.
@@ -134,10 +138,14 @@
 //!
 //! # Features
 //!
-//! - `serde`: derives `Serialize` and `Deserialize` on the model's types
-//!   (not [`Film`], [`Clock`], [`Chunk`], [`Hints`] or [`Error`]; [`Rule`]
-//!   and [`analysis::AccuracyTicks`] only serialize), the [`analysis`]
-//!   results and the `game` enums. An
+//! - `serde`: derives `Serialize` and `Deserialize` on the model's data
+//!   (the players, lives, events, scoreboard and the rest of what the
+//!   accessors return, but [`PlayerAt`], [`Clock`] and [`Hitch`]), the
+//!   [`analysis`] results ([`Rule`] and [`analysis::AccuracyTicks`] only
+//!   serialize), and the `game` enums and value types such as
+//!   [`game::Bounds`]. [`Film`], the inputs ([`Chunk`], [`ChunkKind`],
+//!   [`Hints`] and its parts), [`Error`] and the `game` catalogues' entries
+//!   ([`game::Level`], [`game::DamageEffect`] and the like) have neither. An
 //!   [`Event`] is an object with a `type` (`{"type": "kill", "victim": 3,
 //!   ...}`), enum variants are snake_case, [`TagId`]s, [`StringId`]s,
 //!   [`Xuid`]s and [`Guid`]s are strings, and empty `Option` and `Vec` fields

@@ -11,8 +11,9 @@ pub enum PlayerKind {
     Human {
         /// The account.
         xuid: Xuid,
-        /// The gamertag, from chunk 0's roster or the player's
-        /// `HighlightEvents` records.
+        /// The gamertag, from chunk 0's roster, a player struct (the packets
+        /// that list players as they join) or the player's `HighlightEvents`
+        /// records.
         #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
         gamertag: Option<String>,
     },
@@ -37,7 +38,7 @@ pub struct Player {
     /// Person or bot.
     pub kind: PlayerKind,
     /// The player's team: from their `HighlightEvents` records, else from the
-    /// team their engine player id carries while they hold it. None in free
+    /// team their engine slot carries while they hold it. None in free
     /// for all. A player can change teams during a match (Infection moves a
     /// survivor to the infected when killed): this is the last, and
     /// [`Player::team_at`] the one at a tick.
@@ -48,7 +49,7 @@ pub struct Player {
     /// Empty in free for all.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub teams: Vec<TeamChange>,
-    /// In the match from its start.
+    /// Whether they were in the match from its start.
     pub present_at_start: bool,
     /// When a player who joined in progress first appears.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]

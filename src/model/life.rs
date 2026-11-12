@@ -68,18 +68,18 @@ impl Coordinates {
 /// In a small lobby (four players or fewer:
 /// [`Encoding::PerEntity`](crate::format::Encoding::PerEntity) and
 /// [`Encoding::BotComposite`](crate::format::Encoding::BotComposite)) the
-/// biped updates aren't read field by field, so `yaw`, `speed`, `health` and
-/// `shield` are None.
+/// biped updates aren't read field by field, so `yaw`, `pitch`, `speed`,
+/// `health` and `shield` are None, and `position` has no `z`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Sample {
     /// When.
     pub tick: Tick,
-    /// The two horizontal position fields as the film stores them, scaled to
-    /// a 15-bit window (`field * 2^(15 - width)`; in a small lobby `raw[0]`
-    /// is 64 and `raw[1]` 8 times smaller): `raw[0]` becomes world y,
-    /// `raw[1]` world x.
+    /// The two horizontal position fields as the film stores them, each
+    /// scaled to a 15-bit window, `field * 2^(15 - width)`: `raw[0]` becomes
+    /// world y, `raw[1]` world x. In a small lobby they are older units:
+    /// `raw[0]` is `16384 + window / 64` and `raw[1]` is `window / 8`.
     /// [`Coordinates::to_world`] converts them.
     pub raw: [f64; 2],
     /// The position in world units, when the film's coordinates are known.
@@ -101,7 +101,8 @@ pub struct Sample {
     /// in a mode without shields.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub shield: Option<f64>,
-    /// In a vehicle: the sample is the vehicle's position.
+    /// Whether the player is in a vehicle: the sample is then the vehicle's
+    /// position.
     pub in_vehicle: bool,
     /// The vehicle, when known: [`Film::vehicle_at`](crate::Film::vehicle_at)
     /// finds its track.
@@ -109,7 +110,8 @@ pub struct Sample {
     pub vehicle: Option<EntityId>,
 }
 
-/// One life of a biped: from its spawn to its death or the film's end.
+/// One life of a biped: from its spawn to its death, its player leaving, or
+/// the film's end.
 ///
 /// A life is one biped entity. Its owner is the player controlling the unit,
 /// as the biped's own records say; where they don't, the library matches
@@ -126,11 +128,12 @@ pub struct Life {
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub player: Option<PlayerId>,
     /// The biped's id, unique among the lives under way at the same time;
-    /// None for a life no player owns.
+    /// None when the biped's slot isn't known: every life no player owns,
+    /// and an owned life the film doesn't tie to a slot.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub entity: Option<EntityId>,
     /// Whether the life ended in a death: by the `HighlightEvents` death times,
-    /// else where the player controlling it let go of it at a time the
+    /// else when the player controlling it let go of it at a time the
     /// scoreboard counts a death (a bot removed to make room for a joiner
     /// lets go without dying); in a small lobby, by a respawn following it.
     pub died: bool,
@@ -197,8 +200,8 @@ impl Life {
         Some(Position { x: mid(p.x, q.x), y: mid(p.y, q.y), z: p.z.zip(q.z).map(|(a, b)| mid(a, b)).or(p.z) })
     }
 
-    /// The longest gap between samples [`Life::position_at`] draws a line
-    /// across: 6 ticks, three frames of a 30 Hz film.
+    /// The longest gap between samples that [`Life::position_at`]
+    /// interpolates across: 6 ticks, three frames of a 30 Hz film.
     pub const GLIDE_TICKS: u32 = 6;
 }
 
