@@ -86,6 +86,8 @@ pub struct Frame<'a> {
     pub end: usize,
     pub index: usize,
     pub gp: i64,
+    /// The packet's timestamp (the raw layer's).
+    #[cfg_attr(not(feature = "raw"), allow(dead_code))]
     pub ts_us: Option<u64>,
 }
 

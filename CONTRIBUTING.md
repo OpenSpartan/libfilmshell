@@ -45,8 +45,8 @@ states a layout says how it is known: read from the game's code, measured on fil
 
 ## Changes
 
-- The model at the crate root follows semantic versioning. The raw layer, `filmshell::format`, may
-  change in any minor release.
+- The model at the crate root follows semantic versioning. The raw layer, `filmshell::format`
+  behind the `raw` feature, is outside it and may change in any release.
 - Note user-visible changes in `CHANGELOG.md` under Unreleased.
 - The tables in `src/game/*_data.rs` are generated from the game's files; don't edit them by hand.
 
@@ -61,7 +61,3 @@ states a layout says how it is known: read from the game's code, measured on fil
 Publishing uses crates.io trusted publishing. The first version has to be published by hand
 with `cargo publish` and a token; after that, add this repository's `release.yml` workflow and its
 `release` environment as the crate's trusted publisher on crates.io.
-
-Before 1.0, a minor release may change anything. From 1.0 on, semantic versioning forbids breaking
-`filmshell::format` in a minor release, so 1.0 needs that layer either stable or behind a feature
-that says it isn't.

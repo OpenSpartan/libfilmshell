@@ -552,6 +552,7 @@ pub fn walk_shared(film: &Film, params: Params, readers: &mut [&mut Reader<'_>])
 
 /// Every type-0 payload of `film` walked in order: f(frame index, payload).
 /// Packet framing only (a frame is a packet); nothing under marker framing.
+#[cfg_attr(not(any(feature = "raw", test)), allow(dead_code))]
 pub fn for_each_payload(film: &Film, walker: &mut Walker, mut f: impl FnMut(usize, &Payload)) {
     for_each_payload_in(film, walker, |i, _, p| f(i, p));
 }

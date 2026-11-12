@@ -9,10 +9,14 @@ use crate::{Chunk, ChunkKind, Error, Hints, TagId};
 /// Built from the film's chunks with [`Film::from_chunks`]; everything the
 /// library reads is computed then, so the accessors are cheap.
 pub struct Film {
+    /// The inflated chunks, kept for the raw layers only.
+    #[cfg(feature = "raw")]
     pub(crate) raw: crate::container::Film,
+    #[cfg(feature = "raw")]
     pub(crate) params: Option<crate::components::Params>,
+    #[cfg(feature = "raw")]
     pub(crate) has_highlights: bool,
-    pub(crate) encoding: crate::format::Encoding,
+    pub(crate) encoding: Encoding,
     pub(crate) header: Header,
     pub(crate) clock: Clock,
     pub(crate) players: Vec<Player>,
@@ -705,7 +709,16 @@ impl Film {
         self.player_state(player)?.weapon_at(tick)
     }
 
-    /// The film's raw layers: chunks, packets, frames.
+    /// How the film's tick packets carry the bipeds' positions: each biped's
+    /// entity records in a small lobby, else the composite updates.
+    pub fn encoding(&self) -> Encoding {
+        self.encoding
+    }
+
+    /// The film's raw layers: chunks, packets, frames. With the `raw`
+    /// feature, outside the crate's semantic versioning
+    /// ([`format`](crate::format)).
+    #[cfg(feature = "raw")]
     pub fn raw(&self) -> crate::format::Raw<'_> {
         crate::format::Raw::new(&self.raw, self.has_highlights, self.params, self.encoding)
     }

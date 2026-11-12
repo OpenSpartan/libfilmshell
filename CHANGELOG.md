@@ -1,7 +1,7 @@
 # Changelog
 
 The crate follows [semantic versioning](https://semver.org). Before 1.0, a minor release may break
-the API; the raw format layer (`filmshell::format`) may change in any minor release.
+the API; the raw format layer (`filmshell::format`, the `raw` feature) may change in any release.
 
 ## Unreleased
 
@@ -17,8 +17,8 @@ The first release, 0.1.0.
   kill event for, a bot's (`Kill::inferred`). Those are credited as the game credits them: the kill
   its scoreboard counted, else its rule (the fatal hit's attacker when an enemy, else the last enemy
   to hit the victim in the 6 s before), with the assistant by its rule (at least a fifth of the
-  victim's shield and health). `Kill::betrayal` marks a kill between teammates; on the test films each
-  player's betrayals equal the match stats'.
+  victim's shield and health). `Kill::betrayal` marks a kill between teammates; on the test films
+  each player's betrayals equal the match stats'.
 - A life belongs to the player the film names as controlling it, else to the player whose death
   times in the highlights chunk it matches; none starts before its player joined or after they left.
   A player letting go of a life is a death only when the scoreboard counts one then, so a bot
@@ -41,8 +41,9 @@ The first release, 0.1.0.
   index doesn't fit the vehicles. They serialize as numbers.
 - `Film::match_start`: the tick the match clock first ran, 16 s to 2 minutes into the film on the
   test films. `Scoreboard::clock_at` is the clock the game shows at a tick.
-- `PlayerState::ammo_in`, `energy_in` and `heat_in` leave out a reading another weapon sent in
-  the slot, and `PlayerAt` also leaves out one from an earlier life. A weapon sends them when they change, so they are None until its first shot or reload.
+- `PlayerState::ammo_in`, `energy_in` and `heat_in` leave out a reading another weapon sent in the
+  slot, and `PlayerAt` also leaves out one from an earlier life. A weapon sends them when they
+  change, so they are None until its first shot or reload.
 - `Display` for `Carried`, `FlagEventKind`, `SeedEventKind` and `ZoneEventKind`: short lowercase
   names.
 - Playback: `Film::players_at` gives every living player at a tick with their life, sample, weapon
@@ -91,15 +92,17 @@ The first release, 0.1.0.
 - `Event::VehicleDestroyed` and `Event::Hijack`: the personal scores the modes' scripts give for
   destroying a vehicle of another team and for hijacking one. A destroy names the vehicle's track
   (the vehicle of its type hit last), the weapon and cause that destroyed it, as a kill's are, and
-  the riders killed with it; a hijack the hijacker's ride and the player thrown out. On the test films each player's hijacks equal the match
-  stats'; the match stats count vehicle destroys by another rule.
+  the riders killed with it; a hijack the hijacker's ride and the player thrown out. On the test
+  films each player's hijacks equal the match stats'; the match stats count vehicle destroys by
+  another rule.
 - `filmshell::game` holds the game's own tables: weapons, vehicles, medals, damage effects, the
   sandbox's numbers (`fire_stats`, `projectile_stats`, `vehicle_bounds`), and levels with their
   quantization boxes, the services' level ids and, where the game's map info gives one, an English
   name. `TeamId::name` gives the
   multiplayer teams' names, Eagle to Hazard.
-- `filmshell::format` exposes the raw layers, with the game's names for every event and entity type;
-  `filmshell::analysis` estimates what films don't state: accuracy, weapon numbers, spawn factors.
+- `filmshell::format`, with the `raw` feature, exposes the raw layers, with the game's names for
+  every event and entity type; `filmshell::analysis` estimates what films don't state: accuracy,
+  weapon numbers, spawn factors.
 - A film whose chunks inflate past 1 GiB, or a chunk past 256 MiB, is refused. `Hints` drop spawn
   points with coordinates that aren't finite or lie more than a million world units out, and a
   level box that isn't finite, whose low corner isn't below its high one, or that spans a million

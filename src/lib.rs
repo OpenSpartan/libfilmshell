@@ -88,9 +88,10 @@
 //!   vehicles and other objects, damage effects, sandbox numbers, medals,
 //!   levels, mode options, the modes' event trees and the English text of
 //!   the game's text keys, as Rust tables.
-//! - [`format`](mod@format) exposes the raw layers: chunks, packets, frames,
-//!   the event and entity views of a tick packet, the seek snapshots, a bit
-//!   reader.
+//! - `format`, with the `raw` feature, exposes the raw layers: chunks,
+//!   packets, frames, the event and entity views of a tick packet, the seek
+//!   snapshots, a bit reader. It follows the format as far as it is
+//!   understood, outside the crate's semantic versioning.
 //! - [`analysis`] derives estimates the film doesn't state directly:
 //!   accuracy, weapon numbers, spawn factors.
 //!
@@ -154,7 +155,7 @@
 //! - `serde`: derives `Serialize` and `Deserialize` on the model's data (the
 //!   players, lives, events, scoreboard and the rest of what the accessors
 //!   return, except [`PlayerAt`], [`Clock`], [`Hitch`] and the
-//!   [`format`](mod@format) types; [`Rule`] only serializes), the
+//!   `format` types; [`Rule`] only serializes), the
 //!   [`analysis`] results ([`analysis::AccuracyTicks`] only serializes), the
 //!   inputs [`ChunkKind`] and
 //!   [`Hints`] with its parts, and the `game` enums and value types such as
@@ -167,7 +168,10 @@
 //!   [`PlayerMask`] is a list of player ids, and empty `Option` and `Vec`
 //!   fields are left out. With `serde_json`, turn on its `float_roundtrip`
 //!   feature for floats to read back exactly.
-//! - `research`: makes the internal readers public under a hidden
+//! - `raw`: the raw layers, `filmshell::format` and `Film::raw`, outside the
+//!   crate's semantic versioning. Without it a film keeps no copy of its
+//!   chunks.
+//! - `research`: turns on `raw`, and makes the internal readers public under a hidden
 //!   `research` module, for studying the format; they are outside the API's
 //!   stability guarantees.
 
@@ -178,6 +182,7 @@ pub mod analysis;
 mod chunk;
 mod error;
 mod film;
+#[cfg(feature = "raw")]
 pub mod format;
 pub mod game;
 mod hints;

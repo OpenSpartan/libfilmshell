@@ -15,9 +15,13 @@ include = ["src/**/*.rs", "examples/**/*.rs", "README.md", "CHANGELOG.md", "LICE
 [features]
 ## Derive serde's `Serialize` and `Deserialize` on the model types.
 serde = ["dep:serde"]
+## The raw layers: `filmshell::format` and `Film::raw`. Outside the API's
+## stability guarantees.
+raw = []
 ## Makes the internal readers public under `filmshell::research`, for
-## studying the format. Outside the API's stability guarantees.
-research = []
+## studying the format, and turns on `raw`. Outside the API's stability
+## guarantees.
+research = ["raw"]
 
 [dependencies]
 indexmap = "2"
@@ -32,6 +36,11 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 name = "json"
 required-features = ["serde"]
 
+# Reads the raw layers.
+[[example]]
+name = "raw"
+required-features = ["raw"]
+
 [profile.release]
 opt-level = 3
 lto = "thin"
@@ -41,7 +50,7 @@ codegen-units = 1
 opt-level = 2
 
 [package.metadata.docs.rs]
-features = ["serde"]
+features = ["serde", "raw"]
 
 [lints.rust]
 missing_docs = "deny"

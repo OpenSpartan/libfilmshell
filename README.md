@@ -101,7 +101,7 @@ cargo run --release --example playback -- path/to/film 90
 # Every path and scored kill, drawn as a map
 cargo run --release --example trails -- path/to/film > map.svg
 # The packets and events underneath
-cargo run --release --example raw -- path/to/film
+cargo run --release --features raw --example raw -- path/to/film
 # The model as JSON
 cargo run --release --features serde --example json -- path/to/film > film.json
 ```
@@ -117,8 +117,8 @@ cargo run --release --features serde --example json -- path/to/film > film.json
 If you would like to read the raw contents of the film, `Film::raw()` exposes the layers the data
 model is built from: inflated chunks, packets, frames, each frame's events and entity updates, and
 the seek snapshots. It is mostly useful for working on the format itself; most applications you
-will build with `libfilmshell` won't need it, and `filmshell::format` may change in any minor
-release.
+will build with `libfilmshell` won't need it. It comes with the `raw` feature, and
+`filmshell::format` may change in any release.
 
 ## License
 

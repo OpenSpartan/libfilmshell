@@ -170,6 +170,7 @@ fn the_highlight_clock_places_deaths_at_kills() {
     }
 }
 
+#[cfg(feature = "raw")]
 #[test]
 fn snapshots_list_entities_in_index_order() {
     let Some((_, f)) = corpus().iter().find(|(n, _)| n == "f0eca791") else { return };

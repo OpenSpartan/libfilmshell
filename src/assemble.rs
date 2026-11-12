@@ -2095,13 +2095,16 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     };
 
     Ok(crate::Film {
+        #[cfg(feature = "raw")]
         raw: film,
+        #[cfg(feature = "raw")]
         params,
+        #[cfg(feature = "raw")]
         has_highlights,
         encoding: match layout.mode {
-            EncodingMode::PerEntity => crate::format::Encoding::PerEntity,
-            EncodingMode::BotComposite => crate::format::Encoding::BotComposite,
-            EncodingMode::MultiplayerComposite => crate::format::Encoding::Composite,
+            EncodingMode::PerEntity => Encoding::PerEntity,
+            EncodingMode::BotComposite => Encoding::BotComposite,
+            EncodingMode::MultiplayerComposite => Encoding::Composite,
         },
         header,
         clock,

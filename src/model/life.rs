@@ -62,12 +62,28 @@ impl Coordinates {
     }
 }
 
+/// How a film's tick packets carry its bipeds' positions, which depends on
+/// the lobby ([`Film::encoding`](crate::Film::encoding)).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+pub enum Encoding {
+    /// Up to four players, none a bot: each biped's position is an entity
+    /// record at any bit offset of a tick packet.
+    PerEntity,
+    /// Up to four players with a bot: the same records, a bot's often first.
+    BotComposite,
+    /// Five or more players: every object update is an entry of the tick
+    /// packet's entity view, bit-packed.
+    Composite,
+}
+
 /// One sample of a life: where the biped was and its state as of its last
 /// update.
 ///
-/// In a small lobby (four players or fewer:
-/// [`Encoding::PerEntity`](crate::format::Encoding::PerEntity) and
-/// [`Encoding::BotComposite`](crate::format::Encoding::BotComposite)) the
+/// In a small lobby (four players or fewer: [`Encoding::PerEntity`] and
+/// [`Encoding::BotComposite`]) the
 /// biped updates aren't read field by field, so `yaw`, `pitch`, `speed`,
 /// `health` and `shield` are None, and `position` has no `z`.
 #[derive(Clone, Copy, Debug, PartialEq)]

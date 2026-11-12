@@ -18,8 +18,8 @@
 //! kind 12 the bots' records.
 //!
 //! This layer follows the format as far as it is understood, so it changes
-//! more often than the model: expect breaking changes here in minor
-//! releases.
+//! more often than the model: it comes with the `raw` feature, outside the
+//! crate's semantic versioning, and can break in any release.
 //!
 //! ```no_run
 //! # fn run(film: &filmshell::Film) {
@@ -273,20 +273,7 @@ pub struct Raw<'a> {
     encoding: Encoding,
 }
 
-/// How a film's tick packets carry its bipeds' positions, which depends on
-/// the lobby.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum Encoding {
-    /// Up to four players, none a bot: each biped's position is an entity
-    /// record at any bit offset of a tick packet.
-    PerEntity,
-    /// Up to four players with a bot: the same records, a bot's often first.
-    BotComposite,
-    /// Five or more players: every object update is an entry of the tick
-    /// packet's entity view, bit-packed.
-    Composite,
-}
+pub use crate::Encoding;
 
 impl<'a> Raw<'a> {
     pub(crate) fn new(

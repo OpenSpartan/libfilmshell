@@ -14,7 +14,7 @@ mod variant;
 pub use event::*;
 pub use header::Header;
 pub use ids::{EntityId, Guid, PlayerId, PlayerMask, Position, TeamId, Xuid};
-pub use life::{CoordinateSource, Coordinates, Life, Sample, SpawnFit};
+pub use life::{CoordinateSource, Coordinates, Encoding, Life, Sample, SpawnFit};
 pub use objects::{
     GrenadeFlight, GroundWeapon, Heading, HillPoints, HillScore, PathPoint, ProjectileFlight, Ride, RideIndex,
     VehicleIndex, VehicleTrack, WorldObject, Zone, ZoneArea, ZoneIndex, ZoneShape, ZoneState,

@@ -27,6 +27,7 @@ jobs:
         run: |
           cargo clippy --lib --tests --examples -- -D warnings
           cargo clippy --lib --tests --examples --features serde -- -D warnings
+          cargo clippy --lib --tests --examples --features raw -- -D warnings
           cargo clippy --lib --tests --examples --features research -- -D warnings
       - name: Test
         run: cargo test --release --all-features

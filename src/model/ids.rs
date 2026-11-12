@@ -33,7 +33,7 @@ impl fmt::Display for PlayerId {
 /// A biped's or a vehicle's id: `(generation - 1) * 256 + index`.
 ///
 /// The index is counted within the object's kind (a raw entity index less 512
-/// for a biped, less 768 for a vehicle, as [`format`](crate::format) gives
+/// for a biped, less 768 for a vehicle, as the raw layer (`format`) gives
 /// them), so bipeds and vehicles count ids separately: a biped and a vehicle
 /// can share a number. The game reuses an id once its object is gone, so an id
 /// is unique only among the objects that exist at the same time: a biped's id

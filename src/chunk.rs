@@ -43,7 +43,7 @@ impl ChunkKind {
 
     /// The kind of chunk `index` from its inflated bytes, for chunks without
     /// a manifest at hand. Chunk 0 is the header. The others are packets
-    /// ([`format`](crate::format) has their layout) that end on the chunk's
+    /// (`format`, with the `raw` feature, has their layout) that end on the chunk's
     /// last byte: a replay chunk's first packet is kind 1, the highlights
     /// chunk's kind 9. None for bytes that are neither.
     pub fn detect(index: u32, inflated: &[u8]) -> Option<ChunkKind> {
