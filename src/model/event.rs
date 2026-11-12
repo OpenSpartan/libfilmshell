@@ -565,14 +565,16 @@ pub struct EquipmentUse {
     pub position: Position,
 }
 
-/// A voice line.
+/// A voice line the announcer or a mode script played, with the players who
+/// hear it. The game can send one line to its listeners separately, each its
+/// own event at the same tick.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct VoiceLine {
-    /// The sound tag.
+    /// The sound's tag. The library's catalogue names no sounds.
     pub sound: TagId,
-    /// Who hears it.
+    /// The players who hear it.
     pub recipients: PlayerMask,
 }
 
@@ -693,7 +695,8 @@ pub struct GameEvent {
     /// the test films). The game sends a response once to each of its
     /// targets, each its own event: a medal's or a personal score's names the
     /// player who earned it, and a kill feed line comes once for each player
-    /// shown it.
+    /// shown it. To show each line once, keep the events sent to one player,
+    /// the one the viewer follows (the `feed` example does).
     pub players: PlayerMask,
 }
 
