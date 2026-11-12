@@ -696,6 +696,30 @@ fn flag_events_count_as_the_match_stats_do() {
     assert!(carried * 100 >= grabs * 99, "{carried} of {grabs} grabs give the player the flag");
 }
 
+/// The carries cover exactly the ticks a player is alive with an objective's
+/// item in their slots, tick by tick.
+#[test]
+fn carries_are_the_ticks_carried() {
+    let mut checked = 0;
+    for (name, f) in corpus() {
+        let carries = f.carries();
+        if carries.is_empty() {
+            continue;
+        }
+        checked += 1;
+        for p in f.players() {
+            let Some(state) = f.player_state(p.id) else { continue };
+            let mine: Vec<&Carry> = carries.iter().filter(|c| c.player == p.id).collect();
+            for t in (0..=f.clock().end().0).map(Tick) {
+                let scanned = state.carrying(t).filter(|_| f.alive_at(p.id, t));
+                let spans = mine.iter().find(|c| c.from <= t && t <= c.to).map(|c| c.item);
+                assert_eq!(spans, scanned, "{name}: player {} at {t}", p.id);
+            }
+        }
+    }
+    assert!(corpus().is_empty() || checked > 0);
+}
+
 /// How long each player carried the flag, the skull or a power seed, alive
 /// with its item in their slots while a round was in play (the match stats
 /// stop counting when the mode scripts announce a round won), is the match

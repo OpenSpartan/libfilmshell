@@ -51,6 +51,23 @@ impl Carried {
     }
 }
 
+/// One stretch of a player carrying an objective
+/// ([`Film::carries`](crate::Film::carries)): from the tick its item came into
+/// their weapon slots to the last tick they held it alive, both inclusive.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct Carry {
+    /// The carrier.
+    pub player: crate::PlayerId,
+    /// What they carried.
+    pub item: Carried,
+    /// The first tick they carried it.
+    pub from: Tick,
+    /// The last tick they carried it.
+    pub to: Tick,
+}
+
 /// A player's movement input from `tick` on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

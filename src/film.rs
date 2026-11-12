@@ -341,6 +341,55 @@ impl Film {
         self.lives.iter().filter(move |l| l.player == Some(player))
     }
 
+    /// Every stretch of a player carrying the flag, the skull, Grifball's ball
+    /// or a power seed, in the order they started: what
+    /// [`PlayerAt::carrying`] gives tick by tick, as spans. A carry ends with
+    /// its item leaving the carrier's slots or with the carrier's life. The
+    /// match stats' time as a carrier counts only carries while a round is
+    /// in play ([`PlayerState::carrying`]).
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film) {
+    /// use filmshell::Tick;
+    ///
+    /// for c in film.carries() {
+    ///     let seconds = (c.to - c.from + 1) as f64 / f64::from(Tick::PER_SECOND);
+    ///     println!("{} carried the {} for {seconds:.1} s", film.player_name(c.player).unwrap_or("someone"), c.item);
+    /// }
+    /// # }
+    /// ```
+    pub fn carries(&self) -> Vec<Carry> {
+        let mut out = Vec::new();
+        for (player, state) in &self.states {
+            let changes: Vec<Tick> = state.weapons.iter().map(|w| w.tick).collect();
+            for life in self.lives_of(*player) {
+                let (Some(start), end) = (life.start(), life.until.unwrap_or(self.clock.end())) else { continue };
+                // The carried item can change only where a weapon slot does.
+                let mut points = vec![start];
+                points.extend(changes.iter().copied().filter(|&t| t > start && t <= end));
+                points.dedup();
+                let mut open: Option<(Carried, Tick)> = None;
+                for (k, &t) in points.iter().enumerate() {
+                    let now = state.carrying(t);
+                    if let Some((item, from)) = open.filter(|&(item, _)| Some(item) != now) {
+                        out.push(Carry { player: *player, item, from, to: t - 1 });
+                        open = None;
+                    }
+                    if open.is_none() {
+                        open = now.map(|item| (item, t));
+                    }
+                    if k + 1 == points.len() {
+                        if let Some((item, from)) = open.take() {
+                            out.push(Carry { player: *player, item, from, to: end });
+                        }
+                    }
+                }
+            }
+        }
+        out.sort_by_key(|c| (c.from, c.player));
+        out
+    }
+
     /// Seconds until `player` respawns, at `tick`: while they are dead and a
     /// respawn countdown runs ([`RespawnCountdown`]), its length less the
     /// time since it started. On the test films the next life starts within

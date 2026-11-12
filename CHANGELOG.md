@@ -80,11 +80,11 @@ The first release, 0.1.0.
   Infection and Stockpile among them; `game::modes` lists each mode's options and their defaults.
   Capture the Flag's flag events and Big Team Stockpile's power seed events (steals, deposits,
   carriers killed) are in the event stream, named by the modes' scripts.
-- `PlayerAt::carrying` and `PlayerState::carrying`: the flag, the skull, Grifball's ball or a power
-  seed a player carries, from the item the game puts in the carrier's weapon slots. On the test
-  films each player's time carrying, while a round is in play and with each carry truncated to
-  tenths of a second as the match stats do, is the match stats' time as carrier within 0.15 s for
-  146 of 155.
+- `PlayerAt::carrying`, `PlayerState::carrying` and `Film::carries` (as spans): the flag, the skull,
+  Grifball's ball or a power seed a player carries, from the item the game puts in the carrier's
+  weapon slots. On the test films each player's time carrying, while a round is in play and with
+  each carry truncated to tenths of a second as the match stats do, is the match stats' time as
+  carrier within 0.15 s for 146 of 155.
 - Events name players by engine slot, which a joiner can take over from a player who left: the mode
   scripts' events, and the player index in a shot's, hit's or throw's body (the only name a shot
   fired from a vehicle has). Every reader maps them to player ids. On the test films each player's
