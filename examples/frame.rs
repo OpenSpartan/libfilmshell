@@ -125,7 +125,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let Some(pos) = p.life.position_at(at) else { continue };
         let (x, y) = px(pos.x, pos.y);
         let c = colour(p.player.team);
-        if let Some(yaw) = p.sample.yaw.filter(|_| p.vehicle.is_none()) {
+        if let Some(yaw) = p.life.yaw_at(at).filter(|_| p.vehicle.is_none()) {
             let (ax, ay) = px(pos.x + AIM * yaw.cos(), pos.y + AIM * yaw.sin());
             writeln!(
                 svg,

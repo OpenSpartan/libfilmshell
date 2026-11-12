@@ -52,15 +52,16 @@ The first release, 0.1.0.
 - Playback: `Film::players_at` gives every living player at a tick with their life, sample, weapon
   and its rounds, charge or heat, grenades, the objective they carry, ride and vehicle; `life_at`,
   `sample_at`, `weapon_at`, `ride_at`, `vehicle_at` and `events_in` look up one thing, and
-  `Life::position_at` places a player between samples. The rest of the map at a tick: `vehicles_at`
-  (a parked vehicle stays where it stopped until the game deletes it, `VehicleTrack::removed`),
-  `grenades_at`, `projectiles_at`, `ground_weapons_at` and `world_objects_at`; `Zone::state_at` and
-  `HillScore::points_at`.
+  `Life::position_at` and `Life::yaw_at` place a player and their aim between samples. The rest of
+  the map at a tick: `vehicles_at` (a parked vehicle stays where it stopped until the game deletes
+  it, `VehicleTrack::removed`), `grenades_at`, `projectiles_at`, `ground_weapons_at` and
+  `world_objects_at`; `Zone::state_at` and `HillScore::points_at`.
 - `VehicleTrack::headings` and `heading_at`: which way a vehicle faces, from the orientation it
   sends, built as the game builds it (an up direction and an angle about it). On the test films a
   moving ground vehicle faces within 30 degrees of its travel 78% of the time, a dropship 97%.
-  `VehicleTrack::position_at` glides between records a few ticks apart, as a player's position
-  does. `Sample::yaw` is in world axes on every level, whatever the aspect of its box.
+  `VehicleTrack::position_at` and `heading_at` glide between records a few ticks apart, as a
+  player's position and aim do. `Sample::yaw` is in world axes on every level, whatever the aspect
+  of its box.
 - A ride ends when its vehicle is deleted, and with the rider's life: a driver killed with their
   tank stays seated in the wreck, but the ride stops at the death.
 - Damaged chunks never panic: the tests read real films with flipped bits, cut-short chunks and

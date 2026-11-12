@@ -219,14 +219,48 @@ impl Life {
         Some(Position { x: mid(p.x, q.x), y: mid(p.y, q.y), z: p.z.zip(q.z).map(|(a, b)| mid(a, b)).or(p.z) })
     }
 
-    /// The longest gap between samples that [`Life::position_at`]
-    /// interpolates across: 6 ticks, three frames of a 30 Hz film.
+    /// Which way the player aimed at `tick`, for playback that draws every
+    /// tick: between two samples at most [`Life::GLIDE_TICKS`] apart, the
+    /// yaw between theirs in proportion, the shorter way round; else the
+    /// last sample's yaw. None when [`Life::sample_at`] is, or the sample has
+    /// no yaw.
+    pub fn yaw_at(&self, tick: Tick) -> Option<f64> {
+        let a = self.sample_at(tick)?;
+        let y = a.yaw?;
+        let i = self.samples.partition_point(|s| s.tick <= tick);
+        let Some(b) = self.samples.get(i).filter(|b| self.until.is_none_or(|u| b.tick <= u)) else { return Some(y) };
+        let (Some(z), gap) = (b.yaw, b.tick.0 - a.tick.0) else { return Some(y) };
+        if gap > Self::GLIDE_TICKS {
+            return Some(y);
+        }
+        Some(turn(y, z, (tick.0 - a.tick.0) as f64 / gap as f64))
+    }
+
+    /// The longest gap between samples that [`Life::position_at`] and
+    /// [`Life::yaw_at`] interpolate across: 6 ticks, three frames of a 30 Hz
+    /// film.
     pub const GLIDE_TICKS: u32 = 6;
+}
+
+/// The angle a fraction `f` of the way from `a` to `b`, radians, the shorter
+/// way round, in -π to π.
+pub(crate) fn turn(a: f64, b: f64, f: f64) -> f64 {
+    use std::f64::consts::{PI, TAU};
+    let d = (b - a + PI).rem_euclid(TAU) - PI;
+    (a + d * f + PI).rem_euclid(TAU) - PI
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn angles_turn_the_short_way() {
+        assert!((turn(0.0, 1.0, 0.5) - 0.5).abs() < 1e-12);
+        // Across ±π, through π rather than through 0.
+        assert!((turn(3.0, -3.0, 0.5).abs() - std::f64::consts::PI).abs() < 1e-12);
+        assert!((turn(-0.5, 0.5, 0.25) + 0.25).abs() < 1e-12);
+    }
 
     fn life(ticks: &[u32], died: bool, death: Option<u32>) -> Life {
         let sample = |t: u32| Sample {

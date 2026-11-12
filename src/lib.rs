@@ -68,8 +68,9 @@
 //! let mut now = Tick(0);
 //! while now <= film.clock().end() {
 //!     for p in film.players_at(now) {
-//!         // Between samples, where the player was this tick.
+//!         // Between samples, where the player was and aimed this tick.
 //!         let _at = p.life.position_at(now);
+//!         let _aim = p.life.yaw_at(now);
 //!     }
 //!     // What happened since the last frame drawn, this tick included.
 //!     for _event in film.events_in(from..=now) {}

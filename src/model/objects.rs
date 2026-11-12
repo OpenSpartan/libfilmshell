@@ -111,14 +111,20 @@ impl VehicleTrack {
     }
 
     /// Which way the vehicle faced at `tick`, while it was
-    /// [on the map](VehicleTrack::on_map_at): its last heading at or before
-    /// it, else its first. None without headings.
+    /// [on the map](VehicleTrack::on_map_at): between two headings at most
+    /// [`Life::GLIDE_TICKS`](crate::Life::GLIDE_TICKS) apart, the angle
+    /// between them in proportion, the shorter way round; else its last
+    /// heading at or before `tick`, else its first. None without headings.
     pub fn heading_at(&self, tick: Tick) -> Option<f64> {
         if !self.on_map_at(tick) {
             return None;
         }
         let i = self.headings.partition_point(|h| h.tick <= tick);
-        self.headings.get(i.saturating_sub(1)).map(|h| h.yaw)
+        let Some(a) = i.checked_sub(1).map(|k| self.headings[k]) else { return self.headings.first().map(|h| h.yaw) };
+        let gap = |b: &&Heading| b.tick.0 - a.tick.0 <= crate::Life::GLIDE_TICKS;
+        let Some(b) = self.headings.get(i).filter(gap) else { return Some(a.yaw) };
+        let f = (tick.0 - a.tick.0) as f64 / (b.tick.0 - a.tick.0) as f64;
+        Some(super::life::turn(a.yaw, b.yaw, f))
     }
 
     /// Whether the vehicle was on the map at `tick`: from its first record
