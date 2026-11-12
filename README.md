@@ -85,7 +85,7 @@ fn print_match(chunks: &[(u32, u32, Vec<u8>)]) -> Result<(), filmshell::Error> {
 Chunks saved as files named `filmChunk{N}` (as downloaded) or `filmChunk{N}_dec` (inflated) need no
 manifest: `Chunk::from_file(name, bytes)` takes the index from the file name and the kind from the
 bytes, and `Film::from_folder(dir)` reads a folder of them. The [`examples` folder](examples) has
-eight programs that read a film saved that way:
+nine programs that read a film saved that way:
 
 ```sh
 # The match, its players and the score
@@ -100,6 +100,8 @@ cargo run --release --example feed -- path/to/film 3
 cargo run --release --example playback -- path/to/film 90
 # Every path and scored kill, drawn as a map
 cargo run --release --example trails -- path/to/film > map.svg
+# The map 90 seconds in as a picture: players with their aim, vehicles turned to their heading
+cargo run --release --example frame -- path/to/film 90 > frame.svg
 # The packets and events underneath
 cargo run --release --features raw --example raw -- path/to/film
 # The model as JSON

@@ -12,7 +12,7 @@ if [ "${1:-}" = "--film" ]; then
     # The first player id the players example lists, for the timeline and
     # the feed.
     id=$("$bin/players" "$dir" | awk '$1 ~ /^[0-9]+$/ { print $1; exit }')
-    for run in "players" "kills" "raw" "trails" "json" "timeline ${id:-0}" "feed ${id:-0}" "playback 60"; do
+    for run in "players" "kills" "raw" "trails" "json" "timeline ${id:-0}" "feed ${id:-0}" "playback 60" "frame 60"; do
         set -- $run
         name=$1
         shift
