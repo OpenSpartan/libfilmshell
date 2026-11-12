@@ -548,7 +548,7 @@ fn stats_until(f: &Film, p: PlayerId) -> Tick {
 }
 
 /// Every player's deaths, the bots' included, are the match stats' Deaths
-/// (in the roster's order, the film's), up to [`stats_until`].
+/// (each player's own row, by XUID or bot id), up to [`stats_until`].
 #[test]
 fn lives_die_as_the_match_stats_count() {
     let (mut players, mut agree) = (0usize, 0usize);
@@ -556,19 +556,15 @@ fn lives_die_as_the_match_stats_count() {
     for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
         let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
         let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
-        let rows = stats["Players"].as_array().cloned().unwrap_or_default();
-        if rows.len() != f.players().len() {
-            continue;
-        }
-        for (i, s) in rows.iter().enumerate() {
+        for p in f.players() {
+            let Some(s) = stats_row(&stats, p) else { continue };
             let Some(want) = s["PlayerTeamStats"][0]["Stats"]["CoreStats"]["Deaths"].as_u64() else { continue };
-            let until = stats_until(f, PlayerId(i as u8));
-            let got =
-                f.lives_of(PlayerId(i as u8)).filter(|l| l.died && l.end().is_some_and(|e| e <= until)).count() as u64;
+            let until = stats_until(f, p.id);
+            let got = f.lives_of(p.id).filter(|l| l.died && l.end().is_some_and(|e| e <= until)).count() as u64;
             players += 1;
             agree += usize::from(got == want);
             if got != want {
-                wrong.push(format!("{name}: player {i} died {got} times, the stats say {want}"));
+                wrong.push(format!("{name}: player {} died {got} times, the stats say {want}", p.id));
             }
         }
     }
@@ -584,14 +580,12 @@ fn power_seeds_count_as_the_match_stats_do() {
     for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
         let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
         let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
-        let rows = stats["Players"].as_array().cloned().unwrap_or_default();
-        if rows.len() != f.players().len()
-            || rows.iter().all(|r| r["PlayerTeamStats"][0]["Stats"]["StockpileStats"].is_null())
-        {
-            continue;
-        }
-        for (i, row) in rows.iter().enumerate() {
+        for p in f.players() {
+            let Some(row) = stats_row(&stats, p) else { continue };
             let st = &row["PlayerTeamStats"][0]["Stats"]["StockpileStats"];
+            if st.is_null() {
+                continue;
+            }
             for (kind, key) in [
                 (SeedEventKind::Deposit, "PowerSeedsDeposited"),
                 (SeedEventKind::Steal, "PowerSeedsStolen"),
@@ -601,9 +595,9 @@ fn power_seeds_count_as_the_match_stats_do() {
                 let got = f
                     .events()
                     .iter()
-                    .filter(|e| matches!(&e.event, Event::Seed(s) if s.kind == kind && s.player == PlayerId(i as u8)))
+                    .filter(|e| matches!(&e.event, Event::Seed(s) if s.kind == kind && s.player == p.id))
                     .count();
-                assert_eq!(got, want, "{name}: player {i} {key}");
+                assert_eq!(got, want, "{name}: player {} {key}", p.id);
                 seen += got;
             }
         }
@@ -896,14 +890,11 @@ fn kills_count_as_the_match_stats_do() {
     for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
         let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
         let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
-        let rows = stats["Players"].as_array().cloned().unwrap_or_default();
-        if rows.len() != f.players().len() {
-            continue;
-        }
         // Teams just before the kill: Infection and some minigames move
         // players between teams, Infection at the kill itself.
         let team = |id: PlayerId, t: Tick| f.player(id).and_then(|p| p.team_at(Tick(t.0.saturating_sub(1))));
-        for (i, s) in rows.iter().enumerate() {
+        for player in f.players() {
+            let Some(s) = stats_row(&stats, player) else { continue };
             // CoreStats counts AI kills too (PveStats); PvpStats are players'.
             // Firefight has no PvpStats: its kills are all of AI.
             let stats = &s["PlayerTeamStats"][0]["Stats"];
@@ -913,7 +904,7 @@ fn kills_count_as_the_match_stats_do() {
             let Some(want) = stats["PvpStats"]["Kills"].as_u64().or(stats["CoreStats"]["Kills"].as_u64()) else {
                 continue;
             };
-            let p = PlayerId(i as u8);
+            let p = player.id;
             let until = stats_until(f, p);
             let got = f
                 .kills()
@@ -923,7 +914,7 @@ fn kills_count_as_the_match_stats_do() {
             players += 1;
             agree += usize::from(got == want);
             if got != want {
-                wrong.push(format!("{name}: player {i} has {got} kills, the stats say {want}"));
+                wrong.push(format!("{name}: player {p} has {got} kills, the stats say {want}"));
             }
         }
     }

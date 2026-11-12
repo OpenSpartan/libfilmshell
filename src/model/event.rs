@@ -241,11 +241,13 @@ pub struct Kill {
     /// headshot events at all.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub headshot: Option<bool>,
-    /// Whether the scoreboard counted the death. It counts only while a round
-    /// is under way, so the deaths the game deals everyone still alive when a
-    /// match ends are false. In a small lobby, whose scoreboard isn't read, a
-    /// death with cause World in the film's last 6 s is false and every other
-    /// death None.
+    /// Whether the scoreboard counted the death: the film's scoreboard
+    /// records it, or the highlights chunk does (the game records there every
+    /// death its scoreboard counts, and a film can miss the scoreboard's
+    /// update). It counts only while a round is under way, so the deaths the
+    /// game deals everyone still alive when a match ends are false. In a small
+    /// lobby, whose scoreboard isn't read, a death with cause World in the
+    /// film's last 6 s is false and every other death None.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub scored: Option<bool>,
     /// What the last hit on the victim in the 2 s before was.

@@ -57,6 +57,9 @@ const EXIT_SLACK: i64 = 90;
 /// game renews an attachment within a tick or two.
 const RIDE_GAP_TICKS: i64 = 3;
 /// Statborg slots of kills, deaths, suicides and spawns.
+/// How far a HighlightEvents death and the kill it records can be apart: on
+/// the test films within 6 ticks for all but five of 6,724, the latest 86.
+const RECORDED_DEATH_TICKS: u32 = 90;
 const KILLS_SLOT: u32 = 4;
 const DEATHS_SLOT: u32 = 5;
 const SUICIDES_SLOT: u32 = 8;
@@ -856,7 +859,19 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             .map(|c| (c.id, c.frame))
             .collect()
     };
-    let scored = |victim: PlayerId, killer: Option<PlayerId>, frame: i64| {
+    // The deaths HighlightEvents records, by player and tick. On the test
+    // films every death the scoreboard counts has one, and the few a film's
+    // scoreboard leaves out that have one are all in the match stats: a
+    // record at a kill counts it.
+    let recorded_deaths: Vec<(i32, Tick)> = highlights
+        .iter()
+        .filter(|h| h.event_type == EventType::Death)
+        .filter_map(|h| Some((*pi_of.get(h.xuid.as_str())?, clock.highlight_tick(h.time_ms as u32)?)))
+        .collect();
+    let recorded = |victim: PlayerId, at: Tick| {
+        recorded_deaths.iter().any(|&(p, t)| p == i32::from(victim.0) && t.0.abs_diff(at.0) <= RECORDED_DEATH_TICKS)
+    };
+    let on_scoreboard = |victim: PlayerId, killer: Option<PlayerId>, frame: i64| {
         let team = roster.players.get(victim.0 as usize).and_then(|p| p.team);
         let row = |kind: u32, id: u32| {
             death_frames.iter().any(|&(k, i, f)| k == kind && i == id && (f - frame).abs() <= DEATH_FRAMES)
@@ -864,7 +879,11 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         let killed = killer.filter(|&k| k != victim).is_some_and(|k| {
             kill_frames.iter().any(|&(i, f)| i == k.0 as u32 && (f - frame).abs() <= DEATH_FRAMES)
         });
-        (!stat_log.changes.is_empty()).then(|| row(0, victim.0 as u32) || team.is_some_and(|t| row(1, t)) || killed)
+        row(0, victim.0 as u32) || team.is_some_and(|t| row(1, t)) || killed
+    };
+    let scored = |victim: PlayerId, killer: Option<PlayerId>, frame: i64| {
+        (!stat_log.changes.is_empty())
+            .then(|| on_scoreboard(victim, killer, frame) || recorded(victim, tick(frame)))
     };
     // What dealt a death at `frame` to the victim's path `vk`: the last hit's
     // cause, and its weapon, else the killer's (path `kk`) last shot.
@@ -1593,6 +1612,10 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             lives.iter_mut().filter(|l| l.player == Some(k.victim) && l.start().is_some_and(|s| s <= e.tick)).last();
         if let Some(l) = life.filter(|l| l.death.is_none()) {
             l.death = Some(e.tick);
+            // A death the game recorded where the film's scoreboard missed
+            // it: the scoreboard is what the lives' deaths come from.
+            let frame = clock.frame_at(e.tick).map_or(0, |f| f as i64);
+            l.died |= k.scored == Some(true) && !on_scoreboard(k.victim, k.killer, frame);
         }
     }
 

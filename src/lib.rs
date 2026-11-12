@@ -111,7 +111,7 @@
 //! Extraction, Escalation, Grifball) they check that the level, every
 //! player's kills and deaths over the match, and each team's score agree
 //! with the match stats. Every player's kills and deaths agree, bots
-//! included (647 and 668 players), though a bot's lives, deaths and kills
+//! included (765 and 786 players), though a bot's lives, deaths and kills
 //! come from the film alone. For one player the comparison stops partway:
 //! the game cleared their scoreboard row mid-match (a reconnect), and the
 //! match stats count only what came before; the film goes on to the end.
