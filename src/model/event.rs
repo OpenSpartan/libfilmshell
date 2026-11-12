@@ -496,9 +496,20 @@ pub struct VehicleDestroyed {
     /// when no such hit is recorded.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub track: Option<usize>,
-    /// The damage effect of that hit.
+    /// The damage effect of that hit: often the wreck's own blast.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub damage: Option<TagId>,
+    /// What destroyed it, as for a kill ([`Kill::cause`]): the cause of the
+    /// hit or kill `weapon` comes from, else of the credited player's last
+    /// hit on it.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub cause: Option<DamageCause>,
+    /// The weapon that destroyed it, or the vehicle whose weapon did: the
+    /// one the credited player's last hit on it belongs to (the wreck's own
+    /// blast belongs to none), else the weapon a rider they killed with it
+    /// died to, else their last shot in the 2 s before.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub weapon: Option<TagId>,
     /// The riders who died with it: killed within three ticks of it while
     /// seated in it.
     pub killed: PlayerMask,

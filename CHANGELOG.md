@@ -78,8 +78,8 @@ The first release, 0.1.0.
   record twice a few ticks apart, is kept once.
 - `Event::VehicleDestroyed` and `Event::Hijack`: the personal scores the modes' scripts give for
   destroying a vehicle of another team and for hijacking one. A destroy names the vehicle's track
-  (the vehicle of its type hit last), the damage and the riders killed with it; a hijack the
-  hijacker's ride and the player thrown out. On the test films each player's hijacks equal the match
+  (the vehicle of its type hit last), the weapon and cause that destroyed it, as a kill's are, and
+  the riders killed with it; a hijack the hijacker's ride and the player thrown out. On the test films each player's hijacks equal the match
   stats'; the match stats count vehicle destroys by another rule.
 - `filmshell::game` holds the game's own tables: weapons, vehicles, medals, damage effects, the
   sandbox's numbers (`fire_stats`, `projectile_stats`, `vehicle_bounds`), and levels with their

@@ -1729,10 +1729,19 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 (at, track, attacker.and_then(|k| pid(paths[k].player_index)), tag)
             })
             .collect();
-        let kills: Vec<(Tick, PlayerId)> = events
+        // Each kill's tick, victim, killer, cause and weapon.
+        type KillAt = (Tick, PlayerId, Option<PlayerId>, Option<Cause>, Option<TagId>);
+        let kills: Vec<KillAt> = events
             .iter()
-            .filter_map(|e| if let Event::Kill(k) = &e.event { Some((e.tick, k.victim)) } else { None })
+            .filter_map(|e| match &e.event {
+                Event::Kill(k) => Some((e.tick, k.victim, k.killer, k.cause, k.weapon)),
+                _ => None,
+            })
             .collect();
+        // A damage effect's owner as the film's weapon list names it.
+        let named = |owner: u32| {
+            fired.as_ref().and_then(|ff| ff.named(owner).map(|w| TagId(ff.weapons[w].id))).unwrap_or(TagId(owner))
+        };
         let ride_at = |p: PlayerId, t: Tick| rides.iter().rfind(|r| r.player == p && r.from <= t && t <= r.to);
         let mut scored = Vec::new();
         for e in &events {
@@ -1749,17 +1758,37 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                         .collect();
                     let hit = recent.iter().rfind(|h| h.2 == Some(player)).or(recent.last());
                     let track = hit.and_then(|h| h.1);
-                    let killed = kills
+                    let riders: Vec<&KillAt> = kills
                         .iter()
-                        .filter(|(kt, victim)| {
+                        .filter(|(kt, victim, ..)| {
                             kt.0.abs_diff(t.0) <= 3
                                 && track.is_some()
                                 && ride_at(*victim, kt.saturating_sub(2)).is_some_and(|r| r.vehicle == track)
                         })
-                        .map(|&(_, v)| v)
                         .collect();
+                    let killed: PlayerMask = riders.iter().map(|k| k.1).collect();
                     let damage = hit.and_then(|h| h.3).map(TagId);
-                    let d = VehicleDestroyed { player, vehicle, track, damage, killed };
+                    // What destroyed it: the player's last hit on it whose
+                    // effect names its weapon (the wreck's own blast names
+                    // none), else the weapon a rider they killed with it
+                    // died to, else their last shot in the 2 s before.
+                    let mine = || recent.iter().rev().filter(|h| h.2 == Some(player) && h.1 == track);
+                    let by_hit = mine().find_map(|h| {
+                        let (cause, owner) = damage::cause(h.3?);
+                        Some((cause, named(owner?)))
+                    });
+                    let by_rider = riders.iter().filter(|k| k.2 == Some(player)).find_map(|k| Some((k.3?, k.4?)));
+                    let by_shot = || {
+                        let ff = fired.as_ref()?;
+                        let frame = ex.frame_ticks.partition_point(|&x| x < t.0) as i64;
+                        let w = fire::shot_before(ff, path_of(player.0 as i32)?, &ex.frame_ticks, frame)?;
+                        Some((Cause::Weapon, TagId(ff.weapons[w].id)))
+                    };
+                    let (cause, weapon) = match by_hit.or(by_rider).or_else(by_shot) {
+                        Some((c, w)) => (Some(c), Some(w)),
+                        None => (mine().find_map(|h| h.3).map(|t| damage::cause(t).0), None),
+                    };
+                    let d = VehicleDestroyed { player, vehicle, track, damage, cause, weapon, killed };
                     scored.push(TimedEvent { tick: t, event: Event::VehicleDestroyed(d) });
                 }
             }

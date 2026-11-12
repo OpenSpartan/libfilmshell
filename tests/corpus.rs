@@ -886,25 +886,33 @@ fn text_keys_have_their_text() {
 }
 
 /// Every vehicle destroy the scripts score is tied to a vehicle of its type,
-/// and the riders killed with it rode it.
+/// and the riders killed with it rode it. Nearly every one names the weapon
+/// that destroyed it, and a rider the destroyer killed with it died to the
+/// same weapon, where their kill names one.
 #[test]
 fn destroyed_vehicles_are_found() {
-    let (mut destroyed, mut tracked, mut killed) = (0, 0, 0);
+    let (mut destroyed, mut tracked, mut killed, mut armed) = (0, 0, 0, 0);
     for (name, f) in corpus() {
         for e in f.events() {
             let Event::VehicleDestroyed(d) = &e.event else { continue };
             destroyed += 1;
+            armed += usize::from(d.weapon.is_some());
             let Some(v) = d.track.map(|i| &f.vehicles()[i]) else { continue };
             tracked += 1;
             assert_eq!(v.vehicle(), Some(d.vehicle), "{name} {}", e.tick);
             for p in d.killed.iter() {
                 killed += 1;
-                assert!(f.kills().any(|(t, k)| k.victim == p && t.0.abs_diff(e.tick.0) <= 3), "{name} {}: {p}", e.tick);
+                let kill = f.kills().find(|(t, k)| k.victim == p && t.0.abs_diff(e.tick.0) <= 3);
+                let Some((_, kill)) = kill else { panic!("{name} {}: {p}", e.tick) };
+                if kill.killer == Some(d.player) && kill.weapon.is_some() {
+                    assert_eq!(kill.weapon, d.weapon, "{name} {}: {p}", e.tick);
+                }
             }
         }
     }
     assert!(corpus().is_empty() || (destroyed > 0 && tracked == destroyed), "{tracked} of {destroyed} destroys found");
-    eprintln!("{destroyed} vehicles destroyed, {killed} riders killed with them");
+    assert!(armed * 100 >= destroyed * 95, "{armed} of {destroyed} destroys name a weapon");
+    eprintln!("{destroyed} vehicles destroyed, {armed} with a weapon, {killed} riders killed with them");
 }
 
 /// Infection moves a survivor to the infected when killed: the victim's team
