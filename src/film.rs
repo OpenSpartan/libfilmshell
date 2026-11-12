@@ -167,12 +167,37 @@ impl Film {
         &self.clock
     }
 
+    /// The tick the match started: when its clock first ran.
+    ///
+    /// Ticks count from the film's first frame, which comes 16 s to 2 minutes
+    /// before it on the test films, while players load in; on most of them the
+    /// first lives start within a few ticks of it. Time into the match is
+    /// `tick - start` ticks, and the clock the game shows is
+    /// [`Scoreboard::clock_at`]. None on a film without a match clock (on the
+    /// test films, the small lobbies and a few others).
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film) {
+    /// use filmshell::Tick;
+    ///
+    /// if let Some(start) = film.match_start() {
+    ///     let two_minutes_in = start + 120 * Tick::PER_SECOND;
+    ///     for p in film.players_at(two_minutes_in) {
+    ///         println!("{}: {:?}", p.player.id, p.sample.position);
+    ///     }
+    /// }
+    /// # }
+    /// ```
+    pub fn match_start(&self) -> Option<Tick> {
+        self.scoreboard.match_clock.iter().find(|c| c.rate() != 0.0).map(|c| c.tick)
+    }
+
     /// Everyone who played, in id order.
     pub fn players(&self) -> &[Player] {
         &self.players
     }
 
-    /// The player with id `id`.
+    /// The player with id `id`, or None when no player has it.
     pub fn player(&self, id: PlayerId) -> Option<&Player> {
         match self.players.get(id.index()) {
             Some(p) if p.id == id => Some(p),
@@ -300,11 +325,11 @@ impl Film {
         let state = self.player_state(player);
         let on_foot = state.filter(|_| !sample.in_vehicle);
         let weapon = on_foot.and_then(|s| s.weapon_at(tick));
-        let ammo = on_foot.and_then(|s| s.ammo_in(s.held_slot(tick)?, tick));
-        let energy = on_foot.and_then(|s| s.energy_in(s.held_slot(tick)?, tick));
-        let heat = on_foot.and_then(|s| s.heat_in(s.held_slot(tick)?, tick));
-        // Counts from before this life's spawn are an earlier life's.
+        // Readings from before this life's spawn are an earlier life's.
         let start = life.start().unwrap_or(tick);
+        let ammo = on_foot.and_then(|s| s.ammo_in(s.held_slot(tick)?, tick)).filter(|a| a.tick >= start);
+        let energy = on_foot.and_then(|s| s.energy_in(s.held_slot(tick)?, tick)).filter(|e| e.tick >= start);
+        let heat = on_foot.and_then(|s| s.heat_in(s.held_slot(tick)?, tick)).filter(|h| h.tick >= start);
         let grenades = state.and_then(|s| s.grenades_at(tick)).filter(|g| g.tick >= start);
         let carrying = state.and_then(|s| s.carrying(tick));
         let player = self.player(player)?;
@@ -572,11 +597,15 @@ pub struct PlayerAt<'a> {
     /// The weapon in their hands: None in a vehicle, where they fire its
     /// weapons, and in small lobbies, whose weapon state isn't read.
     pub weapon: Option<TagId>,
-    /// The rounds in that weapon and in reserve, as last sent.
+    /// The rounds in that weapon and in reserve, as it last sent them in
+    /// this life. A weapon sends them when they change, so this is None from
+    /// the spawn or the pickup to its first shot or reload.
     pub ammo: Option<&'a Ammo>,
-    /// That weapon's charge, for an energy weapon.
+    /// That weapon's charge, for an energy weapon: None until it sends one,
+    /// as for `ammo`.
     pub energy: Option<&'a Energy>,
-    /// That weapon's heat, for a weapon that heats up.
+    /// That weapon's heat, for a weapon that heats up: None until it sends
+    /// one, as for `ammo`.
     pub heat: Option<&'a Heat>,
     /// The grenades they carry, as sent since they spawned.
     pub grenades: Option<&'a GrenadeCount>,

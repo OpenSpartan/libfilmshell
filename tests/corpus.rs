@@ -698,7 +698,7 @@ fn flag_events_count_as_the_match_stats_do() {
 /// How long each player carried the flag, the skull or a power seed, alive
 /// with its item in their slots while a round was in play (the match stats
 /// stop counting when the mode scripts announce a round won), is the match
-/// stats' time as its carrier: within a second for nearly all.
+/// stats' time as its carrier: within a quarter of a second for nearly all.
 #[test]
 fn carriers_carry_as_long_as_the_match_stats_say() {
     fn seconds(v: &serde_json::Value) -> Option<f64> {
@@ -749,27 +749,32 @@ fn carriers_carry_as_long_as_the_match_stats_say() {
                 continue;
             };
             let Some(state) = f.player_state(p.id) else { continue };
-            let ticks = (0..=f.clock().end().0)
-                .map(Tick)
-                .filter(|&t| state.carrying(t) == Some(item) && f.alive_at(p.id, t) && in_play(t))
-                .count();
-            let got = ticks as f64 / f64::from(Tick::PER_SECOND);
+            // Each carry's ticks, which the match stats add up truncated to
+            // tenths of a second (measured: 146 of the 155 carriers land
+            // within 0.15 s that way, 96 without).
+            let mut carries = Vec::new();
+            let mut run = 0u32;
+            for t in (0..=f.clock().end().0 + 1).map(Tick) {
+                if t <= f.clock().end() && state.carrying(t) == Some(item) && f.alive_at(p.id, t) && in_play(t) {
+                    run += 1;
+                } else if run > 0 {
+                    carries.push(run);
+                    run = 0;
+                }
+            }
+            let got: f64 = carries.iter().map(|&n| f64::from(n * 10 / Tick::PER_SECOND) / 10.0).sum();
             if want == 0.0 && got == 0.0 {
                 continue;
             }
             players += 1;
-            close += usize::from((got - want).abs() <= 1.0);
-            if (got - want).abs() > 1.0 {
+            close += usize::from((got - want).abs() <= 0.25);
+            if (got - want).abs() > 0.25 {
                 println!("{name}: player {} carried {got:.1} s, stats {want:.1} s", p.id);
             }
-            assert!(
-                got - want > -1.0 && got - want < 10.0,
-                "{name}: player {} carried {got:.1} s, stats {want:.1} s",
-                p.id
-            );
+            assert!((got - want).abs() < 5.0, "{name}: player {} carried {got:.1} s, stats {want:.1} s", p.id);
         }
     }
-    assert!(close * 100 >= players * 95, "{close} of {players} carriers within a second");
+    assert!(close * 100 >= players * 95, "{close} of {players} carriers within 0.25 s");
 }
 
 /// Aim pitch is up positive: a player hitting someone well above or below
@@ -975,10 +980,33 @@ fn the_match_clock_runs_at_its_rate() {
                 continue;
             }
             intervals += 1;
-            agree += usize::from((b.left - a.left - a.rate() * seconds).abs() <= 1.0 + 0.02 * seconds);
+            let run = f.scoreboard().clock_at(b.tick - 1).unwrap();
+            agree += usize::from((b.left - run).abs() <= 1.0 + 0.02 * seconds);
         }
     }
     assert!(corpus().is_empty() || agree * 100 >= intervals * 93, "{agree} of {intervals}");
+}
+
+/// The match starts when its clock first runs: no scored kill comes before
+/// it, and a life starts within 3 s after it.
+#[test]
+fn the_match_starts_when_its_clock_first_runs() {
+    let mut started = 0;
+    for (name, f) in corpus() {
+        let Some(start) = f.match_start() else {
+            assert!(f.scoreboard().match_clock.iter().all(|c| c.rate() == 0.0), "{name}");
+            continue;
+        };
+        started += 1;
+        if let Some((t, _)) = f.kills().find(|(_, k)| k.is_scored()) {
+            assert!(t >= start, "{name}: a scored kill at {t}, the match starts at {start}");
+        }
+        assert!(
+            f.lives().iter().filter_map(|l| l.start()).any(|t| t >= start && t - start <= 180),
+            "{name}: no life starts within 3 s of {start}"
+        );
+    }
+    assert!(corpus().is_empty() || started > 0);
 }
 
 /// The assistant a kill names, by its event or by the game's rule where the

@@ -1,4 +1,4 @@
-//! The match at one moment: where everyone was, their shield and health,
+//! The match a number of seconds in: where everyone was, their shield and health,
 //! what they held, with its rounds, charge or heat, or rode, and what
 //! objective they carried; then the vehicles, the grenades and other
 //! projectiles in the air and the weapons on the ground.
@@ -19,9 +19,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     let dir = args.next().ok_or("usage: playback <film folder> <seconds>")?;
     let seconds = args.next().ok_or("give a time in seconds")?;
-    let at = Tick::from_seconds(seconds.parse().map_err(|_| format!("{seconds} is not a number of seconds"))?);
+    let seconds: f64 = seconds.parse().map_err(|_| format!("{seconds} is not a number of seconds"))?;
     let film = Film::from_chunks(common::load_folder(dir.as_ref())?)?;
-    println!("{at} of {}", film.clock().end());
+    // Seconds into the match, from when its clock first ran; on a film
+    // without a match clock, from the film's first frame.
+    let start = film.match_start().unwrap_or_default();
+    let at = start + Tick::from_seconds(seconds).get();
+    // The match clock as the game shows it, in whole seconds.
+    let clock = film.scoreboard().clock_at(at).map_or(String::new(), |c| {
+        let c = c as u32;
+        format!(", the clock at {}:{:02}", c / 60, c % 60)
+    });
+    println!("{seconds} s into the match: film time {at} of {}{clock}", film.clock().end());
 
     for p in film.players() {
         let name = p.name().unwrap_or("unnamed");

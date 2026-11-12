@@ -6,9 +6,9 @@ use crate::{StringId, TagId};
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TimedEvent {
-    /// When.
+    /// The tick it happened at.
     pub tick: Tick,
-    /// What.
+    /// What happened.
     pub event: Event,
 }
 
@@ -311,7 +311,7 @@ pub struct MedalAward {
 }
 
 impl MedalAward {
-    /// The medal.
+    /// The medal, or None for an index the library's medal table lacks.
     pub fn medal(&self) -> Option<Medal> {
         Medal::from_index(self.index)
     }
@@ -517,7 +517,9 @@ pub struct Hijack {
     pub vehicle: crate::game::Vehicle,
     /// The hijacker's ride, an index into [`Film::rides`](crate::Film::rides):
     /// their ride in a vehicle of that type that starts nearest the hijack,
-    /// within 2 s.
+    /// within 2 s. That is the ride they board into, in a seat of its own
+    /// while the rider is still in theirs (on a Ghost seat 1 or 3), and a
+    /// ride in the rider's seat follows it once the rider is out.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub ride: Option<usize>,
     /// The player thrown out: of the riders already seated when the
@@ -709,6 +711,20 @@ pub enum FlagEventKind {
     CaptureAssist,
 }
 
+impl std::fmt::Display for FlagEventKind {
+    /// A short lowercase name: "steal", "carrier killed".
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            FlagEventKind::Grab => "grab",
+            FlagEventKind::Steal => "steal",
+            FlagEventKind::Capture => "capture",
+            FlagEventKind::Return => "return",
+            FlagEventKind::CarrierKilled => "carrier killed",
+            FlagEventKind::CaptureAssist => "capture assist",
+        })
+    }
+}
+
 /// A power seed scoring event in Big Team Stockpile.
 ///
 /// The mode's scripts name each one, and on the test films each player's count
@@ -744,6 +760,17 @@ pub enum SeedEventKind {
     CarrierKilled,
 }
 
+impl std::fmt::Display for SeedEventKind {
+    /// A short lowercase name: "deposit", "carrier killed".
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            SeedEventKind::Steal => "steal",
+            SeedEventKind::Deposit => "deposit",
+            SeedEventKind::CarrierKilled => "carrier killed",
+        })
+    }
+}
+
 /// A zone, hill or skull event.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -751,13 +778,17 @@ pub enum SeedEventKind {
 pub struct ZoneEvent {
     /// What happened.
     pub kind: ZoneEventKind,
-    /// The player it is about.
+    /// The player it is about, when the event names one: on the test films,
+    /// a skull grab and a Strongholds secure.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub player: Option<PlayerId>,
-    /// The team it is about.
+    /// The team it is about, when the event names one.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub team: Option<TeamId>,
-    /// The zone, an index into [`Film::zones`](crate::Film::zones).
+    /// The zone, an index into [`Film::zones`](crate::Film::zones), when the
+    /// event names one: on the test films, captures, and a King of the Hill
+    /// hill appearing, going live and secured. Scoring ticks, contests and
+    /// the skull's events name none.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub zone: Option<usize>,
 }
@@ -804,6 +835,31 @@ pub enum ZoneEventKind {
     NearlyWon,
 }
 
+impl std::fmt::Display for ZoneEventKind {
+    /// A short lowercase name: "capture", "skull grabbed".
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ZoneEventKind::Capture => "capture",
+            ZoneEventKind::Secure => "secure",
+            ZoneEventKind::Score => "score",
+            ZoneEventKind::HillAppear => "hill appeared",
+            ZoneEventKind::HillLive => "hill live",
+            ZoneEventKind::HillControlled => "hill controlled",
+            ZoneEventKind::BossWave => "boss wave",
+            ZoneEventKind::SetStart => "set started",
+            ZoneEventKind::SetComplete => "set completed",
+            ZoneEventKind::SkullGrab => "skull grabbed",
+            ZoneEventKind::SkullSpawn => "skull spawned",
+            ZoneEventKind::HillWon => "hill won",
+            ZoneEventKind::ContestStart => "contest started",
+            ZoneEventKind::ContestEnd => "contest ended",
+            ZoneEventKind::ControlLost => "control lost",
+            ZoneEventKind::Neutral => "neutral",
+            ZoneEventKind::NearlyWon => "nearly won",
+        })
+    }
+}
+
 /// A respawn countdown.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -829,7 +885,9 @@ pub struct Highlight {
     pub gamertag: String,
     /// What it marks.
     pub kind: HighlightKind,
-    /// Milliseconds since the match started, on the highlight clock.
+    /// Milliseconds since the film's first frame, on the highlight clock
+    /// ([`Clock::highlight_zero`](crate::Clock::highlight_zero)), not since
+    /// the match clock started.
     pub time_ms: u32,
     /// The record's tick, when the highlight clock is known
     /// ([`Clock::highlight_zero`](crate::Clock::highlight_zero)).

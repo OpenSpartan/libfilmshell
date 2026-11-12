@@ -21,6 +21,18 @@ pub enum Carried {
     PowerSeed,
 }
 
+impl std::fmt::Display for Carried {
+    /// A short lowercase name: "flag", "power seed".
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Carried::Flag => "flag",
+            Carried::Skull => "skull",
+            Carried::Ball => "ball",
+            Carried::PowerSeed => "power seed",
+        })
+    }
+}
+
 impl Carried {
     /// The flag carrier's pistol tags.
     const FLAG_PISTOLS: [TagId; 2] = [TagId(0x2a392328), TagId(0x0001_6415)];
@@ -215,6 +227,15 @@ impl PlayerState {
         latest_in(&self.weapons, tick, |w| (w.tick, w.slot), slot)?.weapon
     }
 
+    /// The tick the weapon in `slot` at `tick` came into it: the first of
+    /// the slot's latest run of entries with that weapon.
+    fn weapon_since(&self, slot: u32, tick: Tick) -> Option<Tick> {
+        let upto = self.weapons.partition_point(|w| w.tick <= tick);
+        let mut mine = self.weapons[..upto].iter().rev().filter(|w| w.slot == slot);
+        let last = mine.next()?;
+        Some(mine.take_while(|w| w.weapon == last.weapon).last().unwrap_or(last).tick)
+    }
+
     /// The weapon slot held at `tick`.
     pub fn held_slot(&self, tick: Tick) -> Option<u32> {
         latest(&self.held, tick, |h| h.tick).map(|h| h.slot)
@@ -227,13 +248,28 @@ impl PlayerState {
 
     /// The objective carried at `tick`: the one whose item is in a weapon
     /// slot ([`Carried`]).
+    ///
+    /// The item comes and goes on the tick of the mode's own grab, steal and
+    /// capture events (on the test films' Capture the Flag matches, every
+    /// grab and steal and 89 of 90 captures). The match stats' time as a
+    /// carrier counts only the carrier's life while a round is in play, and
+    /// adds up each carry truncated to tenths of a second (measured: 146 of
+    /// the test films' 155 carriers within 0.15 s).
     pub fn carrying(&self, tick: Tick) -> Option<Carried> {
         (0..4).find_map(|slot| self.weapon_in(slot, tick).and_then(Carried::from_item))
     }
 
-    /// The magazine and reserve of `slot` at `tick`.
+    /// The magazine and reserve of the weapon in `slot` at `tick`, as it
+    /// last sent them.
+    ///
+    /// A weapon sends its rounds when they change, so this is None until the
+    /// weapon's first shot or reload since it came into the slot: a reading
+    /// sent before then was another weapon's. The series runs across lives,
+    /// and a weapon of the same kind in the next life is the same weapon
+    /// here; [`Film::player_at`](crate::Film::player_at) keeps to one life.
     pub fn ammo_in(&self, slot: u32, tick: Tick) -> Option<&Ammo> {
-        latest_in(&self.ammo, tick, |a| (a.tick, a.slot), slot)
+        let since = self.weapon_since(slot, tick)?;
+        latest_in(&self.ammo, tick, |a| (a.tick, a.slot), slot).filter(|a| a.tick >= since)
     }
 
     /// The grenades carried at `tick`.
@@ -246,14 +282,18 @@ impl PlayerState {
         latest(&self.inputs, tick, |i| i.tick)
     }
 
-    /// The charge of the energy weapon in `slot` at `tick`.
+    /// The charge of the energy weapon in `slot` at `tick`, as it last sent
+    /// it: None until it sends one, as for [`PlayerState::ammo_in`].
     pub fn energy_in(&self, slot: u32, tick: Tick) -> Option<&Energy> {
-        latest_in(&self.energy, tick, |e| (e.tick, e.slot), slot)
+        let since = self.weapon_since(slot, tick)?;
+        latest_in(&self.energy, tick, |e| (e.tick, e.slot), slot).filter(|e| e.tick >= since)
     }
 
-    /// The heat of the weapon in `slot` at `tick`.
+    /// The heat of the weapon in `slot` at `tick`, as it last sent it: None
+    /// until it sends one, as for [`PlayerState::ammo_in`].
     pub fn heat_in(&self, slot: u32, tick: Tick) -> Option<&Heat> {
-        latest_in(&self.heat, tick, |h| (h.tick, h.slot), slot)
+        let since = self.weapon_since(slot, tick)?;
+        latest_in(&self.heat, tick, |h| (h.tick, h.slot), slot).filter(|h| h.tick >= since)
     }
 
     /// The equipment's charge at `tick`.

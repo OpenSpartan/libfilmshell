@@ -93,6 +93,9 @@
 //! # Time and space
 //!
 //! Times are [`Tick`]s, 1/60 s of game time from the film's first frame.
+//! The match starts 16 s to 2 minutes later, when its clock first runs
+//! ([`Film::match_start`]), and [`Scoreboard::clock_at`] is the clock the
+//! game shows.
 //! A span that lasts through its ticks (a life, a ride, a vehicle's track)
 //! gives its first and last, both inclusive; one that ends when something is
 //! gone (an object off the map, a weapon picked up) gives that tick, and says

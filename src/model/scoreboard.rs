@@ -114,19 +114,21 @@ pub struct StatChange {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct MatchClock {
-    /// When.
+    /// When the limit or state changed.
     pub tick: Tick,
-    /// The round's limit, seconds.
+    /// The round's limit, seconds. The game sends the timer in 16-bit steps
+    /// of 36,000 / 65,535 s (about 0.55 s) and rounds the limit up to a step:
+    /// a 300 s round's limit is 300.481 s.
     pub limit: f64,
-    /// The timer's seconds: the time left while it counts down, the time so
-    /// far while it counts up.
+    /// The timer's seconds, in the same steps as the limit: the time left
+    /// while it counts down, the time so far while it counts up.
     pub left: f64,
-    /// The timer's 5-bit state as the game sends it: an index into the
-    /// game's table of timer rates ([`MatchClock::rate`]). On the test films
-    /// it is 1 while stopped, 6 counting down at the normal rate in timed
-    /// modes (Oddball stops it while no one scores), and 19 counting up at
-    /// the normal rate in the rounds of Attrition and Elimination, which
-    /// have no time limit.
+    /// The timer's 5-bit state as the game sends it: an index into the game's
+    /// table of timer rates ([`MatchClock::rate`]). On the test films it is 1
+    /// while stopped, 6 counting down at the normal rate in timed modes
+    /// (Oddball stops it while someone holds the skull), and 19 counting up at
+    /// the normal rate in the rounds of Attrition and Elimination, which have
+    /// no time limit.
     pub state: u32,
 }
 
@@ -230,6 +232,19 @@ impl Scoreboard {
     /// The value of a named statistic at `tick`: see [`Scoreboard::value_at`].
     pub fn value_at_stat(&self, owner: StatOwner, stat: Stat, tick: Tick) -> i32 {
         self.value_at(owner, stat.slot(), tick)
+    }
+
+    /// The match clock's seconds at `tick`, as the game shows them: the time
+    /// left while it counts down, the time so far while it counts up.
+    ///
+    /// It runs on from its last change at that change's rate
+    /// ([`MatchClock::rate`]), and stops at 0. None before the clock's first
+    /// change, and on a film without a match clock.
+    pub fn clock_at(&self, tick: Tick) -> Option<f64> {
+        let upto = self.match_clock.partition_point(|c| c.tick <= tick);
+        let c = self.match_clock[..upto].last()?;
+        let ran = (tick - c.tick) as f64 / f64::from(Tick::PER_SECOND);
+        Some((c.left + c.rate() * ran).max(0.0))
     }
 
     /// How many rounds the match had, by the rounds the scoreboard's values

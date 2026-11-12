@@ -31,6 +31,13 @@ The first release, 0.1.0.
   `Scoreboard::total_stat` adds the rounds up, as the match stats do. The match clock's state is the
   index of its rate in the game's table: `MatchClock::rate`, `is_stopped`, `is_counting_down` and
   `is_counting_up`.
+- `Film::match_start`: the tick the match clock first ran, 16 s to 2 minutes into the film on the
+  test films. `Scoreboard::clock_at` is the clock the game shows at a tick.
+- A weapon's rounds, charge and heat (`PlayerState::ammo_in`, `energy_in`, `heat_in` and
+  `PlayerAt`) are its own: a reading another weapon sent in that slot, or one from an earlier life,
+  isn't. A weapon sends them when they change, so they are None until its first shot or reload.
+- `Display` for `Carried`, `FlagEventKind`, `SeedEventKind` and `ZoneEventKind`: short lowercase
+  names.
 - Playback: `Film::players_at` gives every living player at a tick with their life, sample, weapon
   and its rounds, charge or heat, grenades, the objective they carry, ride and vehicle; `life_at`,
   `sample_at`, `weapon_at`, `ride_at`, `vehicle_at` and `events_in` look up one thing, and
@@ -48,8 +55,9 @@ The first release, 0.1.0.
   carriers killed) are in the event stream, named by the modes' scripts.
 - `PlayerAt::carrying` and `PlayerState::carrying`: the flag, the skull, Grifball's ball or a power
   seed a player carries, from the item the game puts in the carrier's weapon slots. On the test
-  films each player's time carrying, while a round is in play, is the match stats' time as carrier,
-  within a second for 152 of 155.
+  films each player's time carrying, while a round is in play and with each carry truncated to
+  tenths of a second as the match stats do, is the match stats' time as carrier within 0.15 s for
+  146 of 155.
 - Events name players by engine slot, which a joiner can take over from a player who left: the mode
   scripts' events, and the player index in a shot's, hit's or throw's body (the only name a shot
   fired from a vehicle has). Every reader maps them to player ids. On the test films each player's

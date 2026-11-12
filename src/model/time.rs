@@ -4,6 +4,9 @@ use std::time::Duration;
 
 /// A game tick: 1/60 s of simulation, counted from the film's first frame.
 ///
+/// The film starts before the match does: the match starts when its clock
+/// first runs, [`Film::match_start`](crate::Film::match_start).
+///
 /// Adding or subtracting a number of ticks works as it does for `u32`: going
 /// below tick 0 panics with overflow checks on (debug builds by default) and
 /// wraps otherwise, so use
@@ -107,7 +110,7 @@ impl Sub for Tick {
 }
 
 impl fmt::Display for Tick {
-    /// `m:ss.fff` of game time.
+    /// `m:ss.fff` of game time since the film's first frame.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let ms = (self.0 as u64 * 1000) / Self::PER_SECOND as u64;
         write!(f, "{}:{:02}.{:03}", ms / 60_000, ms / 1000 % 60, ms % 1000)
@@ -190,7 +193,8 @@ impl Clock {
     /// The highlight clock is the time since the first frame by the packets'
     /// timestamps, in ticks of 1/59.94 s: a recorder hitch skips ticks but no
     /// time ([`Clock::hitches`]), and a server that falls behind runs fewer
-    /// ticks than time. Time `ms` is highlight tick `zero + ms * 0.05994`.
+    /// ticks than time. Time `ms` is highlight tick `zero + ms * 0.05994`,
+    /// fractional, which [`Clock::highlight_tick`] turns into a [`Tick`].
     pub fn highlight_zero(&self) -> Option<f64> {
         self.highlight_zero
     }
