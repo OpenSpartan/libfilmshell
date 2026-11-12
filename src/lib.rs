@@ -50,7 +50,9 @@
 //! their hands, the objective they carry and the vehicle they ride, and
 //! [`Film::events_in`] what happened in a stretch of time. [`Film::life_at`],
 //! [`Film::weapon_at`] and [`Film::vehicle_at`] look up one thing. The rest
-//! of the map at a tick is [`Film::vehicles_at`], [`Film::grenades_at`],
+//! of the map at a tick is [`Film::vehicles_at`] (with
+//! [`VehicleTrack::heading_at`] for which way each faces),
+//! [`Film::grenades_at`],
 //! [`Film::projectiles_at`], [`Film::ground_weapons_at`] and
 //! [`Film::world_objects_at`], with [`Zone::state_at`] for a zone mode.
 //! [`Clock`] maps the film's frames to ticks.

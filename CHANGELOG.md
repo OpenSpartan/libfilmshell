@@ -50,6 +50,12 @@ The first release, 0.1.0.
   (a parked vehicle stays where it stopped until the game deletes it, `VehicleTrack::removed`),
   `grenades_at`, `projectiles_at`, `ground_weapons_at` and `world_objects_at`; `Zone::state_at` and
   `HillScore::points_at`.
+- `VehicleTrack::headings` and `heading_at`: which way a vehicle faces, from the orientation it
+  sends, built as the game builds it (an up direction and an angle about it). On the test films a
+  moving ground vehicle faces within 30 degrees of its travel 78% of the time, a dropship 97%.
+  `VehicleTrack::position_at` glides between records a few ticks apart, as a player's position
+  does. `Sample::yaw` turns with the axes alone: it took the level box's aspect along before,
+  off by up to several degrees on a level whose box isn't square.
 - A ride ends when its vehicle is deleted, and with the rider's life: a driver killed with their
   tank stays seated in the wreck, but the ride stops at the death.
 - Damaged chunks never panic: the tests read real films with flipped bits, cut-short chunks and

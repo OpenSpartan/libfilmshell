@@ -885,6 +885,50 @@ fn text_keys_have_their_text() {
     assert!(corpus().is_empty() || known * 100 >= keys * 99, "{known} of {keys} keys have text");
 }
 
+/// A vehicle's heading is the way it drives: moving at 15 world units a
+/// second or more, a ground vehicle that can't strafe faces within 30
+/// degrees of its travel most of the time (it reverses and slides the rest),
+/// and a dropship nearly always. Ghosts, Wasps, Falcons and Banshees fly or
+/// slide sideways, so they are left out.
+#[test]
+fn vehicles_face_the_way_they_drive() {
+    use filmshell::game::Vehicle;
+    let (mut tracks, mut headed) = (0, 0);
+    let (mut ground, mut ground_ahead, mut ships, mut ships_ahead) = (0usize, 0usize, 0usize, 0usize);
+    for (_, f) in corpus() {
+        for v in f.vehicles() {
+            tracks += 1;
+            headed += usize::from(!v.headings.is_empty());
+            let kind = match v.vehicle() {
+                Some(Vehicle::Warthog | Vehicle::Mongoose | Vehicle::BruteChopper | Vehicle::Scorpion) => 0,
+                Some(Vehicle::Phantom | Vehicle::Pelican) => 1,
+                _ => continue,
+            };
+            for w in v.track.windows(2) {
+                let (a, b) = (w[0], w[1]);
+                let dt = b.tick - a.tick;
+                let (dx, dy) = (b.position.x - a.position.x, b.position.y - a.position.y);
+                if !(1..=6).contains(&dt) || (dx * dx + dy * dy).sqrt() / dt as f64 * 60.0 < 15.0 {
+                    continue;
+                }
+                let Some(h) = v.heading_at(b.tick) else { continue };
+                let off = (h - dy.atan2(dx)).rem_euclid(std::f64::consts::TAU);
+                let ahead = off.min(std::f64::consts::TAU - off) < 30f64.to_radians();
+                match kind {
+                    0 => (ground, ground_ahead) = (ground + 1, ground_ahead + usize::from(ahead)),
+                    _ => (ships, ships_ahead) = (ships + 1, ships_ahead + usize::from(ahead)),
+                }
+            }
+        }
+    }
+    eprintln!(
+        "{headed} of {tracks} tracks headed; ground {ground_ahead} of {ground}, dropships {ships_ahead} of {ships}"
+    );
+    assert!(headed * 100 >= tracks * 90, "{headed} of {tracks} tracks have headings");
+    assert!(ground_ahead * 100 >= ground * 70, "{ground_ahead} of {ground}");
+    assert!(ships_ahead * 100 >= ships * 90, "{ships_ahead} of {ships}");
+}
+
 /// Every vehicle destroy the scripts score is tied to a vehicle of its type,
 /// and the riders killed with it rode it. Nearly every one names the weapon
 /// that destroyed it, and a rider the destroyer killed with it died to the

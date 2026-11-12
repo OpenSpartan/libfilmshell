@@ -43,6 +43,9 @@ pub struct Vehicles {
     parent: HashMap<i32, (u32, i32)>,
     /// Per id, the frames of its deletes, in order.
     deletes: HashMap<i32, Vec<i64>>,
+    /// Per id, (frame, forward unit vector in engine axes) of each update
+    /// that sends its orientation, in frame order.
+    forwards: HashMap<i32, Vec<(i64, [f64; 3])>>,
 }
 
 impl Vehicles {
@@ -66,6 +69,11 @@ impl Vehicles {
                 match &op.kind {
                     OpKind::Create { tag: Some(t) } => self.tags.entry(id).or_default().push((i as i64, *t)),
                     OpKind::Delete => self.deletes.entry(id).or_default().push(i as i64),
+                    OpKind::Update { fields, .. } => {
+                        if let Some(forward) = fields.orientation.and_then(|o| o.forward()) {
+                            self.forwards.entry(id).or_default().push((i as i64, forward));
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -127,6 +135,15 @@ impl Vehicles {
         let delete = self.deletes.get(&id).and_then(|d| d.iter().find(|&&f| f >= frame).copied());
         let start = self.starts(id).iter().map(|s| s.0).find(|&f| f > frame);
         delete.into_iter().chain(start).min()
+    }
+
+    /// The forward directions `id` sent from frame `from` up to `until`
+    /// (not inclusive), engine axes.
+    pub fn forwards(&self, id: i32, from: i64, until: Option<i64>) -> &[(i64, [f64; 3])] {
+        let all = self.forwards.get(&id).map_or(&[][..], Vec::as_slice);
+        let a = all.partition_point(|x| x.0 < from);
+        let b = until.map_or(all.len(), |u| all.partition_point(|x| x.0 < u));
+        &all[a..b.max(a)]
     }
 
     /// Ties each part in a snapshot to the vehicle standing where it does.

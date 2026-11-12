@@ -203,7 +203,9 @@ fn sample_states(
                     });
                     SampleState {
                         // Engine (cos, sin) to world (-sx sin, sy cos).
-                        yaw: s.aim.map(|(y, _)| (calib.scale_y * y.cos()).atan2(-calib.scale_x * y.sin())),
+                        // A direction turns with the axes, not with the
+                        // quantization's scales: world x is engine -y.
+                        yaw: s.aim.map(|(y, _)| (calib.scale_y.signum() * y.cos()).atan2(-calib.scale_x.signum() * y.sin())),
                         pitch: s.aim.map(|(_, p)| p),
                         speed: s.speed.filter(|_| !m.in_vehicle).map(|v| v * WORLD_PER_ENGINE),
                         // Seated, the rider's biped sends no position: its
@@ -1334,11 +1336,26 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         rides.sort_by_key(|r| (r.from, r.player));
         vehicles = tracks
             .into_iter()
-            .map(|(id, tag, pts, gone)| VehicleTrack {
-                entity: EntityId(id as u16),
-                tag: TagId(tag),
-                track: pts.iter().map(|p| PathPoint::new(tick(p.frame), Position::new(p.x, p.y))).collect(),
-                removed: gone.map(tick),
+            .map(|(id, tag, pts, gone)| {
+                // Engine axes to world axes, as a player's aim yaw turns:
+                // world x is engine -y, world y engine x.
+                let headings = ex
+                    .vehicle_ident
+                    .forwards(id, pts[0].frame, gone)
+                    .iter()
+                    .filter(|(_, f)| f[0] != 0.0 || f[1] != 0.0)
+                    .map(|&(frame, f)| Heading {
+                        tick: tick(frame),
+                        yaw: (c.scale_y.signum() * f[0]).atan2(-c.scale_x.signum() * f[1]),
+                    })
+                    .collect();
+                VehicleTrack {
+                    entity: EntityId(id as u16),
+                    tag: TagId(tag),
+                    track: pts.iter().map(|p| PathPoint::new(tick(p.frame), Position::new(p.x, p.y))).collect(),
+                    removed: gone.map(tick),
+                    headings,
+                }
             })
             .collect();
     }

@@ -44,6 +44,23 @@ pub struct VehicleTrack {
     /// delete wasn't read.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub removed: Option<Tick>,
+    /// Which way it faced, in tick order: the orientation the vehicle sends
+    /// as it turns, its forward direction's heading in world axes (radians,
+    /// -π to π, from +x toward +y, as [`Sample::yaw`](crate::Sample::yaw)).
+    /// Empty when the film's vehicle updates aren't read.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
+    pub headings: Vec<Heading>,
+}
+
+/// A vehicle's heading from `tick` on.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct Heading {
+    /// From when.
+    pub tick: Tick,
+    /// The heading, radians, -π to π, from +x toward +y.
+    pub yaw: f64,
 }
 
 impl VehicleTrack {
@@ -57,20 +74,41 @@ impl VehicleTrack {
         Some((self.track.first()?.tick, self.track.last()?.tick))
     }
 
+    /// Which way the vehicle faced at `tick`, while it was
+    /// [on the map](VehicleTrack::on_map_at): its last heading at or before
+    /// it, else its first. None without headings.
+    pub fn heading_at(&self, tick: Tick) -> Option<f64> {
+        if !self.on_map_at(tick) {
+            return None;
+        }
+        let i = self.headings.partition_point(|h| h.tick <= tick);
+        self.headings.get(i.saturating_sub(1)).map(|h| h.yaw)
+    }
+
     /// Whether the vehicle was on the map at `tick`: from its first record
     /// until it was [removed](VehicleTrack::removed).
     pub fn on_map_at(&self, tick: Tick) -> bool {
         self.track.first().is_some_and(|p| p.tick <= tick) && self.removed.is_none_or(|r| tick < r)
     }
 
-    /// Where the vehicle was at `tick`: its last position at or before it,
-    /// while it was [on the map](VehicleTrack::on_map_at).
+    /// Where the vehicle was at `tick`, while it was
+    /// [on the map](VehicleTrack::on_map_at): between two records at most
+    /// [`Life::GLIDE_TICKS`](crate::Life::GLIDE_TICKS) apart, the point
+    /// between them in proportion, as a player is placed; else its last
+    /// record's position, since a vehicle standing still sends none.
     pub fn position_at(&self, tick: Tick) -> Option<Position> {
         if !self.on_map_at(tick) {
             return None;
         }
-        let i = self.track.partition_point(|p| p.tick <= tick).checked_sub(1)?;
-        Some(self.track[i].position)
+        let i = self.track.partition_point(|p| p.tick <= tick);
+        let a = self.track.get(i.checked_sub(1)?)?;
+        let Some(b) = self.track.get(i).filter(|b| b.tick.0 - a.tick.0 <= crate::Life::GLIDE_TICKS) else {
+            return Some(a.position);
+        };
+        let f = (tick.0 - a.tick.0) as f64 / (b.tick.0 - a.tick.0) as f64;
+        let mid = |p: f64, q: f64| p + (q - p) * f;
+        let (p, q) = (a.position, b.position);
+        Some(Position { x: mid(p.x, q.x), y: mid(p.y, q.y), z: p.z.zip(q.z).map(|(p, q)| mid(p, q)).or(p.z) })
     }
 }
 
@@ -405,13 +443,19 @@ mod tests {
             tag: TagId(0),
             track: vec![at(10, 1.0), at(20, 2.0)],
             removed: Some(Tick(100)),
+            headings: vec![Heading { tick: Tick(10), yaw: 0.5 }, Heading { tick: Tick(30), yaw: -1.0 }],
         };
+        assert_eq!(v.heading_at(Tick(29)), Some(0.5));
+        assert_eq!(v.heading_at(Tick(30)), Some(-1.0));
         assert_eq!(v.position_at(Tick(9)), None);
         assert_eq!(v.position_at(Tick(15)).map(|p| p.x), Some(1.0));
         assert_eq!(v.position_at(Tick(99)).map(|p| p.x), Some(2.0));
         assert_eq!(v.position_at(Tick(100)), None);
         let kept = VehicleTrack { removed: None, ..v };
         assert!(kept.on_map_at(Tick(1_000_000)));
+        // Records a few ticks apart are a vehicle moving: it glides between them.
+        let moving = VehicleTrack { track: vec![at(10, 1.0), at(12, 2.0)], ..kept };
+        assert_eq!(moving.position_at(Tick(11)).map(|p| p.x), Some(1.5));
     }
 
     #[test]

@@ -653,15 +653,28 @@ pub fn dequantize(q: u32, bits: u32, min: f64, max: f64, odd: bool, exact: bool)
 /// grid over -1 to 1 on the face's other two axes (in axis order), the middle
 /// cell exactly 0. 87,381 is `floor(2^19 / 6)`; the side, 294, is a run-time
 /// value, the one with which the velocity direction follows the movement
-/// heading and no code falls off the grid.
+/// heading and no code falls off the grid: `floor(sqrt(87381)) - 1`.
 pub fn direction(code: u32) -> [f64; 3] {
-    const PER_FACE: u32 = 87381;
-    const SIDE: u32 = 294;
-    let rem = code % PER_FACE;
-    let step = 2.0 / (SIDE - 1) as f64;
-    let grid = |k: u32| if 2 * k == SIDE - 2 { 0.0 } else { (k as f64 + 0.5) * step - 1.0 };
-    let (u, v) = (grid(rem / SIDE), grid(rem % SIDE));
-    let d = match code / PER_FACE {
+    cube_direction(code, 87381, 294)
+}
+
+/// A 30-bit direction code as a unit vector, on [`direction`]'s cube map.
+///
+/// A face has `floor(2^30 / 6)` codes and the side is
+/// `floor(sqrt(that)) - 1`, 13,376. Measured: a vehicle's up vector stays
+/// within 5 degrees across 108 of the 112 updates that switch it between the
+/// 19-bit and the 30-bit code (at most 41 with a side one either way), and
+/// no code falls off the grid.
+pub fn direction30(code: u32) -> [f64; 3] {
+    cube_direction(code, 178_956_970, 13_376)
+}
+
+fn cube_direction(code: u32, per_face: u32, side: u32) -> [f64; 3] {
+    let rem = code % per_face;
+    let step = 2.0 / (side - 1) as f64;
+    let grid = |k: u32| if 2 * k == side - 2 { 0.0 } else { (k as f64 + 0.5) * step - 1.0 };
+    let (u, v) = (grid(rem / side), grid(rem % side));
+    let d = match code / per_face {
         0 => [1.0, u, v],
         1 => [u, 1.0, v],
         2 => [u, v, 1.0],
@@ -687,6 +700,49 @@ pub fn speed(q: u32) -> f64 {
     }
     let shift = 1.0 - MIN;
     ((q as f64 + 0.5) * (shift + MAX).ln() / 1024.0).exp() - shift
+}
+
+/// An object's orientation as the dynamic-precision orientation block sends
+/// it (`140c5f938`).
+///
+/// It is the forward and up vectors as floats, or the up vector as a
+/// direction code (None for the default, +z) and an angle about it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Orientation {
+    /// Forward, then up, three float32 each.
+    Raw([f64; 3], [f64; 3]),
+    /// A 19-bit up direction ([`direction`]) and an 8-bit angle.
+    Code19(Option<u32>, u32),
+    /// A 30-bit up direction ([`direction30`]) and a 30-bit angle.
+    Code30(Option<u32>, u32),
+    /// A change against the reader's baseline.
+    Delta,
+}
+
+impl Orientation {
+    /// The forward unit vector, engine axes, as the game builds it
+    /// (`1406d8678`): a reference perpendicular to up (`up x +x` when up is
+    /// nearer +y than +x, else `+y x up`) turned about up by the angle. An
+    /// n-bit angle is `-pi + (q + 0.5) * 2 pi / 2^n` (the quantizer
+    /// `1406d84b4`; the 8-bit one inline, `140c5f9c8`). None for a delta.
+    pub fn forward(&self) -> Option<[f64; 3]> {
+        let angle = |q: u32, bits: u32| -PI + (q as f64 + 0.5) * TAU / (1u64 << bits) as f64;
+        let (up, a) = match *self {
+            Orientation::Raw(forward, _) => return Some(forward),
+            Orientation::Code19(up, q) => (up.map_or([0.0, 0.0, 1.0], direction), angle(q, 8)),
+            Orientation::Code30(up, q) => (up.map_or([0.0, 0.0, 1.0], direction30), angle(q, 30)),
+            Orientation::Delta => return None,
+        };
+        let cross = |a: [f64; 3], b: [f64; 3]| [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+        let r = if up[0].abs() < up[1].abs() { cross(up, [1.0, 0.0, 0.0]) } else { cross([0.0, 1.0, 0.0], up) };
+        let l = (r[0] * r[0] + r[1] * r[1] + r[2] * r[2]).sqrt();
+        let r = if l > 1e-6 { [r[0] / l, r[1] / l, r[2] / l] } else { r };
+        // Rodrigues: r turned by `a` about up.
+        let (s, c) = a.sin_cos();
+        let along = (r[0] * up[0] + r[1] * up[1] + r[2] * up[2]) * (1.0 - c);
+        let u = cross(up, r);
+        Some([0, 1, 2].map(|k| r[k] * c + u[k] * s + up[k] * along))
+    }
 }
 
 /// A velocity block.
@@ -730,6 +786,8 @@ pub struct Fields {
     /// N-bit codes; absolute positions only.
     pub position: Option<(u32, [u32; 3])>,
     pub velocity: Option<Velocity>,
+    /// The dynamic-precision orientation block (vehicles').
+    pub orientation: Option<Orientation>,
     /// Body vitality, -1 to 1 (health fraction; 0 or less is dead).
     pub health: Option<f64>,
     /// Shield vitality, 0 to 4 (fraction of the base shield; above 1 an overshield),
@@ -2770,18 +2828,18 @@ impl Reader<'_> {
                 // Raw and high together read the high form (`140c5f7ec`).
                 if raw && !high {
                     // Forward and up, three float32 each.
-                    self.skip(192);
+                    let v: Vec<f64> = (0..6).map(|_| f32::from_le_bytes(self.bits(32).to_be_bytes()) as f64).collect();
+                    f.orientation = Some(Orientation::Raw([v[0], v[1], v[2]], [v[3], v[4], v[5]]));
                     return Some(());
                 }
                 if high {
                     // A 30-bit direction (unless default) and a 30-bit roll.
-                    if !self.flag() {
-                        self.skip(30);
-                    }
-                    self.skip(30);
+                    let dir = (!self.flag()).then(|| self.bits(30));
+                    f.orientation = Some(Orientation::Code30(dir, self.bits(30)));
                     return Some(());
                 }
                 if baseline {
+                    f.orientation = Some(Orientation::Delta);
                     if !self.flag() {
                         if self.flag() {
                             self.skip(8);
@@ -2795,10 +2853,8 @@ impl Reader<'_> {
                         self.skip(8);
                     }
                 } else {
-                    if !self.flag() {
-                        self.skip(19);
-                    }
-                    self.skip(8);
+                    let dir = (!self.flag()).then(|| self.bits(19));
+                    f.orientation = Some(Orientation::Code19(dir, self.bits(8)));
                 }
             }
             AngularVelocityDynamic => {
