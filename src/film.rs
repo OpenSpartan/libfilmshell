@@ -255,6 +255,22 @@ impl Film {
         self.scoreboard.match_clock.iter().find(|c| c.rate() != 0.0).map(|c| c.tick)
     }
 
+    /// The tick `seconds` into the match ([`Film::match_start`]), to the
+    /// nearest tick: `film.match_tick(90.0)` is a minute and a half in. None
+    /// before the match starts and on a film without a match clock.
+    pub fn match_tick(&self, seconds: f64) -> Option<Tick> {
+        if seconds.is_nan() || seconds < 0.0 {
+            return None;
+        }
+        Some(self.match_start()? + Tick::from_seconds(seconds).get())
+    }
+
+    /// Seconds into the match at `tick`, negative before the match starts.
+    /// None on a film without a match clock.
+    pub fn match_seconds(&self, tick: Tick) -> Option<f64> {
+        self.match_start().map(|s| (tick - s) as f64 / f64::from(Tick::PER_SECOND))
+    }
+
     /// Everyone who played, in id order.
     pub fn players(&self) -> &[Player] {
         &self.players
@@ -384,7 +400,7 @@ impl Film {
     /// use filmshell::Tick;
     ///
     /// match film.player_at(id, Tick::from_seconds(90.0)) {
-    ///     Some(now) => match now.sample.position {
+    ///     Some(now) => match now.position {
     ///         Some(p) => println!("at ({:.1}, {:.1})", p.x, p.y),
     ///         None => println!("alive, at a place the film can't convert"),
     ///     },
@@ -731,6 +747,57 @@ impl Film {
         self.encoding
     }
 
+    /// A game text with its markup filled in from an event's arguments, in
+    /// order ([`game::text_parts`](crate::game::text_parts)): players by
+    /// name, strings by their text, numbers as written, and kill feed icons
+    /// as their name in brackets (`[hydra]`). Colour and style are left out.
+    /// A player the arguments don't name, or whose name the film lacks, is
+    /// written "someone"; a missing string or number "?".
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film) {
+    /// use filmshell::Event;
+    ///
+    /// // The game's own words for each mode script event that has text.
+    /// for e in film.events() {
+    ///     let Event::GameEvent(g) = &e.event else { continue };
+    ///     let Some(text) = film.game_response(g).and_then(|r| r.score).map(|s| s.1) else { continue };
+    ///     println!("{} {}", e.tick, film.fill_text(text, &g.arguments));
+    /// }
+    /// # }
+    /// ```
+    pub fn fill_text(&self, text: &str, arguments: &[GameEventArgument]) -> String {
+        use crate::game::TextPart;
+        let mut args = arguments.iter();
+        let mut out = String::new();
+        for part in crate::game::text_parts(text) {
+            match part {
+                TextPart::Words(w) => out.push_str(w),
+                TextPart::Player(_) => out.push_str(match args.next() {
+                    Some(GameEventArgument::Player(Some(p))) => self.player_name(*p).unwrap_or("someone"),
+                    _ => "someone",
+                }),
+                TextPart::String => match args.next() {
+                    Some(&GameEventArgument::Word { value, .. }) => {
+                        out.push_str(crate::game::text(crate::StringId(value)).unwrap_or("?"))
+                    }
+                    _ => out.push('?'),
+                },
+                TextPart::Number => match args.next() {
+                    Some(&GameEventArgument::Word { value, .. }) => out.push_str(&value.to_string()),
+                    _ => out.push('?'),
+                },
+                TextPart::Icon(name) => {
+                    out.push('[');
+                    out.push_str(name.trim_start_matches("killfeed_"));
+                    out.push(']');
+                }
+                _ => {}
+            }
+        }
+        out
+    }
+
     /// The film's raw layers: chunks, packets, frames. With the `raw`
     /// feature, outside the crate's semantic versioning
     /// ([`format`](crate::format)).
@@ -762,7 +829,10 @@ pub struct PlayerAt<'a> {
     pub weapon: Option<TagId>,
     /// The rounds in that weapon and in reserve, as it last sent them in
     /// this life. A weapon sends them when they change, so this is None from
-    /// the spawn or the pickup to its first shot or reload.
+    /// the spawn or the pickup to its first shot or reload. A weapon the
+    /// player spawned with then holds a full magazine,
+    /// [`game::fire_stats`](crate::game::fire_stats)' `magazine`, unless the
+    /// game variant changes ammunition.
     pub ammo: Option<&'a Ammo>,
     /// That weapon's charge, for an energy weapon: None until it sends one,
     /// as for `ammo`.

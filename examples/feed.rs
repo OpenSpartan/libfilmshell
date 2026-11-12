@@ -32,7 +32,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
         let Some(text) = g.text.and_then(game::text) else { continue };
-        println!("{}  {}", e.tick, common::fill(text, &g.arguments, &film));
+        println!("{}  {}", e.tick, film.fill_text(text, &g.arguments));
     }
     Ok(())
 }

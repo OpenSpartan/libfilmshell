@@ -103,8 +103,11 @@ impl Item {
     }
 }
 
-/// What the game's files say about one tag.
+/// What the game's files say about one tag. With serde it serializes, so a
+/// viewer in another language can name the tag ids a film's JSON holds:
+/// write out [`tags`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub struct TagInfo {
     /// The tag's id.

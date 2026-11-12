@@ -34,6 +34,9 @@ filmshell = { git = "https://github.com/OpenSpartan/libfilmshell" }
 opt-level = 3
 ```
 
+With the `serde` feature, the model's serializers are generic and compile in your crate, so a debug
+build of yours writes or reads a film's JSON about ten times slower than a release build.
+
 ## Film chunks
 
 Halo Infinite records every match for theater replay in **chunks** that are listed through the API.

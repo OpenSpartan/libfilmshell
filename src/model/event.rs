@@ -224,10 +224,10 @@ pub struct Kill {
     /// volume, an AI). On a suicide it can be the victim; check `suicide`.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub killer: Option<PlayerId>,
-    /// The killer's damage percentage as the kill event carries it, whole
-    /// percent. Values above 100 occur (up to 239 on the test films), so it isn't a share
-    /// of the damage the victim took. None without a killer: the game then
-    /// sends whatever the field held.
+    /// The number the kill event carries for the killer's damage, in whole
+    /// percent, as the game computes it from its damage records. Values above
+    /// 100 occur (up to 239 on the test films). None without a killer: the
+    /// game then sends whatever the field held.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub killer_damage_percent: Option<u32>,
     /// Who assisted.
@@ -238,6 +238,7 @@ pub struct Kill {
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub assistant_damage_percent: Option<u32>,
     /// Whether the death was the victim's own doing.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "std::ops::Not::not"))]
     pub suicide: bool,
     /// Whether the game counted the kill as a headshot: a headshot event for
     /// the killer within 2 ticks of the kill. None when the film has no
@@ -333,7 +334,9 @@ pub struct Shot {
     pub weapon: TagId,
 }
 
-/// Damage landing on a player.
+/// Damage landing on a player: every damage effect the game applies to a
+/// player's biped, those that take nothing included, such as a collision
+/// with no attacker.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
@@ -533,9 +536,10 @@ pub struct Hijack {
     pub vehicle: crate::game::Vehicle,
     /// The hijacker's ride, an index into [`Film::rides`](crate::Film::rides):
     /// their ride in a vehicle of that type that starts nearest the hijack,
-    /// within 2 s. That ride is in a seat of the hijacker's own while the
-    /// rider still holds theirs (on a Ghost, seat 1 or 3); the hijacker's
-    /// next ride, in the rider's seat, starts once the rider is out.
+    /// within 2 s. The game seats a hijacker first in a seat of their own
+    /// beside the rider (on a Ghost, seat 1 or 3), so that is this ride's
+    /// seat. Their next ride, in the rider's seat, starts once the rider is
+    /// out.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub ride: Option<RideIndex>,
     /// The player thrown out: of the riders already seated when the

@@ -32,6 +32,8 @@ pub enum Stat {
     Assists,
     /// Suicides.
     Suicides,
+    /// Kills of teammates.
+    Betrayals,
     /// The longest kill streak.
     MaxSpree,
     /// Headshot kills.
@@ -59,6 +61,7 @@ impl Stat {
         Stat::Deaths,
         Stat::Assists,
         Stat::Suicides,
+        Stat::Betrayals,
         Stat::MaxSpree,
         Stat::Headshots,
         Stat::ShotsFired,
@@ -78,6 +81,7 @@ impl Stat {
             Stat::Deaths => 5,
             Stat::Assists => 6,
             Stat::Suicides => 8,
+            Stat::Betrayals => 9,
             Stat::MaxSpree => 11,
             Stat::Headshots => 12,
             Stat::ShotsFired => 13,
@@ -208,10 +212,13 @@ pub struct EngineState {
 ///
 /// let board = film.scoreboard();
 /// let me = StatOwner::Player(id);
-/// // The scoreboard as playback shows it 5 minutes in, and the match's total.
-/// let now = board.value_at(me, Stat::Kills, Tick::from_seconds(300.0));
-/// let total = board.total(me, Stat::Kills);
-/// println!("{now} kills at 5:00, {total} in all");
+/// // The scoreboard as playback shows it 5 minutes into the match, and the
+/// // match's total.
+/// if let Some(five) = film.match_tick(300.0) {
+///     let now = board.value_at(me, Stat::Kills, five);
+///     let total = board.total(me, Stat::Kills);
+///     println!("{now} kills at 5:00, {total} in all");
+/// }
 /// # }
 /// ```
 #[derive(Clone, Debug, Default, PartialEq)]

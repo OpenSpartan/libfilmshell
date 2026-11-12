@@ -66,6 +66,15 @@ impl Tick {
     }
 }
 
+/// The tick `d` later, to the nearest tick: `start + Duration::from_secs(10)`.
+impl Add<Duration> for Tick {
+    type Output = Tick;
+
+    fn add(self, d: Duration) -> Tick {
+        self + Tick::from_seconds(d.as_secs_f64()).0
+    }
+}
+
 impl From<u32> for Tick {
     fn from(v: u32) -> Tick {
         Tick(v)

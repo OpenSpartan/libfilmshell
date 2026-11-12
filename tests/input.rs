@@ -176,6 +176,17 @@ fn player_sets_are_lists_of_ids() {
     assert!(serde_json::from_str::<PlayerMask>("[40]").is_err());
 }
 
+/// A XUID parses alone or as the match stats write it; a tick moves by a
+/// duration.
+#[test]
+fn ids_and_durations() {
+    use filmshell::{Tick, Xuid};
+    assert_eq!("2533274857096890".parse::<Xuid>().unwrap(), Xuid(2533274857096890));
+    assert_eq!("xuid(2533274857096890)".parse::<Xuid>().unwrap(), Xuid(2533274857096890));
+    assert!("xuid(abc)".parse::<Xuid>().is_err());
+    assert_eq!(Tick(60) + std::time::Duration::from_millis(1500), Tick(150));
+}
+
 /// A set of players lists its players in id order, and prints as a set.
 #[test]
 fn player_sets() {

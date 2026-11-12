@@ -43,7 +43,13 @@ The first release, 0.1.0.
   indices (`VehicleIndex`, `RideIndex`, `ZoneIndex`): `film.vehicles()[i]` takes one, and a ride's
   index doesn't fit the vehicles. They serialize as numbers.
 - `Film::match_start`: the tick the match clock first ran, 16 s to 2 minutes into the film on the
-  test films. `Scoreboard::clock_at` is the clock the game shows at a tick.
+  test films; `Film::match_tick` and `Film::match_seconds` convert between seconds into the match
+  and ticks, and `Tick + Duration` moves a tick. `Scoreboard::clock_at` is the clock the game shows
+  at a tick.
+- `Film::fill_text` fills a game text's markup from an event's arguments: players by name, strings
+  by their text, numbers, kill feed icons by name.
+- `Stat::Betrayals`, the scoreboard's slot for kills of teammates. `Xuid` parses the match stats'
+  `xuid(N)` form too. With serde, `game::tags()` serializes, to name the tag ids of a film's JSON.
 - `PlayerState::ammo_in`, `energy_in` and `heat_in` leave out a reading another weapon sent in the
   slot, and `PlayerAt` also leaves out one from an earlier life. A weapon sends them when they
   change, so they are None until its first shot or reload.

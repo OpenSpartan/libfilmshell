@@ -66,9 +66,11 @@ impl fmt::Display for Xuid {
 impl FromStr for Xuid {
     type Err = ParseIdError;
 
-    /// The decimal number: `2533274857096890`.
+    /// The decimal number, `2533274857096890`, alone or as the Halo
+    /// services write it in match stats, `xuid(2533274857096890)`.
     fn from_str(s: &str) -> Result<Xuid, ParseIdError> {
-        s.parse().map(Xuid).map_err(|_| ParseIdError { kind: "XUID" })
+        let n = s.strip_prefix("xuid(").and_then(|s| s.strip_suffix(')')).unwrap_or(s);
+        n.parse().map(Xuid).map_err(|_| ParseIdError { kind: "XUID" })
     }
 }
 

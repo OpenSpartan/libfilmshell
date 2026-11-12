@@ -1036,6 +1036,12 @@ fn betrayals_count_as_the_match_stats_do() {
             let got =
                 f.kills().filter(|&(t, k)| k.killer == Some(p) && k.betrayal && k.is_scored() && t <= until).count()
                     as u64;
+            // The scoreboard counts them too, where the film's scoreboard is
+            // read and the player's row ran to the end.
+            if !f.scoreboard().changes.is_empty() && until == Tick(u32::MAX) {
+                let row = f.scoreboard().total(StatOwner::Player(p), Stat::Betrayals) as u64;
+                assert_eq!(row, want, "{name}: player {p}'s scoreboard row");
+            }
             players += 1;
             betrayals += want;
             if got != want {
@@ -1079,6 +1085,9 @@ fn the_match_starts_when_its_clock_first_runs() {
             continue;
         };
         started += 1;
+        assert_eq!(f.match_tick(0.0), Some(start), "{name}");
+        let ninety = f.match_tick(90.0).unwrap();
+        assert!((f.match_seconds(ninety).unwrap() - 90.0).abs() < 1.0 / 60.0, "{name}");
         if let Some((t, _)) = f.kills().find(|(_, k)| k.is_scored()) {
             assert!(t >= start, "{name}: a scored kill at {t}, the match starts at {start}");
         }

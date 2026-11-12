@@ -79,7 +79,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             // The mode's own scoring, in the game's words.
             Event::GameEvent(g) => match film.game_response(g).and_then(|r| r.score) {
                 Some((points, text)) if !text.is_empty() => {
-                    format!("{points:+} {}", common::fill(text, &g.arguments, &film))
+                    format!("{points:+} {}", film.fill_text(text, &g.arguments))
                 }
                 _ => continue,
             },
