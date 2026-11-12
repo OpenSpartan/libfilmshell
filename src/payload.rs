@@ -106,7 +106,7 @@ pub struct EntityOp {
     pub kind: OpKind,
     /// A create's initial components, when it lists any and they parse:
     /// blocks as an update's (`zones.rs` reads navpoints' and zones').
-    pub init: Option<Fields>,
+    pub init: Option<Box<Fields>>,
     /// A projectile create's player index and shooter's unit, when it names
     /// them.
     pub shooter: (Option<u32>, Option<Handle>),
@@ -345,7 +345,7 @@ impl Walker {
                         let (fields, next) = self.data(c, r.at, t, &list);
                         if next.is_ok() {
                             if let Some(op) = ops.last_mut() {
-                                op.init = Some(fields);
+                                op.init = Some(Box::new(fields));
                             }
                         }
                         return next.map(Some);

@@ -18,7 +18,7 @@ use crate::holders::Holders;
 use crate::inventory::{self};
 use crate::levels::{self, LevelBox};
 use crate::model::*;
-use crate::motion::{detect_layout, extract_all_player_positions, small_lobby_deaths, ExtractionResult};
+use crate::motion::{extract_all_player_positions, small_lobby_deaths, ExtractionResult};
 use crate::objectives;
 use crate::payload::{for_each_event_view, walk_shared, Reader};
 use crate::roster::{self, Roster};
@@ -604,6 +604,48 @@ fn vehicle_tracks(ex: &ExtractionResult, c: &Calibration) -> Vec<(i32, u32, Vec<
     out
 }
 
+/// What the first walk's readers collect: the readers that need no paths.
+#[derive(Default)]
+struct FirstWalk {
+    stat_log: crate::statlog::Log,
+    vehicle_ident: crate::vehicles::Vehicles,
+    vitals_marks: crate::vitals::Marks,
+    inv: inventory::Inventory,
+    inputs: crate::control::Inputs,
+    splash_seen: crate::splash::Seen,
+    thrown: grenades::Flights,
+    deploys_seen: crate::deploys::Seen,
+    attach_seen: crate::attach::Seen,
+    controls: crate::owners::Controls,
+    designators: crate::teams::Designators,
+}
+
+impl FirstWalk {
+    fn read(film: &Container, p: Params, holders: &Holders, level: Option<&LevelBox>) -> FirstWalk {
+        let mut w = FirstWalk::default();
+        let actor_control = crate::registry::Schema::read(&film.chunks[0]).biped.actor_control;
+        w.vitals_marks = Vitals::start(film, &p, level);
+        walk_shared(
+            film,
+            p,
+            &mut [
+                &mut crate::statlog::reader(film, p, holders, &mut w.stat_log),
+                &mut w.vehicle_ident.reader(),
+                &mut Vitals::reader(&mut w.vitals_marks),
+                &mut inventory::reader(&mut w.inv),
+                &mut crate::control::reader(film, p, &mut w.inputs),
+                &mut crate::splash::reader(film, &mut w.splash_seen),
+                &mut grenades::reader(&mut w.thrown),
+                &mut crate::deploys::reader(&mut w.deploys_seen),
+                &mut crate::attach::reader(actor_control, &mut w.attach_seen),
+                &mut crate::owners::reader(&mut w.controls),
+                &mut crate::teams::reader(&mut w.designators),
+            ],
+        );
+        w
+    }
+}
+
 pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints) -> Result<crate::Film, crate::Error> {
     let film = Container::new(chunks, Framing::Packets);
     // Every tick of a film sends the tick message; replay chunks without one
@@ -622,15 +664,38 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let holders = Holders::new(&roster);
     let (level_owned, level_model) = level_box(&raw_header, hints);
     let level = level_owned.as_ref();
-    let layout = detect_layout(&film, Some(roster.players.len()));
-    let composite = layout.mode == EncodingMode::MultiplayerComposite;
-    let (c2_start, c2w) = layout.composite.map_or((0, None), |(s, w)| (s as i64, Some(w)));
-    let widths = position_widths(&film, composite, c2_start, c2w, level);
-    let params = widths.map(|w| {
+    let encoding_mode = crate::container::detect_encoding_mode(&film, Some(roster.players.len()));
+    let composite = encoding_mode == EncodingMode::MultiplayerComposite;
+    let with_level = |w: [u32; 3]| {
         let mut p = Params::new(w);
         p.set_level(level);
         p
+    };
+    // The position fields' layout comes from a scan of every update, which
+    // takes about as long as the first walk. With the level's box in the
+    // catalogue the walk needn't wait for it: the walk takes the box's
+    // widths while the scan runs on another thread, and runs again in the
+    // rare film whose fields don't fit the box. Without threads (wasm) the
+    // two run one after the other.
+    let guess = level.map(|b| b.widths).filter(|_| composite && packets);
+    let (coords, early) = std::thread::scope(|s| {
+        let scan = composite.then(|| {
+            std::thread::Builder::new().spawn_scoped(s, || crate::replication::detect_coord_widths(&film)).ok()
+        });
+        let early = match &scan {
+            Some(Some(_)) => guess.map(|w| (w, FirstWalk::read(&film, with_level(w), &holders, level))),
+            _ => None,
+        };
+        let coords = scan.map(|h| match h {
+            Some(h) => h.join().expect("the position layout scan panicked"),
+            None => crate::replication::detect_coord_widths(&film),
+        });
+        (coords, early)
     });
+    let layout = crate::motion::Layout { mode: encoding_mode, composite: coords };
+    let (c2_start, c2w) = layout.composite.map_or((0, None), |(s, w)| (s as i64, Some(w)));
+    let widths = position_widths(&film, composite, c2_start, c2w, level);
+    let params = widths.map(with_level);
     // The readers that walk the tick packets by their grammar.
     let walk = params.filter(|_| composite && packets);
     if let Some(p) = params.filter(|_| packets) {
@@ -639,38 +704,26 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
 
     // One walk for the readers that need no paths. The scoreboard gives
     // every player's deaths and spawns, which the paths need.
-    let mut stat_log = crate::statlog::Log::default();
-    let mut vehicle_ident = crate::vehicles::Vehicles::default();
-    let mut vitals_marks = crate::vitals::Marks::default();
-    let mut inv = inventory::Inventory::default();
-    let mut inputs = crate::control::Inputs::new();
-    let mut splash_seen = crate::splash::Seen::new();
-    let mut thrown = grenades::Flights::default();
-    let mut deploys_seen = crate::deploys::Seen::default();
-    let mut attach_seen = crate::attach::Seen::default();
-    let mut controls = crate::owners::Controls::new();
-    let mut designators = crate::teams::Designators::default();
+    let first = match (walk, early) {
+        (Some(_), Some((w, first))) if Some(w) == widths => first,
+        (Some(p), _) => FirstWalk::read(&film, p, &holders, level),
+        (None, _) => FirstWalk::default(),
+    };
+    let FirstWalk {
+        mut stat_log,
+        mut vehicle_ident,
+        vitals_marks,
+        inv,
+        inputs,
+        splash_seen,
+        thrown,
+        deploys_seen,
+        attach_seen,
+        controls,
+        designators,
+    } = first;
     let mut team_history: Vec<Vec<(i64, u32)>> = Vec::new();
     if let Some(p) = walk {
-        let actor_control = crate::registry::Schema::read(&film.chunks[0]).biped.actor_control;
-        vitals_marks = Vitals::start(&film, &p, level);
-        walk_shared(
-            &film,
-            p,
-            &mut [
-                &mut crate::statlog::reader(&film, p, &holders, &mut stat_log),
-                &mut vehicle_ident.reader(),
-                &mut Vitals::reader(&mut vitals_marks),
-                &mut inventory::reader(&mut inv),
-                &mut crate::control::reader(&film, p, &mut inputs),
-                &mut crate::splash::reader(&film, &mut splash_seen),
-                &mut grenades::reader(&mut thrown),
-                &mut crate::deploys::reader(&mut deploys_seen),
-                &mut crate::attach::reader(actor_control, &mut attach_seen),
-                &mut crate::owners::reader(&mut controls),
-                &mut crate::teams::reader(&mut designators),
-            ],
-        );
         crate::statlog::finish(&mut stat_log);
         vehicle_ident.finish(&film, p);
         // Teams for the players HighlightEvents doesn't give one: bots, and
@@ -731,16 +784,6 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     );
     let exact = calib.as_ref().is_some_and(|c| c.source == CalibSource::LevelTable);
 
-    let (states, jumps) = match (&walk, &calib, &vitals) {
-        (Some(p), Some(c), Some(v)) => sample_states(&film, paths, p, level, c, v),
-        _ => (vec![Vec::new(); paths.len()], vec![Vec::new(); paths.len()]),
-    };
-    let world: Vec<WorldPath> = paths
-        .iter()
-        .zip(world_positions)
-        .zip(states)
-        .map(|((p, positions), states)| WorldPath { player: p.player_index, positions, states })
-        .collect();
     let extra: Vec<u32> = inv.pickups.iter().map(|p| p.tag).chain(inv.ground.iter().map(|g| g.tag)).collect();
     let player_of = |id: u32, frame: i64| holders.api(id, frame);
     let fired: Option<FilmFire> = params.map(|p| fire::read_mapped(&film, (&p).into(), paths, &extra, player_of));
@@ -772,22 +815,41 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let mut hill_seen = zones::HillScore::default();
     let mut objects_seen = zones::ObjectsSeen::default();
     let koth = zone_input.as_ref().is_some_and(|z| z.0 == zones::Mode::Koth) && exact;
-    if let Some(p) = walk {
-        let mut a = actions::reader(paths, mode.is_pvp(), player_of, &mut acts_out);
-        let mut b = crate::accuracy::reader(paths, player_of, &mut aim);
-        let mut c = crate::ammo::reader(paths, &mut ammo);
-        let mut d = koth.then(|| zones::hill_score_reader(team_of, &mut hill_seen));
-        let mut e = zone_input.as_ref().filter(|_| exact).map(|z| zones::objects_reader(&z.3, &mut objects_seen));
-        let mut readers: Vec<&mut Reader<'_>> = vec![&mut a, &mut b, &mut c];
-        if let Some(d) = d.as_mut() {
-            readers.push(d);
+    // Each sample's states, on another thread while the walk runs (in turn
+    // without threads).
+    let states_of = || match (&walk, &calib, &vitals) {
+        (Some(p), Some(c), Some(v)) => sample_states(&film, paths, p, level, c, v),
+        _ => (vec![Vec::new(); paths.len()], vec![Vec::new(); paths.len()]),
+    };
+    let (states, jumps) = std::thread::scope(|s| {
+        let job = std::thread::Builder::new().spawn_scoped(s, states_of).ok();
+        if let Some(p) = walk {
+            let mut a = actions::reader(paths, mode.is_pvp(), player_of, &mut acts_out);
+            let mut b = crate::accuracy::reader(paths, player_of, &mut aim);
+            let mut c = crate::ammo::reader(paths, &mut ammo);
+            let mut d = koth.then(|| zones::hill_score_reader(team_of, &mut hill_seen));
+            let mut e = zone_input.as_ref().filter(|_| exact).map(|z| zones::objects_reader(&z.3, &mut objects_seen));
+            let mut readers: Vec<&mut Reader<'_>> = vec![&mut a, &mut b, &mut c];
+            if let Some(d) = d.as_mut() {
+                readers.push(d);
+            }
+            if let Some(e) = e.as_mut() {
+                readers.push(e);
+            }
+            walk_shared(&film, p, &mut readers);
         }
-        if let Some(e) = e.as_mut() {
-            readers.push(e);
+        match job {
+            Some(h) => h.join().expect("the sample states panicked"),
+            None => states_of(),
         }
-        walk_shared(&film, p, &mut readers);
-    }
+    });
     let acts = walk.map(|_| acts_out);
+    let world: Vec<WorldPath> = paths
+        .iter()
+        .zip(world_positions)
+        .zip(states)
+        .map(|((p, positions), states)| WorldPath { player: p.player_index, positions, states })
+        .collect();
 
     // The highlight clock: the kill events fix it to the tick.
     let hl_ticks = film.highlight_ticks();

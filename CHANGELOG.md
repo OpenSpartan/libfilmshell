@@ -32,6 +32,9 @@ The first release, 0.1.0.
   `Scoreboard::total` adds the rounds up, as the match stats do. The match clock's state is the
   index of its rate in the game's table: `MatchClock::rate`, `is_stopped`, `is_counting_down` and
   `is_counting_up`.
+- Reading a film overlaps its two longest passes on a second thread where the platform has
+  threads: about 1.3 s for a 9-minute Big Team Battle match of 27 players, 15% to 30% faster than
+  one after the other on the test films.
 - `Chunk::from_manifest` makes a chunk from a manifest entry (`Error::UnknownChunkType` for a type
   that is none of a film's). `Film::from_folder` and `Chunk::read_folder` read a film saved as
   chunk files (`filmChunk{N}` or `filmChunk{N}_dec`), taking the inflated copy of a chunk where

@@ -102,9 +102,10 @@ impl Film {
     ///
     /// The chunks must be numbered 0 to n without gaps: chunk 0 the header,
     /// then the replay chunks, then optionally the highlights chunk.
-    /// Everything is read up front: in a release build about 2 s for a
-    /// 9-minute Big Team Battle match of 27 players, 5 s for an 18-minute one
-    /// of 35. Unoptimized, as in a debug build of a crate that depends on
+    /// Everything is read up front: in a release build about 1.3 s for a
+    /// 9-minute Big Team Battle match of 27 players, 4 s for an 18-minute one
+    /// of 35. The read uses a second thread where the platform has threads,
+    /// and takes about a third longer where it hasn't (wasm). Unoptimized, as in a debug build of a crate that depends on
     /// this one, it is about ten times slower; `[profile.dev.package.filmshell]
     /// opt-level = 3` in that crate's `Cargo.toml` avoids it. The crate's
     /// [Quick start](crate#quick-start) shows a film read from a manifest.

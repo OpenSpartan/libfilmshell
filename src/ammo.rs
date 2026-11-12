@@ -94,7 +94,7 @@ pub fn reader<'a>(paths: &'a [PlayerPath], out: &'a mut Vec<PlayerAmmo>) -> impl
         for op in &p.ops {
             let fields: Option<&Fields> = match &op.kind {
                 OpKind::Update { fields, .. } => Some(fields),
-                OpKind::Create { .. } => op.init.as_ref(),
+                OpKind::Create { .. } => op.init.as_deref(),
                 OpKind::Delete => {
                     equipment.remove(&op.index);
                     None

@@ -2,12 +2,12 @@
 //! stationary holds, lives to players, deaths, and the small-lobby decoder.
 
 use crate::bits::bits_at;
-use crate::container::{detect_encoding_mode, Film, MIN_PLAYER_FRAMES};
+use crate::container::{Film, MIN_PLAYER_FRAMES};
 use crate::events::Body;
 use crate::highlights::{EventType, HighlightEvent};
 use crate::lives::{assign_lives, LifeAssignment, LifePlayer, LifeSlot, LIFE_TUNING, TICKS_PER_MS};
 use crate::payload::for_each_event_view;
-use crate::replication::{detect_coord_widths, extract_multiplayer_composite};
+use crate::replication::extract_multiplayer_composite;
 use crate::types::*;
 use indexmap::IndexMap;
 use std::collections::{HashMap, HashSet};
@@ -1367,12 +1367,6 @@ pub struct ExtractionResult {
 pub struct Layout {
     pub mode: EncodingMode,
     pub composite: Option<(i32, u32)>,
-}
-
-pub fn detect_layout(film: &Film, n_players: Option<usize>) -> Layout {
-    let mode = detect_encoding_mode(film, n_players);
-    let composite = (mode == EncodingMode::MultiplayerComposite).then(|| detect_coord_widths(film));
-    Layout { mode, composite }
 }
 
 pub fn extract_all_player_positions(

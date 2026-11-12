@@ -37,7 +37,7 @@ pub fn reader(d: &mut Designators) -> impl FnMut(usize, &[u8], &Payload) + '_ {
                     if let Some(id) = op.participant {
                         d.participant.insert(key, id);
                     }
-                    op.init.as_ref()
+                    op.init.as_deref()
                 }
                 OpKind::Update { fields, .. } => Some(fields),
                 OpKind::Delete => None,
