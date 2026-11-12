@@ -1,7 +1,7 @@
-//! The match a number of seconds in: where everyone was, their shield and health,
-//! what they held, with its rounds, charge or heat, or rode, and what
-//! objective they carried; then the vehicles, the grenades and other
-//! projectiles in the air and the weapons on the ground.
+//! The match a number of seconds in: where everyone was, their shield and
+//! health, the weapon they held with its rounds, charge or heat, the vehicle
+//! they rode, and the objective they carried; then the vehicles, the grenades
+//! and other projectiles in the air, and the weapons on the ground.
 //!
 //! ```text
 //! cargo run --release --example playback -- path/to/film 90

@@ -226,9 +226,10 @@ impl Film {
 
     /// The tick the match started: when its clock first ran.
     ///
-    /// Ticks count from the film's first frame, which comes 16 s to 2 minutes
-    /// before it on the test films, while players load in; on most of them the
-    /// first lives start within a few ticks of it. Time into the match is
+    /// Ticks count from the film's first frame. On the test films that frame
+    /// comes 16 s to 2 minutes before the match starts, while players load
+    /// in, and on most of them the first lives start within a few ticks of
+    /// the match start. Time into the match is
     /// `tick - start` ticks, and the clock the game shows is
     /// [`Scoreboard::clock_at`]. None on a film without a match clock (on the
     /// test films, the small lobbies and a few others).
@@ -262,7 +263,8 @@ impl Film {
         }
     }
 
-    /// The gamertag or bot name of the player `id`.
+    /// The gamertag or bot name of the player `id`: None when no player has
+    /// the id, or the film carries no name for them.
     pub fn player_name(&self, id: PlayerId) -> Option<&str> {
         self.player(id)?.name()
     }
@@ -305,8 +307,13 @@ impl Film {
     ///
     /// ```no_run
     /// # fn run(film: &filmshell::Film, player: filmshell::PlayerId) {
-    /// // How long the player was alive, in ticks.
-    /// let alive: i64 = film.lives_of(player).filter_map(|l| Some(l.end()? - l.start()? + 1)).sum();
+    /// // How long the player was alive, in ticks: a life lasts to its
+    /// // `until`, else to the film's end.
+    /// let end = film.clock().end();
+    /// let alive: i64 = film
+    ///     .lives_of(player)
+    ///     .filter_map(|l| Some(l.until.unwrap_or(end) - l.start()? + 1))
+    ///     .sum();
     /// # }
     /// ```
     pub fn lives_of(&self, player: PlayerId) -> impl Iterator<Item = &Life> + '_ {
@@ -624,7 +631,8 @@ impl Film {
     /// use std::collections::BTreeMap;
     ///
     /// let mut by_weapon: BTreeMap<&str, u32> = BTreeMap::new();
-    /// for (_, kill) in film.kills().filter(|(_, k)| k.is_scored() && k.credited_killer().is_some()) {
+    /// let scored = film.kills().filter(|(_, k)| k.is_scored() && k.credited_killer().is_some());
+    /// for (_, kill) in scored {
     ///     let weapon = kill.weapon.and_then(|w| w.name()).unwrap_or("unknown");
     ///     *by_weapon.entry(weapon).or_default() += 1;
     /// }
@@ -727,7 +735,8 @@ pub struct PlayerAt<'a> {
     /// That weapon's heat, for a weapon that heats up: None until it sends
     /// one, as for `ammo`.
     pub heat: Option<&'a Heat>,
-    /// The grenades they carry, as sent since they spawned.
+    /// The grenades they carry, as sent since they spawned: None until the
+    /// game sends a count in this life.
     pub grenades: Option<&'a GrenadeCount>,
     /// The objective they carry: a flag, the skull, Grifball's ball or a
     /// power seed.

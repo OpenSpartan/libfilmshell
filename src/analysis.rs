@@ -45,14 +45,15 @@ pub struct WeaponProfile {
     pub rounds_per_second: f64,
     /// Shots per trigger pull; 0 for an automatic.
     pub burst: i32,
-    /// The magazine, the rounds carried in all at spawn (the magazine
-    /// included) and the most carried in all.
+    /// Three counts, in order: the magazine's rounds, the rounds carried at
+    /// spawn counting the magazine, and the most rounds carried.
     pub magazine: Option<[i32; 3]>,
     /// The projectile's initial velocity, world units a second.
     pub velocity: Option<f64>,
     /// The projectile's range, world units.
     pub range: Option<f64>,
-    /// A hit's damage on a shield and on a body, when it is one amount.
+    /// A hit's damage on a shield and on a body, points of damage, when it is
+    /// one amount.
     pub damage: Option<[f64; 2]>,
     /// Body hits that kill a Spartan at full shield and health, without
     /// headshots.

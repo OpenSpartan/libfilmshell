@@ -16,8 +16,8 @@ The first release, 0.1.0.
 - Every death is a `Kill` with its killer, cause and weapon, including the deaths the game sends no
   kill event for, a bot's (`Kill::inferred`). Those are credited as the game credits them: the kill
   its scoreboard counted, else its rule (the fatal hit's attacker when an enemy, else the last enemy
-  to hit the victim in the 6 s before), with the assistant by its rule (a fifth of the victim's
-  shield and health). `Kill::betrayal` marks a kill between teammates; on the test films each
+  to hit the victim in the 6 s before), with the assistant by its rule (at least a fifth of the
+  victim's shield and health). `Kill::betrayal` marks a kill between teammates; on the test films each
   player's betrayals equal the match stats'.
 - A life belongs to the player the film names as controlling it, else to the player whose death
   times in the highlights chunk it matches; none starts before its player joined or after they left.
@@ -38,9 +38,8 @@ The first release, 0.1.0.
   both are there; `Error::Io` names a folder or file that can't be read, with its `io::ErrorKind`.
 - `Film::match_start`: the tick the match clock first ran, 16 s to 2 minutes into the film on the
   test films. `Scoreboard::clock_at` is the clock the game shows at a tick.
-- A weapon's rounds, charge and heat (`PlayerState::ammo_in`, `energy_in`, `heat_in` and
-  `PlayerAt`) are its own: a reading another weapon sent in that slot, or one from an earlier life,
-  isn't. A weapon sends them when they change, so they are None until its first shot or reload.
+- `PlayerState::ammo_in`, `energy_in` and `heat_in` leave out a reading another weapon sent in
+  the slot, and `PlayerAt` also leaves out one from an earlier life. A weapon sends them when they change, so they are None until its first shot or reload.
 - `Display` for `Carried`, `FlagEventKind`, `SeedEventKind` and `ZoneEventKind`: short lowercase
   names.
 - Playback: `Film::players_at` gives every living player at a tick with their life, sample, weapon
@@ -54,8 +53,7 @@ The first release, 0.1.0.
   sends, built as the game builds it (an up direction and an angle about it). On the test films a
   moving ground vehicle faces within 30 degrees of its travel 78% of the time, a dropship 97%.
   `VehicleTrack::position_at` glides between records a few ticks apart, as a player's position
-  does. `Sample::yaw` turns with the axes alone: it took the level box's aspect along before,
-  off by up to several degrees on a level whose box isn't square.
+  does. `Sample::yaw` is in world axes on every level, whatever the aspect of its box.
 - A ride ends when its vehicle is deleted, and with the rider's life: a driver killed with their
   tank stays seated in the wreck, but the ride stops at the death.
 - Damaged chunks never panic: the tests read real films with flipped bits, cut-short chunks and
@@ -94,14 +92,15 @@ The first release, 0.1.0.
   stats'; the match stats count vehicle destroys by another rule.
 - `filmshell::game` holds the game's own tables: weapons, vehicles, medals, damage effects, the
   sandbox's numbers (`fire_stats`, `projectile_stats`, `vehicle_bounds`), and levels with their
-  English names, the services' level ids and their quantization boxes. `TeamId::name` gives the
+  quantization boxes, the services' level ids and, where the game's map info gives one, an English
+  name. `TeamId::name` gives the
   multiplayer teams' names, Eagle to Hazard.
 - `filmshell::format` exposes the raw layers, with the game's names for every event and entity type;
   `filmshell::analysis` estimates what films don't state: accuracy, weapon numbers, spawn factors.
-- A film whose chunks inflate past 1 GiB, or a chunk past 256 MiB, is refused. `Hints` ignore spawn
-  points with coordinates that aren't finite or lie more than a million world units out, and level
-  boxes that aren't finite, whose low corner isn't below their high one, or that span a million
-  engine units or more.
+- A film whose chunks inflate past 1 GiB, or a chunk past 256 MiB, is refused. `Hints` drop spawn
+  points with coordinates that aren't finite or lie more than a million world units out, and a
+  level box that isn't finite, whose low corner isn't below its high one, or that spans a million
+  engine units or more (it also clears a box given before).
 - Features: `serde` derives `Serialize` and `Deserialize` (events tagged by `type`, ids as text,
   a set of players as a list of ids, empty fields left out), and `Film` serializes as its whole
   model; `research` makes the internal readers public, outside the stability guarantees.

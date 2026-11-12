@@ -111,8 +111,8 @@ impl Hints {
 
     /// The level's play-space box, in place of the catalogue's. A box whose
     /// corners aren't finite, whose low corner isn't below its high one, or
-    /// that spans a million engine units or more replaces any box given
-    /// before with none; one whose field widths differ from the film's is
+    /// that spans a million engine units or more is dropped, and clears any
+    /// box given before. A box whose field widths differ from the film's is
     /// not used:
     /// [`Film::coordinates`](crate::Film::coordinates) says which fit ran
     /// instead.

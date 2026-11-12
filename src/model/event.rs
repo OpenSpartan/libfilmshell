@@ -168,11 +168,12 @@ impl Event {
         }
     }
 
-    /// The players the event is about: a kill's victim, killer and
-    /// assistant, a hit's attacker and victim, a destroyed vehicle's
-    /// destroyer and the riders killed with it, a hijack's hijacker and the
-    /// player thrown out, the players a game event was sent to, the player who acted for
-    /// the rest. A voice line's or a HUD message's audience isn't counted.
+    /// The players the event is about: a kill's victim, killer and assistant, a
+    /// hit's attacker and victim, a destroyed vehicle's destroyer and the
+    /// riders killed with it, a hijack's hijacker and the player thrown out,
+    /// the players a game event was sent to and, for every other event, the
+    /// player who acted. A voice line's or a HUD message's audience isn't
+    /// counted.
     pub fn players(&self) -> impl Iterator<Item = PlayerId> + use<> {
         let one = |p: PlayerId| [Some(p), None, None];
         let few = match self {
@@ -249,8 +250,8 @@ pub struct Kill {
     /// counts only while a round is under way: the deaths after a round is
     /// decided, until the next starts, are false, among them those the game
     /// deals everyone still alive when the match ends. In a small lobby, whose
-    /// scoreboard isn't read, a death with cause World 6 s before the film's
-    /// end (362 ticks, within 3) is false and every other death None.
+    /// scoreboard isn't read, a death with cause World 359 to 365 ticks
+    /// before the film's end is false, and every other death is None.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub scored: Option<bool>,
     /// What the last hit on the victim in the 2 s before was.
@@ -263,17 +264,16 @@ pub struct Kill {
     /// Where the victim was.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
-    /// The film has no kill event for this death: the game sends one only
-    /// for a victim with a player, and a bot has none. The tick is when the
-    /// victim's player let go of the life, else its last sample. `killer` is
-    /// the kill the scoreboard counted then, else the victim when it counted
-    /// a suicide, else whom the game's rule credits from the film's hits:
-    /// the fatal hit's attacker when an enemy, else the most recent enemy to
-    /// hit the victim in the 6 s before, else the most recent player to.
-    /// `assistant` is the enemy, other than the killer, whose hits on the
-    /// life in those 6 s took the most of its shield and health, at least a
-    /// fifth, with that share as `assistant_damage_percent`;
-    /// `killer_damage_percent` is None.
+    /// Whether the film has no kill event for this death: the game sends none
+    /// for a bot's death. The tick is when the victim let go of the life, else
+    /// its last sample. `killer` is the player whose kill the scoreboard
+    /// counted then, else the victim when it counted a suicide, else whom the
+    /// game's rule credits from the film's hits: the fatal hit's attacker when
+    /// an enemy, else the most recent enemy to hit the victim in the 6 s
+    /// before, else the most recent player to. `assistant` is the enemy, other
+    /// than the killer, whose hits on the life in those 6 s took the most of
+    /// its shield and health, at least a fifth, with that share as
+    /// `assistant_damage_percent`; `killer_damage_percent` is None.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "std::ops::Not::not"))]
     pub inferred: bool,
     /// Whether the killer and the victim were on one team the tick before
@@ -293,7 +293,7 @@ impl Kill {
     /// Whether the scoreboard counted the death: false when [`Kill::scored`]
     /// is, for the deaths after a round is decided, until the next starts,
     /// among them those the game deals everyone still alive when the match
-    /// ends.
+    /// ends. A death whose count isn't known counts.
     pub fn is_scored(&self) -> bool {
         self.scored != Some(false)
     }
@@ -505,8 +505,8 @@ pub struct VehicleDestroyed {
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub damage: Option<TagId>,
     /// What destroyed it, as for a kill ([`Kill::cause`]): the cause of the
-    /// hit or kill `weapon` comes from, else of the credited player's last
-    /// hit on it.
+    /// hit or kill that `weapon` was taken from, else of the credited
+    /// player's last hit on the vehicle.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub cause: Option<DamageCause>,
     /// The weapon that destroyed it, or the vehicle whose weapon did: the
@@ -533,9 +533,9 @@ pub struct Hijack {
     pub vehicle: crate::game::Vehicle,
     /// The hijacker's ride, an index into [`Film::rides`](crate::Film::rides):
     /// their ride in a vehicle of that type that starts nearest the hijack,
-    /// within 2 s. That is the ride they board into, in a seat of its own
-    /// while the rider is still in theirs (on a Ghost seat 1 or 3), and a
-    /// ride in the rider's seat follows it once the rider is out.
+    /// within 2 s. That ride is in a seat of the hijacker's own while the
+    /// rider still holds theirs (on a Ghost, seat 1 or 3); the hijacker's
+    /// next ride, in the rider's seat, starts once the rider is out.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub ride: Option<usize>,
     /// The player thrown out: of the riders already seated when the

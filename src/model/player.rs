@@ -60,7 +60,8 @@ pub struct Player {
 }
 
 impl Player {
-    /// The gamertag or the bot's name.
+    /// The gamertag or the bot's name: None when the film carries no name
+    /// for the player.
     pub fn name(&self) -> Option<&str> {
         match &self.kind {
             PlayerKind::Human { gamertag, .. } => gamertag.as_deref(),

@@ -235,7 +235,8 @@ pub struct GrenadeFlight {
     /// Its path, thinned to within a quarter of a world unit of the full one.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub path: Vec<PathPoint>,
-    /// When it went off: its deletion, else its last position.
+    /// When it went off: the tick of its deletion, else of its last
+    /// position.
     pub end: Tick,
     /// Whether `end` is the grenade's deletion.
     pub deleted: bool,
@@ -269,7 +270,8 @@ pub struct ProjectileFlight {
     /// straight shot is its two ends.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub path: Vec<PathPoint>,
-    /// When it went off or was gone: its deletion, else its last position.
+    /// When it went off or was gone: the tick of its deletion, else of its
+    /// last position.
     pub end: Tick,
     /// Whether `end` is the projectile's deletion.
     pub deleted: bool,

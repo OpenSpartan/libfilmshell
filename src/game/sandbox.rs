@@ -15,9 +15,9 @@ pub struct FireStats {
     pub burst: i32,
     /// Seconds between bursts.
     pub recovery: f64,
-    /// The magazine, the rounds carried in all at spawn (the magazine
-    /// included) and the most carried in all; None for a weapon without a
-    /// magazine.
+    /// Three counts, in order: the magazine's rounds, the rounds carried at
+    /// spawn counting the magazine, and the most rounds carried; None for a
+    /// weapon without a magazine.
     pub magazine: Option<[i32; 3]>,
     /// The projectile it fires.
     pub projectile: Option<TagId>,

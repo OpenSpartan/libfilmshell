@@ -121,8 +121,10 @@ impl fmt::Display for Tick {
 /// highlights chunk's millisecond times fall.
 ///
 /// A frame is one tick packet of the replay chunks (on a film framed by its
-/// markers, the span from one marker to the next). At 60 Hz a frame is one
-/// tick, on 30 Hz films two, and across a recorder hitch a few more.
+/// markers, the span from one marker to the next: the fallback when a replay
+/// chunk's packets don't walk to its end,
+/// [`format::Frame`](crate::format::Frame)). At 60 Hz a frame is one tick, on
+/// 30 Hz films two, and across a recorder hitch a few more.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Clock {
     pub(crate) frame_ticks: Vec<u32>,
@@ -183,12 +185,14 @@ impl Clock {
         &self.frame_ticks
     }
 
-    /// The highlight clock's tick of `HighlightEvents` time 0. The highlights'
-    /// times count from the match's start, which the film doesn't mark, so
-    /// the library places it from events the film times itself: each death
-    /// record on the kill event of that victim, else each medal record on
-    /// the mode event that names its player. None when neither places it;
-    /// the highlights then have no ticks.
+    /// The highlight clock's tick of `HighlightEvents` time 0.
+    ///
+    /// The highlights' times count from about the film's first frame, and the
+    /// film doesn't say where their 0 falls, so the library places it from
+    /// events the film times itself: each death record on the kill event of
+    /// that victim, else each medal record on the mode event that names its
+    /// player. None when neither places it; the highlights then have no
+    /// ticks.
     ///
     /// The highlight clock is the time since the first frame by the packets'
     /// timestamps, in ticks of 1/59.94 s: a recorder hitch skips ticks but no

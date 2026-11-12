@@ -78,8 +78,9 @@ impl From<u32> for TagId {
 /// by.
 ///
 /// The strings are such things as localization keys, game events' properties,
-/// and options' and statistics' names. Like [`TagId`]s they print, serialize
-/// and parse as eight hex digits.
+/// and options' and statistics' names. Like [`TagId`]s they print and
+/// serialize as eight hex digits, and parse from up to eight, with or without
+/// `0x`.
 #[derive(Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct StringId(pub u32);
 

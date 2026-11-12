@@ -78,7 +78,7 @@ pub struct Sample {
     pub tick: Tick,
     /// The two horizontal position fields as the film stores them, each
     /// scaled to a 15-bit window, `field * 2^(15 - width)`: `raw[0]` becomes
-    /// world y, `raw[1]` world x. In a small lobby they are older units:
+    /// world y, `raw[1]` world x. In a small lobby they are in other units:
     /// `raw[0]` is `16384 + window / 64` and `raw[1]` is `window / 8`.
     /// [`Coordinates::to_world`] converts them.
     pub raw: [f64; 2],

@@ -12,8 +12,9 @@
 //! inflated, from wherever they come from: with the manifest's chunk types
 //! ([`Chunk::from_manifest`]), or, for chunks saved as `filmChunk{N}`
 //! files, with [`Chunk::from_file`], which takes the index from the file name
-//! and the kind from the bytes. [`Film::from_folder`] reads a folder of such
-//! files, the library's only I/O.
+//! and the kind from the bytes. [`Film::from_folder`] and
+//! [`Chunk::read_folder`] read a folder of such files; they are the library's
+//! only I/O.
 //!
 //! # Quick start
 //!
@@ -96,12 +97,13 @@
 //! # Time and space
 //!
 //! Times are [`Tick`]s, 1/60 s of game time from the film's first frame. The
-//! match starts 16 s to 2 minutes later, when its clock first runs
-//! ([`Film::match_start`]), and [`Scoreboard::clock_at`] is the clock the game
-//! shows. A span that lasts through its ticks (a life, a ride, a vehicle's
-//! track) gives its first and last, both inclusive; one that ends when
-//! something is gone (an object off the map, a weapon picked up) gives that
-//! tick, and says so.
+//! match starts later (16 s to 2 minutes on the test films), when its clock
+//! first runs ([`Film::match_start`]), and [`Scoreboard::clock_at`] is the
+//! clock the game shows. A ride or a vehicle's track gives its first and last
+//! tick, both inclusive; a life gives its first sample and, when it ends
+//! before the film, its last tick ([`Life::until`]); something that ends when
+//! it is gone (an object off the map, a weapon picked up) gives that tick, and
+//! says so.
 //!
 //! Positions are in world units ([`Position`]): a world unit is a foot, and
 //! the game's files use engine units of ten world units. The model and
@@ -122,10 +124,10 @@
 //! Infection, Firefight, the minigames, Attrition and Elimination,
 //! Extraction, Escalation, Grifball) they check the level, every player's
 //! kills of enemy players (765 players) and deaths (786), and every team's
-//! score (136 teams) against the match stats: all agree, bots included,
-//! though the game sends no kill event or highlights record for a bot's
-//! death: those deaths are inferred from the rest of the film
-//! ([`Kill::inferred`]). For one player the comparison stops partway:
+//! score (136 teams) against the match stats, and all agree, bots included.
+//! The game sends no kill event or highlights record for a bot's death, so
+//! those deaths are inferred from the rest of the film ([`Kill::inferred`]).
+//! For one player the comparison stops partway:
 //! the game cleared their scoreboard row mid-match (a reconnect), and the
 //! match stats count only what came before; the film goes on to the end.
 //!
@@ -152,8 +154,9 @@
 //! - `serde`: derives `Serialize` and `Deserialize` on the model's data (the
 //!   players, lives, events, scoreboard and the rest of what the accessors
 //!   return, except [`PlayerAt`], [`Clock`], [`Hitch`] and the
-//!   [`format`](mod@format) types), the [`analysis`] results ([`Rule`] and
-//!   [`analysis::AccuracyTicks`] only serialize), the inputs [`ChunkKind`] and
+//!   [`format`](mod@format) types; [`Rule`] only serializes), the
+//!   [`analysis`] results ([`analysis::AccuracyTicks`] only serializes), the
+//!   inputs [`ChunkKind`] and
 //!   [`Hints`] with its parts, and the `game` enums and value types such as
 //!   [`game::Bounds`]. [`Film`] only serializes: as its model, each part under
 //!   its accessor's name. [`Chunk`], [`Error`] and the `game` catalogues'

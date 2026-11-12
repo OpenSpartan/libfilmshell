@@ -9,9 +9,9 @@ use crate::StringId;
 ///
 /// The text is as the game stores it, with its markup: `%p`, `%pa`, `%pe`
 /// and `%ps` are players (the event's player arguments name them, in
-/// order), `%s` a string and `%i` a number, `&killfeed_<name>` a kill feed icon,
-/// `%c` and a letter opens coloured text that `%` closes, and a leading
-/// `%zy` sets the line's style. [`text_parts`] splits it.
+/// order), `%s` a string and `%i` a number, `&killfeed_<name>` a kill feed
+/// icon, `%c` and a letter open coloured text that `%` closes, and a leading
+/// `%z` and a letter set the line's style. [`text_parts`] splits it.
 ///
 /// ```
 /// use filmshell::StringId;
