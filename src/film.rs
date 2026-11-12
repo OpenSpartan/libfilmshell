@@ -836,7 +836,7 @@ impl Film {
     /// # fn run(film: &filmshell::Film) {
     /// use filmshell::Event;
     ///
-    /// // The game's own words for each mode script event that has text.
+    /// // Each personal score the mode scripts gave, in the game's words.
     /// for e in film.events() {
     ///     let Event::GameEvent(g) = &e.event else { continue };
     ///     let Some(text) = film.game_response(g).and_then(|r| r.score).map(|s| s.1) else { continue };
