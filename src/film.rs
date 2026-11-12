@@ -341,6 +341,35 @@ impl Film {
         self.lives.iter().filter(move |l| l.player == Some(player))
     }
 
+    /// Seconds until `player` respawns, at `tick`: while they are dead and a
+    /// respawn countdown runs ([`RespawnCountdown`]), its length less the
+    /// time since it started. On the test films the next life starts within
+    /// a few ticks of the countdown's end. None while the player is alive or
+    /// no countdown runs.
+    pub fn respawn_in(&self, player: PlayerId, tick: Tick) -> Option<f64> {
+        if self.alive_at(player, tick) {
+            return None;
+        }
+        let upto = self.events.partition_point(|e| e.tick <= tick);
+        // Countdowns run seconds, so a minute back is far enough to look. A
+        // countdown the film records twice a few ticks apart started at the
+        // first.
+        let mut countdowns =
+            self.events[..upto].iter().rev().take_while(|e| tick - e.tick <= 3600).filter_map(|e| match &e.event {
+                Event::RespawnCountdown(r) if r.player == player => Some((e.tick, r.seconds)),
+                _ => None,
+            });
+        let (mut start, seconds) = countdowns.next()?;
+        for (t, s) in countdowns {
+            if s != seconds || start - t > 30 {
+                break;
+            }
+            start = t;
+        }
+        let left = f64::from(seconds) - (tick - start) as f64 / f64::from(Tick::PER_SECOND);
+        (left > 0.0).then_some(left)
+    }
+
     /// The life `player` is in at `tick`: the last to start at or before it,
     /// while it lasts ([`Life::until`]). None while the player isn't alive:
     /// before their first life, after a death until the next spawn, after

@@ -1,4 +1,5 @@
 use super::{PlayerId, TeamId, Tick};
+use std::collections::BTreeMap;
 
 /// Whose row of the scoreboard a value is in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -237,6 +238,36 @@ pub struct Scoreboard {
 }
 
 impl Scoreboard {
+    /// The slots in a row.
+    pub const SLOTS: usize = 56;
+
+    /// Every row at `tick`, in owner order: each player's and team's value
+    /// of every slot as of its last change at or before `tick`, 0 before any.
+    /// One pass over the changes, for a scoreboard drawn at a tick;
+    /// [`Scoreboard::value_at`] reads one value.
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film, now: filmshell::Tick) {
+    /// use filmshell::{Stat, StatOwner};
+    ///
+    /// for (owner, row) in film.scoreboard().rows_at(now) {
+    ///     if let StatOwner::Player(p) = owner {
+    ///         let (k, d) = (row[Stat::Kills.slot() as usize], row[Stat::Deaths.slot() as usize]);
+    ///         println!("{} {k}-{d}", film.player_name(p).unwrap_or("someone"));
+    ///     }
+    /// }
+    /// # }
+    /// ```
+    pub fn rows_at(&self, tick: Tick) -> BTreeMap<StatOwner, [i32; Scoreboard::SLOTS]> {
+        let mut rows = BTreeMap::new();
+        for c in &self.changes[..self.changes.partition_point(|c| c.tick <= tick)] {
+            if let Some(v) = rows.entry(c.owner).or_insert([0; Scoreboard::SLOTS]).get_mut(c.slot as usize) {
+                *v = c.value;
+            }
+        }
+        rows
+    }
+
     /// The value of `slot` (a [`Stat`] or a raw slot) in `owner`'s row at
     /// `tick`, 0 before any change. Searches back from `tick` through the
     /// changes.

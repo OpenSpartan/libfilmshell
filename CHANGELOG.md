@@ -46,6 +46,9 @@ The first release, 0.1.0.
   test films; `Film::match_tick` and `Film::match_seconds` convert between seconds into the match
   and ticks, and `Tick + Duration` moves a tick. `Scoreboard::clock_at` is the clock the game shows
   at a tick.
+- `Scoreboard::rows_at`: every row of the scoreboard at a tick in one pass, for a scoreboard drawn
+  in playback. `Film::respawn_in`: seconds until a dead player respawns, from their respawn
+  countdown.
 - `Film::fill_text` fills a game text's markup from an event's arguments: players by name, strings
   by their text, numbers, kill feed icons by name.
 - `Stat::Betrayals`, the scoreboard's slot for kills of teammates. `Xuid` parses the match stats'

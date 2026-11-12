@@ -35,7 +35,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     for p in film.players() {
         let name = p.name().unwrap_or("unnamed");
         let Some(now) = film.player_at(p.id, at) else {
-            println!("{name:<20} not on the map");
+            match film.respawn_in(p.id, at) {
+                Some(s) => println!("{name:<20} respawning in {s:.0} s"),
+                None => println!("{name:<20} not on the map"),
+            }
             continue;
         };
         let s = now.sample;

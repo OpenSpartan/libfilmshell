@@ -1074,6 +1074,52 @@ fn the_match_clock_runs_at_its_rate() {
     assert!(corpus().is_empty() || agree * 100 >= intervals * 93, "{agree} of {intervals}");
 }
 
+/// The scoreboard's rows at a tick hold what each value read alone at that
+/// tick gives.
+#[test]
+fn scoreboard_rows_agree_with_single_values() {
+    for (name, f) in corpus() {
+        let b = f.scoreboard();
+        let end = f.clock().end();
+        for t in [end.0 / 4, end.0 / 2, end.0].map(Tick) {
+            for (owner, row) in b.rows_at(t) {
+                for slot in 0..Scoreboard::SLOTS as u32 {
+                    assert_eq!(row[slot as usize], b.value_at(owner, slot, t), "{name} {t} {owner:?} slot {slot}");
+                }
+            }
+        }
+    }
+}
+
+/// A respawn countdown counts down to the next life: a second into it the
+/// player respawns in its length less a second (a countdown alone in its
+/// second, as nearly all are).
+#[test]
+fn respawns_count_down() {
+    let (mut counted, mut agree) = (0, 0);
+    for (_, f) in corpus() {
+        for e in f.events() {
+            let Event::RespawnCountdown(r) = &e.event else { continue };
+            let t = e.tick + Tick::PER_SECOND;
+            // A one-second countdown is over by then. A countdown the film
+            // records twice, or one the game replaces within the second,
+            // counts from the other.
+            let alone = !f.events().iter().any(|x| {
+                x.tick != e.tick
+                    && x.tick.0.abs_diff(e.tick.0) <= 60
+                    && matches!(&x.event, Event::RespawnCountdown(q) if q.player == r.player)
+            });
+            if r.seconds <= 1 || !alone || f.alive_at(r.player, t) {
+                continue;
+            }
+            counted += 1;
+            let left = f.respawn_in(r.player, t);
+            agree += usize::from(left.is_some_and(|s| (s - (f64::from(r.seconds) - 1.0)).abs() < 0.01));
+        }
+    }
+    assert!(corpus().is_empty() || (counted > 0 && agree == counted), "{agree} of {counted}");
+}
+
 /// The match starts when its clock first runs: no scored kill comes before
 /// it, and a life starts within 3 s after it.
 #[test]
