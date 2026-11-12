@@ -148,7 +148,8 @@
 //!   arena Slayer players.
 //!
 //! Vehicle destroys ([`VehicleDestroyed`]) are the mode scripts' scored ones,
-//! which the match stats don't count the same way.
+//! which the match stats don't count the same way: the Halo services count
+//! theirs from data the film doesn't carry.
 //!
 //! # Features
 //!

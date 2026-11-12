@@ -488,7 +488,9 @@ pub struct VehicleExit {
 /// the vehicle's type when the vehicle belongs to a team and the player is
 /// hostile to it. A vehicle with no team, or one a friend destroyed, has no
 /// event. The match stats count vehicle destroys by another rule, and the
-/// two don't agree player by player.
+/// two don't agree player by player: the Halo services count theirs from
+/// data the film doesn't carry (no code in the game's client adds to the
+/// stat).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
