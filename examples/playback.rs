@@ -79,7 +79,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let name = v.vehicle().map_or("a vehicle", |v| v.name());
         // Degrees from +x toward +y, as a player's aim.
         let facing = v.heading_at(at).map_or(String::new(), |h| format!("  facing {:4.0}", h.to_degrees()));
-        println!("{name:<20} {:7.1} {:7.1}{facing}", pos.x, pos.y);
+        let health = v.health_at(at).map_or(String::new(), |h| format!("  health {:3.0}", h.max(0.0) * 100.0));
+        println!("{name:<20} {:7.1} {:7.1}{facing}{health}", pos.x, pos.y);
     }
     for (g, at) in film.grenades_at(at) {
         let name = g.grenade.map_or("a grenade", |g| g.name());

@@ -17,7 +17,7 @@ pub use ids::{EntityId, Guid, PlayerId, PlayerMask, Position, TeamId, Xuid};
 pub use life::{CoordinateSource, Coordinates, Encoding, Life, Sample, SpawnFit};
 pub use objects::{
     GrenadeFlight, GroundWeapon, Heading, HillPoints, HillScore, PathPoint, ProjectileFlight, Ride, RideIndex,
-    VehicleIndex, VehicleTrack, WorldObject, Zone, ZoneArea, ZoneIndex, ZoneShape, ZoneState,
+    VehicleHealth, VehicleIndex, VehicleTrack, WorldObject, Zone, ZoneArea, ZoneIndex, ZoneShape, ZoneState,
 };
 pub use player::{Player, PlayerKind, TeamChange};
 pub use scoreboard::{EngineState, MatchClock, Scoreboard, Stat, StatChange, StatOwner};

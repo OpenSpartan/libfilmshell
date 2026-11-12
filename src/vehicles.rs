@@ -46,6 +46,9 @@ pub struct Vehicles {
     /// Per id, (frame, forward unit vector in engine axes) of each update
     /// that sends its orientation, in frame order.
     forwards: HashMap<i32, Vec<(i64, [f64; 3])>>,
+    /// Per id, (frame, health as a fraction of its maximum) of each update
+    /// that sends it, in frame order.
+    health: HashMap<i32, Vec<(i64, f64)>>,
 }
 
 impl Vehicles {
@@ -72,6 +75,9 @@ impl Vehicles {
                     OpKind::Update { fields, .. } => {
                         if let Some(forward) = fields.orientation.and_then(|o| o.forward()) {
                             self.forwards.entry(id).or_default().push((i as i64, forward));
+                        }
+                        if let Some(h) = fields.health {
+                            self.health.entry(id).or_default().push((i as i64, h));
                         }
                     }
                     _ => {}
@@ -141,6 +147,15 @@ impl Vehicles {
     /// (not inclusive), engine axes.
     pub fn forwards(&self, id: i32, from: i64, until: Option<i64>) -> &[(i64, [f64; 3])] {
         let all = self.forwards.get(&id).map_or(&[][..], Vec::as_slice);
+        let a = all.partition_point(|x| x.0 < from);
+        let b = until.map_or(all.len(), |u| all.partition_point(|x| x.0 < u));
+        &all[a..b.max(a)]
+    }
+
+    /// The health readings `id` sent from frame `from` up to `until` (not
+    /// inclusive).
+    pub fn health(&self, id: i32, from: i64, until: Option<i64>) -> &[(i64, f64)] {
+        let all = self.health.get(&id).map_or(&[][..], Vec::as_slice);
         let a = all.partition_point(|x| x.0 < from);
         let b = until.map_or(all.len(), |u| all.partition_point(|x| x.0 < u));
         &all[a..b.max(a)]

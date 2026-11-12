@@ -981,6 +981,18 @@ fn destroyed_vehicles_are_found() {
     }
     assert!(corpus().is_empty() || (destroyed > 0 && tracked == destroyed), "{tracked} of {destroyed} destroys found");
     assert!(armed * 100 >= destroyed * 95, "{armed} of {destroyed} destroys name a weapon");
+    // The wreck's health reaches 0 when it blows up, seconds later.
+    let wrecked = corpus()
+        .iter()
+        .flat_map(|(_, f)| {
+            f.events().iter().filter_map(move |e| match &e.event {
+                Event::VehicleDestroyed(d) => d.track.map(|i| (&f.vehicles()[i], e.tick)),
+                _ => None,
+            })
+        })
+        .filter(|(v, t)| (0..=600).any(|k| v.health_at(*t + k).is_some_and(|h| h <= 0.0)))
+        .count();
+    assert!(wrecked * 100 >= destroyed * 85, "{wrecked} of {destroyed} destroyed vehicles reach 0 health");
     eprintln!("{destroyed} vehicles destroyed, {armed} with a weapon, {killed} riders killed with them");
 }
 

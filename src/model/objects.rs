@@ -86,6 +86,25 @@ pub struct VehicleTrack {
     /// Empty when the film's vehicle updates aren't read.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub headings: Vec<Heading>,
+    /// Its health as it changed, in tick order: a fraction of its maximum, 1
+    /// full and 0 or less a wreck. A destroyed vehicle burns before it blows
+    /// up, and its health reaches 0 then: on the test films a median 0.9 s
+    /// after the mode scripts score its destroy
+    /// ([`VehicleDestroyed`](crate::VehicleDestroyed)), 6 s at the 90th
+    /// percentile. Empty when the film's vehicle updates aren't read.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
+    pub health: Vec<VehicleHealth>,
+}
+
+/// A vehicle's health from `tick` on.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct VehicleHealth {
+    /// From when.
+    pub tick: Tick,
+    /// A fraction of the vehicle's maximum: 1 full, 0 or less a wreck.
+    pub health: f64,
 }
 
 /// A vehicle's heading from `tick` on.
@@ -125,6 +144,17 @@ impl VehicleTrack {
         let Some(b) = self.headings.get(i).filter(gap) else { return Some(a.yaw) };
         let f = (tick.0 - a.tick.0) as f64 / (b.tick.0 - a.tick.0) as f64;
         Some(super::life::turn(a.yaw, b.yaw, f))
+    }
+
+    /// The vehicle's health at `tick`, while it was
+    /// [on the map](VehicleTrack::on_map_at): its last reading at or before
+    /// `tick`, else 1, the health a vehicle is created with.
+    pub fn health_at(&self, tick: Tick) -> Option<f64> {
+        if !self.on_map_at(tick) {
+            return None;
+        }
+        let i = self.health.partition_point(|h| h.tick <= tick);
+        Some(i.checked_sub(1).map_or(1.0, |k| self.health[k].health))
     }
 
     /// Whether the vehicle was on the map at `tick`: from its first record
@@ -488,9 +518,12 @@ mod tests {
             track: vec![at(10, 1.0), at(20, 2.0)],
             removed: Some(Tick(100)),
             headings: vec![Heading { tick: Tick(10), yaw: 0.5 }, Heading { tick: Tick(30), yaw: -1.0 }],
+            health: vec![VehicleHealth { tick: Tick(40), health: 0.25 }],
         };
         assert_eq!(v.heading_at(Tick(29)), Some(0.5));
         assert_eq!(v.heading_at(Tick(30)), Some(-1.0));
+        assert_eq!(v.health_at(Tick(39)), Some(1.0));
+        assert_eq!(v.health_at(Tick(40)), Some(0.25));
         assert_eq!(v.position_at(Tick(9)), None);
         assert_eq!(v.position_at(Tick(15)).map(|p| p.x), Some(1.0));
         assert_eq!(v.position_at(Tick(99)).map(|p| p.x), Some(2.0));

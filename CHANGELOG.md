@@ -66,6 +66,8 @@ The first release, 0.1.0.
   the map at a tick: `vehicles_at` (a parked vehicle stays where it stopped until the game deletes
   it, `VehicleTrack::removed`), `grenades_at`, `projectiles_at`, `ground_weapons_at` and
   `world_objects_at`; `Zone::state_at` and `HillScore::points_at`.
+- `VehicleTrack::health` and `health_at`: a vehicle's health as the game sends it; a destroyed one's
+  reaches 0 when it blows up, a median 0.9 s after the scripts score the destroy.
 - `VehicleTrack::headings` and `heading_at`: which way a vehicle faces, from the orientation it
   sends, built as the game builds it (an up direction and an angle about it). On the test films a
   moving ground vehicle faces within 30 degrees of its travel 78% of the time, a dropship 97%.

@@ -1411,12 +1411,19 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                         yaw: (c.scale_y.signum() * f[0]).atan2(-c.scale_x.signum() * f[1]),
                     })
                     .collect();
+                let health = ex
+                    .vehicle_ident
+                    .health(id, pts[0].frame, gone)
+                    .iter()
+                    .map(|&(frame, health)| VehicleHealth { tick: tick(frame), health })
+                    .collect();
                 VehicleTrack {
                     entity: EntityId(id as u16),
                     tag: TagId(tag),
                     track: pts.iter().map(|p| PathPoint::new(tick(p.frame), Position::new(p.x, p.y))).collect(),
                     removed: gone.map(tick),
                     headings,
+                    health,
                 }
             })
             .collect();
