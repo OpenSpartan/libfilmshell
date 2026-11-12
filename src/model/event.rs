@@ -585,7 +585,8 @@ pub enum HudArgument {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct HudMessage {
-    /// The message's localization key.
+    /// The message's localization key: [`game::text`](crate::game::text)
+    /// gives its English.
     pub key: StringId,
     /// Its arguments, in order; None where an argument's kind isn't read.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
@@ -654,7 +655,8 @@ pub struct GameEvent {
     /// Its values, each under its property's name.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub values: Vec<(StringId, GameEventValue)>,
-    /// The event's own text, when it has one.
+    /// The event's own text, when it has one: [`game::text`](crate::game::text)
+    /// gives its English.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub text: Option<StringId>,
     /// The text's arguments, in order.

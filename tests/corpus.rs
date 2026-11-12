@@ -841,6 +841,27 @@ fn game_responses_score_as_the_match_stats_do() {
     assert!(slayer_equal * 100 >= slayer * 90, "{slayer_equal} of {slayer} Slayer players");
 }
 
+/// The text keys films carry, game events' and HUD messages', have their
+/// English text in the library's table.
+#[test]
+fn text_keys_have_their_text() {
+    let (mut keys, mut known) = (0, 0);
+    for (_, f) in corpus() {
+        for e in f.events() {
+            let key = match &e.event {
+                Event::GameEvent(g) => g.text,
+                Event::HudMessage(h) => Some(h.key),
+                _ => None,
+            };
+            let Some(key) = key else { continue };
+            keys += 1;
+            known += usize::from(game::text(key).is_some());
+        }
+    }
+    eprintln!("{known} of {keys} keys");
+    assert!(corpus().is_empty() || known * 100 >= keys * 99, "{known} of {keys} keys have text");
+}
+
 /// Every vehicle destroy the scripts score is tied to a vehicle of its type,
 /// and the riders killed with it rode it.
 #[test]

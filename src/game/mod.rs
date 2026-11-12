@@ -1,7 +1,8 @@
 //! What the library knows about the game itself, read from the game's files:
 //! weapons, vehicles, grenades, equipment and other objects by tag id,
-//! damage effects, medals, levels and their quantization boxes, and the
-//! names and defaults of game variant options.
+//! damage effects, medals, levels and their quantization boxes, the names
+//! and defaults of game variant options, the modes' event trees, and the
+//! English text of the text keys films use.
 //!
 //! Everything here is a static table compiled into the library, in the game
 //! files' engine units. Lookups by tag id are binary searches.
@@ -36,6 +37,9 @@ mod options_data;
 mod sandbox;
 #[rustfmt::skip]
 mod sandbox_data;
+mod text;
+#[rustfmt::skip]
+mod text_data;
 
 pub use damage::{DamageAmount, DamageCause, DamageEffect, Vitality, damage_effect, spartan_vitality};
 pub use events::GameResponse;
@@ -46,6 +50,7 @@ pub use levels::{Level, LevelBox, catalogue_build, level, level_by_api_id, level
 pub use medals::{Medal, MedalDifficulty, MedalKind};
 pub use options::{ModeOption, ModeOptions, OptionValue, modes, murmur3, option_name};
 pub use sandbox::{Bounds, FireStats, ProjectileStats, fire_stats, projectile_stats, vehicle_bounds};
+pub use text::text;
 
 /// `Display` as the game's English name.
 macro_rules! display_name {

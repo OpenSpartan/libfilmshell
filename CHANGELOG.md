@@ -61,6 +61,9 @@ The first release, 0.1.0.
   writes to the kill feed (`game::GameResponse`). On the test films each player's personal score
   from them equals the match stats' on every Capture the Flag, Oddball, King of the Hill,
   Stockpile, Attrition and Extraction film, and for 93% of arena Slayer players.
+- `game::text`: the English text of the text keys films use (kill feed and callout lines, medal and
+  player event text, personal score text, map places, HUD messages), with the game's markup. On
+  the test films 99.7% of the keys game events and HUD messages carry have it.
 - `GameEvent::sequence`, the events' sequence number. An event the game sent again, which a film can
   record twice a few ticks apart, is kept once.
 - `Event::VehicleDestroyed` and `Event::Hijack`: the personal scores the modes' scripts give for
