@@ -36,6 +36,9 @@ The first release, 0.1.0.
   that is none of a film's). `Film::from_folder` and `Chunk::read_folder` read a film saved as
   chunk files (`filmChunk{N}` or `filmChunk{N}_dec`), taking the inflated copy of a chunk where
   both are there; `Error::Io` names a folder or file that can't be read, with its `io::ErrorKind`.
+- A ride's vehicle, a destroyed vehicle's track, a hijack's ride and a zone event's zone are typed
+  indices (`VehicleIndex`, `RideIndex`, `ZoneIndex`): `film.vehicles()[i]` takes one, and a ride's
+  index doesn't fit the vehicles. They serialize as numbers.
 - `Film::match_start`: the tick the match clock first ran, 16 s to 2 minutes into the film on the
   test films. `Scoreboard::clock_at` is the clock the game shows at a tick.
 - `PlayerState::ammo_in`, `energy_in` and `heat_in` leave out a reading another weapon sent in

@@ -1,4 +1,4 @@
-use super::{EntityId, PlayerId, PlayerMask, Position, TeamId, Tick};
+use super::{EntityId, PlayerId, PlayerMask, Position, RideIndex, TeamId, Tick, VehicleIndex, ZoneIndex};
 use crate::game::{DamageCause, Grenade, Medal};
 use crate::{StringId, TagId};
 
@@ -500,7 +500,7 @@ pub struct VehicleDestroyed {
     /// hit last in the 2 s before, preferring the credited player's hits. None
     /// when no such hit is recorded.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
-    pub track: Option<usize>,
+    pub track: Option<VehicleIndex>,
     /// The damage effect of that hit: often the wreck's own blast.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub damage: Option<TagId>,
@@ -537,7 +537,7 @@ pub struct Hijack {
     /// rider still holds theirs (on a Ghost, seat 1 or 3); the hijacker's
     /// next ride, in the rider's seat, starts once the rider is out.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
-    pub ride: Option<usize>,
+    pub ride: Option<RideIndex>,
     /// The player thrown out: of the riders already seated when the
     /// hijacker's ride starts (the hijacker boards into a seat of their own
     /// while the rider is still in theirs), the one whose ride ends first,
@@ -806,7 +806,7 @@ pub struct ZoneEvent {
     /// hill appearing, going live and secured. Scoring ticks, contests and
     /// the skull's events name none.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
-    pub zone: Option<usize>,
+    pub zone: Option<ZoneIndex>,
 }
 
 /// What happened at a zone.

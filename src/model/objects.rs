@@ -2,6 +2,42 @@ use super::{EntityId, PlayerId, PlayerMask, Position, TeamId, Tick};
 use crate::TagId;
 use crate::game::{self, Grenade, Item};
 
+/// Typed indices into the film's lists: each indexes its own list, so a
+/// ride's index can't be used on the vehicles.
+macro_rules! index {
+    ($($(#[$doc:meta])* $name:ident => $target:ty),* $(,)?) => {$(
+        $(#[$doc])*
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize), serde(transparent))]
+        pub struct $name(pub usize);
+
+        impl $name {
+            /// The index as a `usize`.
+            pub const fn get(self) -> usize {
+                self.0
+            }
+        }
+
+        impl std::ops::Index<$name> for [$target] {
+            type Output = $target;
+
+            fn index(&self, i: $name) -> &$target {
+                &self[i.0]
+            }
+        }
+    )*};
+}
+
+index!(
+    /// An index into [`Film::vehicles`](crate::Film::vehicles):
+    /// `film.vehicles()[i]`.
+    VehicleIndex => VehicleTrack,
+    /// An index into [`Film::rides`](crate::Film::rides): `film.rides()[i]`.
+    RideIndex => Ride,
+    /// An index into [`Film::zones`](crate::Film::zones): `film.zones()[i]`.
+    ZoneIndex => Zone,
+);
+
 /// Where something was at a tick: a point of a vehicle's track or of a
 /// grenade's or a projectile's path.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -131,7 +167,7 @@ pub struct Ride {
     /// when it has a track. A rider in a part (a Falcon's side gun, a
     /// Scorpion's turret) rides the vehicle that carries the part.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
-    pub vehicle: Option<usize>,
+    pub vehicle: Option<VehicleIndex>,
     /// The seat: the parent state's, else on a film without it that of the
     /// exit that ends the ride. None when neither names one. It counts the
     /// seats of [`part`](Ride::part) when that is set, else the vehicle's,

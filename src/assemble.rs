@@ -1260,7 +1260,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 };
                 let zone = e.zone.and_then(|z| zones_out.iter().position(|q| q.entity == z));
                 events
-                    .push((e.frame, Event::Zone(ZoneEvent { kind, player: pid(e.player), team: team(e.team), zone })));
+                    .push((e.frame, Event::Zone(ZoneEvent { kind, player: pid(e.player), team: team(e.team), zone: zone.map(ZoneIndex) })));
             }
         }
         // Vehicles and the rides in them: the runs of a path's samples
@@ -1318,7 +1318,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                     .filter(|&direct| direct >= 0 && direct != v)
                     .and_then(|direct| ex.vehicle_ident.tag(direct, from))
                     .map(TagId);
-                let ride = Ride { player, vehicle: track, seat, part, from: tick(from), to: tick(to) };
+                let ride = Ride { player, vehicle: track.map(VehicleIndex), seat, part, from: tick(from), to: tick(to) };
                 // An attachment the game renews a tick or two later is the
                 // same ride.
                 match rides.last_mut() {
@@ -1726,7 +1726,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             .map(|(k, _)| k);
         let rider = track.and_then(|k| {
             rides.iter().find(|r| {
-                r.vehicle == Some(k)
+                r.vehicle == Some(VehicleIndex(k))
                     && r.from <= at
                     && at <= r.to
                     && if part.is_some() { r.part == part } else { r.part.is_none() && r.seat == Some(0) }
@@ -1788,7 +1788,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                         .filter(|(kt, victim, ..)| {
                             kt.0.abs_diff(t.0) <= 3
                                 && track.is_some()
-                                && ride_at(*victim, kt.saturating_sub(2)).is_some_and(|r| r.vehicle == track)
+                                && ride_at(*victim, kt.saturating_sub(2)).is_some_and(|r| r.vehicle == track.map(VehicleIndex))
                         })
                         .collect();
                     let killed: PlayerMask = riders.iter().map(|k| k.1).collect();
@@ -1813,7 +1813,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                         Some((c, w)) => (Some(c), Some(w)),
                         None => (mine().find_map(|h| h.3).map(|t| damage::cause(t).0), None),
                     };
-                    let d = VehicleDestroyed { player, vehicle, track, damage, cause, weapon, killed };
+                    let d = VehicleDestroyed { player, vehicle, track: track.map(VehicleIndex), damage, cause, weapon, killed };
                     scored.push(TimedEvent { tick: t, event: Event::VehicleDestroyed(d) });
                 }
             }
@@ -1823,7 +1823,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                         .iter()
                         .enumerate()
                         .filter(|(_, r)| r.player == player && r.from.0.abs_diff(t.0) <= 120)
-                        .filter(|(_, r)| r.vehicle.is_some_and(|i| vehicles[i].vehicle() == Some(vehicle)))
+                        .filter(|(_, r)| r.vehicle.is_some_and(|i| vehicles[i.0].vehicle() == Some(vehicle)))
                         .min_by_key(|(_, r)| r.from.0.abs_diff(t.0))
                         .map(|(i, _)| i);
                     // The hijacker boards through a hijack seat while the
@@ -1838,7 +1838,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                             .min_by_key(|r| r.to)
                             .map(|r| r.player)
                     });
-                    scored.push(TimedEvent { tick: t, event: Event::Hijack(Hijack { player, vehicle, ride, from }) });
+                    scored.push(TimedEvent { tick: t, event: Event::Hijack(Hijack { player, vehicle, ride: ride.map(RideIndex), from }) });
                 }
             }
         }

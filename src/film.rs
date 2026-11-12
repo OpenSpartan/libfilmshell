@@ -468,7 +468,7 @@ impl Film {
 
     /// The track of the vehicle a ride is in, when it has one.
     pub fn ride_vehicle(&self, ride: &Ride) -> Option<&VehicleTrack> {
-        self.vehicles.get(ride.vehicle?)
+        self.vehicles.get(ride.vehicle?.0)
     }
 
     /// The rides of one life, in tick order: its player's rides that start
