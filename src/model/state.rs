@@ -65,7 +65,10 @@ pub struct Input {
     /// The control record's 5-bit stance field, when sent. Bit 4 (0x10) is
     /// the jump button: on the test films, 89% to 98% of the jumps the
     /// biped's vertical speed shows have it set within 3 frames. The other
-    /// bits' meanings aren't known.
+    /// bits are only measured: a player pushing the stick with bit 0 set
+    /// moves most often at 10 to 14 world units a second (crouched, by the
+    /// speed), with bit 3 at 18 to 30 (running, and sprinting at the top),
+    /// and with bit 2 faster than a sprint.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub stance: Option<u8>,
 }
