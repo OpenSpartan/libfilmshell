@@ -974,6 +974,34 @@ fn kills_count_as_the_match_stats_do() {
     assert!(wrong.is_empty(), "{wrong:#?}");
 }
 
+/// Every player's betrayals the scoreboard counts are the match stats'
+/// Betrayals, up to [`stats_until`].
+#[test]
+fn betrayals_count_as_the_match_stats_do() {
+    let (mut players, mut betrayals) = (0usize, 0u64);
+    let mut wrong = Vec::new();
+    for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
+        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
+        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        for player in f.players() {
+            let Some(s) = stats_row(&stats, player) else { continue };
+            let Some(want) = s["PlayerTeamStats"][0]["Stats"]["CoreStats"]["Betrayals"].as_u64() else { continue };
+            let p = player.id;
+            let until = stats_until(f, p);
+            let got =
+                f.kills().filter(|&(t, k)| k.killer == Some(p) && k.betrayal && k.is_scored() && t <= until).count()
+                    as u64;
+            players += 1;
+            betrayals += want;
+            if got != want {
+                wrong.push(format!("{name}: player {p} has {got} betrayals, the stats say {want}"));
+            }
+        }
+    }
+    println!("{betrayals} betrayals among {players} players");
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
 /// Between two readings of the match clock with the same limit, the time
 /// left moves by the timer's rate: on 93% of them at least (95% on the
 /// test films; the mode's scripts can also set the time outright).

@@ -14,7 +14,6 @@
 //! `FileRelativePath`.
 
 use filmshell::{Chunk, ChunkKind};
-use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 
 const VAR: &str = "FILMSHELL_TEST_FILMS";
@@ -73,20 +72,10 @@ pub fn load(dir: &Path) -> Vec<Chunk<'static>> {
 }
 
 /// The chunks of the film in `dir` read by their file names alone, with
-/// [`Chunk::from_file`], which inflates them. The inflated copy wins where
+/// [`Chunk::read_folder`], which inflates them. The inflated copy wins where
 /// both are there.
-pub fn load_folder(dir: &Path) -> std::io::Result<Vec<Chunk<'static>>> {
-    let mut chunks = Vec::new();
-    for entry in std::fs::read_dir(dir)? {
-        let path = entry?.path();
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-        if !name.starts_with("filmChunk") || dir.join(format!("{name}_dec")).exists() {
-            continue;
-        }
-        let chunk = Chunk::from_file(name, std::fs::read(&path)?).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
-        chunks.push(chunk);
-    }
-    Ok(chunks)
+pub fn load_folder(dir: &Path) -> Result<Vec<Chunk<'static>>, filmshell::Error> {
+    Chunk::read_folder(dir)
 }
 
 /// `data` as a zlib stream of stored blocks, as a downloaded chunk is

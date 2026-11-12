@@ -40,6 +40,47 @@ pub struct Film {
 /// The most missing chunk indices [`Error::MissingChunks`] lists.
 const MISSING_LISTED: usize = 16;
 
+/// The film's model, each part under its accessor's name: `header`,
+/// `variant`, `level_id`, `coordinates`, `match_start`, `frame_ticks` (the
+/// clock: [`Clock::frame_ticks`]), `players`, `lives`, `rides`, `vehicles`,
+/// `world_objects`, `ground_weapons`, `grenades`, `projectiles`, `zones`,
+/// `hill_score`, `events`, `highlights`, `scoreboard` and `player_states`
+/// (by player id). Serialize only: a film is read from its chunks.
+#[cfg(feature = "serde")]
+impl serde::Serialize for Film {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        struct States<'a>(&'a [(PlayerId, PlayerState)]);
+        impl serde::Serialize for States<'_> {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                s.collect_map(self.0.iter().map(|(p, st)| (p.0, st)))
+            }
+        }
+        let mut f = s.serialize_struct("Film", 20)?;
+        f.serialize_field("header", &self.header)?;
+        f.serialize_field("variant", &self.variant)?;
+        f.serialize_field("level_id", &self.level_id)?;
+        f.serialize_field("coordinates", &self.coordinates)?;
+        f.serialize_field("match_start", &self.match_start())?;
+        f.serialize_field("frame_ticks", self.clock.frame_ticks())?;
+        f.serialize_field("players", &self.players)?;
+        f.serialize_field("lives", &self.lives)?;
+        f.serialize_field("rides", &self.rides)?;
+        f.serialize_field("vehicles", &self.vehicles)?;
+        f.serialize_field("world_objects", &self.world)?;
+        f.serialize_field("ground_weapons", &self.ground)?;
+        f.serialize_field("grenades", &self.grenades)?;
+        f.serialize_field("projectiles", &self.projectiles)?;
+        f.serialize_field("zones", &self.zones)?;
+        f.serialize_field("hill_score", &self.hill_score)?;
+        f.serialize_field("events", &self.events)?;
+        f.serialize_field("highlights", &self.highlights)?;
+        f.serialize_field("scoreboard", &self.scoreboard)?;
+        f.serialize_field("player_states", &States(&self.states))?;
+        f.end()
+    }
+}
+
 impl std::fmt::Debug for Film {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Film")
@@ -82,6 +123,22 @@ impl Film {
     /// - [`Error::NoTicks`]: replay chunks that record no tick.
     pub fn from_chunks<'a>(chunks: impl IntoIterator<Item = Chunk<'a>>) -> Result<Film, Error> {
         Film::from_chunks_with(chunks, &Hints::default())
+    }
+
+    /// Reads the film saved as chunk files in folder `dir`
+    /// ([`Chunk::read_folder`]).
+    ///
+    /// ```no_run
+    /// let film = filmshell::Film::from_folder("path/to/film")?;
+    /// println!("{} players", film.players().len());
+    /// # Ok::<(), filmshell::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// As [`Chunk::read_folder`] and [`Film::from_chunks`].
+    pub fn from_folder(dir: impl AsRef<std::path::Path>) -> Result<Film, Error> {
+        Film::from_chunks(Chunk::read_folder(dir)?)
     }
 
     /// [`Film::from_chunks`] with facts the film lacks ([`Hints`]): a level
@@ -424,7 +481,7 @@ impl Film {
     }
 
     /// Thrown grenades' flights, in throw order.
-    pub fn grenade_flights(&self) -> &[GrenadeFlight] {
+    pub fn grenades(&self) -> &[GrenadeFlight] {
         &self.grenades
     }
 
@@ -435,7 +492,7 @@ impl Film {
     }
 
     /// Every projectile's flight but thrown grenades' (those are
-    /// [`Film::grenade_flights`]), in the order they were fired.
+    /// [`Film::grenades`]), in the order they were fired.
     pub fn projectiles(&self) -> &[ProjectileFlight] {
         &self.projectiles
     }

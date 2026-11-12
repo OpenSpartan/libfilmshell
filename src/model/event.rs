@@ -276,6 +276,11 @@ pub struct Kill {
     /// `killer_damage_percent` is None.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "std::ops::Not::not"))]
     pub inferred: bool,
+    /// Whether the killer and the victim were on one team the tick before
+    /// (Infection moves a victim at the kill): a betrayal. False for a
+    /// suicide.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "std::ops::Not::not"))]
+    pub betrayal: bool,
 }
 
 impl Kill {

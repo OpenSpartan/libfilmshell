@@ -14,7 +14,7 @@ fn main() -> std::process::ExitCode {
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let dir = std::env::args().nth(1).ok_or("usage: players <film folder>")?;
-    let film = Film::from_chunks(common::load_folder(dir.as_ref())?)?;
+    let film = Film::from_folder(&dir)?;
 
     let variant = film.variant().map_or("unknown variant", |v| v.name.as_str());
     let level = film.level().map_or("unknown level", |l| l.title());

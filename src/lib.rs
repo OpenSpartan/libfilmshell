@@ -129,10 +129,11 @@
 //! - Capture the Flag's grabs, steals, captures, returns, carriers killed
 //!   and capture assists ([`FlagEvent`]), and Big Team Stockpile's power
 //!   seeds ([`SeedEvent`]), all equal.
-//! - Hijacks ([`Hijack`]) equal.
+//! - Hijacks ([`Hijack`]) and betrayals ([`Kill::betrayal`]) equal.
 //! - Time carrying the flag, the skull or a power seed
-//!   ([`PlayerAt::carrying`]), counted while a round is in play, within a
-//!   second for 152 of 155 players.
+//!   ([`PlayerAt::carrying`]), counted while a round is in play and each
+//!   carry truncated to tenths of a second, within 0.15 s for 146 of 155
+//!   players.
 //! - The personal score of the mode scripts' events
 //!   ([`Film::game_response`]) equal on every Capture the Flag, Oddball, King
 //!   of the Hill, Stockpile, Attrition and Extraction film, and for 93% of
@@ -149,13 +150,14 @@
 //!   [`format`](mod@format) types), the
 //!   [`analysis`] results ([`Rule`] and [`analysis::AccuracyTicks`] only
 //!   serialize), and the `game` enums and value types such as
-//!   [`game::Bounds`]. [`Film`], the inputs ([`Chunk`], [`ChunkKind`],
+//!   [`game::Bounds`]. [`Film`] only serializes: as its model, each part
+//!   under its accessor's name. The inputs ([`Chunk`], [`ChunkKind`],
 //!   [`Hints`] and its parts), [`Error`] and the `game` catalogues' entries
 //!   ([`game::Level`], [`game::DamageEffect`] and the like) have neither. An
 //!   [`Event`] is an object with a `type` (`{"type": "kill", "victim": 3,
 //!   ...}`), enum variants are snake_case, [`TagId`]s, [`StringId`]s,
-//!   [`Xuid`]s and [`Guid`]s are strings, and empty `Option` and `Vec` fields
-//!   are left out. With `serde_json`, turn on its `float_roundtrip` feature
+//!   [`Xuid`]s and [`Guid`]s are strings, a [`PlayerMask`] is a list of
+//!   player ids, and empty `Option` and `Vec` fields are left out. With `serde_json`, turn on its `float_roundtrip` feature
 //!   for floats to read back exactly.
 //! - `research`: makes the internal readers public under a hidden
 //!   `research` module, for studying the format; they are outside the API's

@@ -17,7 +17,8 @@ The first release, 0.1.0.
   kill event for, a bot's (`Kill::inferred`). Those are credited as the game credits them: the kill
   its scoreboard counted, else its rule (the fatal hit's attacker when an enemy, else the last enemy
   to hit the victim in the 6 s before), with the assistant by its rule (a fifth of the victim's
-  shield and health).
+  shield and health). `Kill::betrayal` marks a kill between teammates; on the test films each
+  player's betrayals equal the match stats'.
 - A life belongs to the player the film names as controlling it, else to the player whose death
   times in the highlights chunk it matches; none starts before its player joined or after they left.
   A player letting go of a life is a death only when the scoreboard counts one then, so a bot
@@ -31,6 +32,9 @@ The first release, 0.1.0.
   `Scoreboard::total_stat` adds the rounds up, as the match stats do. The match clock's state is the
   index of its rate in the game's table: `MatchClock::rate`, `is_stopped`, `is_counting_down` and
   `is_counting_up`.
+- `Film::from_folder` and `Chunk::read_folder` read a film saved as chunk files (`filmChunk{N}` or
+  `filmChunk{N}_dec`), taking the inflated copy of a chunk where both are there; `Error::Io` names
+  a folder or file that can't be read.
 - `Film::match_start`: the tick the match clock first ran, 16 s to 2 minutes into the film on the
   test films. `Scoreboard::clock_at` is the clock the game shows at a tick.
 - A weapon's rounds, charge and heat (`PlayerState::ammo_in`, `energy_in`, `heat_in` and
@@ -91,5 +95,5 @@ The first release, 0.1.0.
   boxes that aren't finite, whose low corner isn't below their high one, or that span a million
   engine units or more.
 - Features: `serde` derives `Serialize` and `Deserialize` (events tagged by `type`, ids as text,
-  empty fields left out); `research` makes the internal readers public, outside the stability
-  guarantees.
+  a set of players as a list of ids, empty fields left out), and `Film` serializes as its whole
+  model; `research` makes the internal readers public, outside the stability guarantees.

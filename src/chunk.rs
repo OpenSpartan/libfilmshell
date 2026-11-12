@@ -1,5 +1,6 @@
 use crate::Error;
 use std::borrow::Cow;
+use std::path::Path;
 
 /// What a chunk holds. The film's manifest gives each chunk a type: the
 /// header chunk first, then the replay chunks, then the `HighlightEvents`
@@ -104,23 +105,12 @@ impl<'a> Chunk<'a> {
     /// folder. The index comes from the name and the kind from the bytes
     /// ([`ChunkKind::detect`]); compressed bytes are inflated here.
     ///
-    /// Reading a film saved as a folder of chunk files, taking the inflated
-    /// copy of a chunk where both are there:
+    /// [`Chunk::read_folder`] reads a folder of them.
     ///
     /// ```no_run
-    /// use filmshell::{Chunk, Film};
+    /// use filmshell::Chunk;
     ///
-    /// let dir = std::path::Path::new("path/to/film");
-    /// let mut chunks = Vec::new();
-    /// for entry in std::fs::read_dir(dir)? {
-    ///     let path = entry?.path();
-    ///     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
-    ///     if Chunk::file_index(name).is_none() || dir.join(format!("{name}_dec")).exists() {
-    ///         continue;
-    ///     }
-    ///     chunks.push(Chunk::from_file(name, std::fs::read(&path)?)?);
-    /// }
-    /// let film = Film::from_chunks(chunks)?;
+    /// let header = Chunk::from_file("filmChunk0", std::fs::read("path/to/film/filmChunk0")?)?;
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     ///
@@ -145,6 +135,40 @@ impl<'a> Chunk<'a> {
         }
         let kind = ChunkKind::detect(index, &data).ok_or(Error::UnknownChunk { index })?;
         Ok(Chunk { index, kind, data })
+    }
+
+    /// Every chunk file in folder `dir`, read with [`Chunk::from_file`] in
+    /// index order: the inflated copy of a chunk where both are there. Other
+    /// files are skipped.
+    ///
+    /// ```no_run
+    /// use filmshell::{Chunk, Film, Hints};
+    ///
+    /// let chunks = Chunk::read_folder("path/to/film")?;
+    /// let film = Film::from_chunks_with(chunks, &Hints::default())?;
+    /// # Ok::<(), filmshell::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Io`] for a folder or file that can't be read, and the errors
+    /// of [`Chunk::from_file`].
+    pub fn read_folder(dir: impl AsRef<Path>) -> Result<Vec<Chunk<'static>>, Error> {
+        let dir = dir.as_ref();
+        let io =
+            |path: &Path, e: std::io::Error| Error::Io { path: path.display().to_string(), message: e.to_string() };
+        let mut chunks = Vec::new();
+        for entry in std::fs::read_dir(dir).map_err(|e| io(dir, e))? {
+            let path = entry.map_err(|e| io(dir, e))?.path();
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            if Chunk::file_index(name).is_none() || dir.join(format!("{name}_dec")).exists() {
+                continue;
+            }
+            let data = std::fs::read(&path).map_err(|e| io(&path, e))?;
+            chunks.push(Chunk::from_file(name, data)?);
+        }
+        chunks.sort_by_key(|c| c.index);
+        Ok(chunks)
     }
 
     /// The index a chunk file's name gives: `N` for `filmChunk{N}` (as

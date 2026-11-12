@@ -84,12 +84,31 @@ impl fmt::Display for TeamId {
     }
 }
 
-/// A set of players as the game packs it: bit `31 - id` for each
-/// [`PlayerId`], so ids 0 to 31 only. Voice lines, game events and zones name
-/// their players this way.
+/// A set of players as the game packs it: bit `31 - id` for each player.
+///
+/// It holds ids 0 to 31 only. Voice lines, game events and zones name their
+/// players this way. With serde it is the list of its players' ids,
+/// `[3, 15]`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PlayerMask(pub u32);
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for PlayerMask {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_seq(self.iter())
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for PlayerMask {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<PlayerMask, D::Error> {
+        let players = Vec::<PlayerId>::deserialize(d)?;
+        match players.iter().find(|p| p.0 >= 32) {
+            Some(p) => Err(serde::de::Error::custom(format!("player {p} can't be in a set of players"))),
+            None => Ok(players.into_iter().collect()),
+        }
+    }
+}
 
 impl PlayerMask {
     /// Whether `player` is in the set.

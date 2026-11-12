@@ -19,7 +19,7 @@ fn main() -> std::process::ExitCode {
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let dir = std::env::args().nth(1).ok_or("usage: trails <film folder>")?;
-    let film = Film::from_chunks(common::load_folder(dir.as_ref())?)?;
+    let film = Film::from_folder(&dir)?;
     if film.coordinates().is_none() {
         return Err("the film's positions can't be placed on its map".into());
     }

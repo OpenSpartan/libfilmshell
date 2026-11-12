@@ -20,7 +20,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let dir = args.next().ok_or("usage: timeline <film folder> <player id>")?;
     let id = args.next().ok_or("give a player id")?;
     let me = PlayerId(id.parse().map_err(|_| format!("{id} is not a player id"))?);
-    let film = Film::from_chunks(common::load_folder(dir.as_ref())?)?;
+    let film = Film::from_folder(&dir)?;
     if film.player(me).is_none() {
         return Err(format!("the film has no player {me}").into());
     }

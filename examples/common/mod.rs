@@ -1,17 +1,13 @@
-//! What the examples share: loading a film from a folder of chunk files,
-//! and filling in a game text's markup.
+//! What the examples share: running one, and filling in a game text's markup.
 //!
-//! The Halo Infinite film manifest lists each chunk with an `Index`, a
-//! `ChunkType` (1 header, 2 replay, 3 highlights) and a `FileRelativePath`
-//! such as `/filmChunk0`. A downloader maps each entry to
+//! The examples read a film saved as a folder of chunk files with
+//! `Film::from_folder`. A downloader that has the film's manifest instead
+//! maps each of its entries (an `Index`, a `ChunkType`: 1 header, 2 replay,
+//! 3 highlights) to
 //! `Chunk::new(entry.Index, ChunkKind::from_manifest(entry.ChunkType)?, bytes)`.
-//! Without the manifest, `Chunk::from_file` reads the index from a
-//! `filmChunk{N}` (as downloaded) or `filmChunk{N}_dec` (inflated) file name
-//! and the kind from the bytes.
 
 use filmshell::game::{self, TextPart};
-use filmshell::{Chunk, Film, GameEventArgument, StringId};
-use std::path::Path;
+use filmshell::{Film, GameEventArgument, StringId};
 use std::process::ExitCode;
 
 /// Runs an example, printing its error as text and exiting with status 1.
@@ -23,21 +19,6 @@ pub fn main(run: fn() -> Result<(), Box<dyn std::error::Error>>) -> ExitCode {
             ExitCode::FAILURE
         }
     }
-}
-
-/// The chunks of the film in `dir`, the inflated copy of a chunk where both
-/// are there. Other files are skipped.
-pub fn load_folder(dir: &Path) -> Result<Vec<Chunk<'static>>, Box<dyn std::error::Error>> {
-    let mut chunks = Vec::new();
-    for entry in std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))? {
-        let path = entry?.path();
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-        if Chunk::file_index(name).is_none() || dir.join(format!("{name}_dec")).exists() {
-            continue;
-        }
-        chunks.push(Chunk::from_file(name, std::fs::read(&path)?)?);
-    }
-    Ok(chunks)
 }
 
 /// A text with its markup filled in from the event's arguments, in order:

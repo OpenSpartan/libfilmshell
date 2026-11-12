@@ -1,7 +1,7 @@
-//! Writes a film's model as JSON: the header, the players, every life with
-//! its samples, the events and the scoreboard, for a viewer in another
-//! language. The
-//! samples make it large: about 60 MB for a 9-minute Big Team Battle match.
+//! Writes a film's model as JSON, for a viewer in another language: the
+//! header, the players, every life with its samples, the vehicles, the
+//! events, the scoreboard and the rest, each under its accessor's name. The
+//! samples make it large: about 100 MB for a 9-minute Big Team Battle match.
 //!
 //! ```text
 //! cargo run --release --features serde --example json -- path/to/film > film.json
@@ -17,14 +17,7 @@ fn main() -> std::process::ExitCode {
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let dir = std::env::args().nth(1).ok_or("usage: json <film folder>")?;
-    let film = Film::from_chunks(common::load_folder(dir.as_ref())?)?;
-    let out = serde_json::json!({
-        "header": film.header(),
-        "players": film.players(),
-        "lives": film.lives(),
-        "events": film.events(),
-        "scoreboard": film.scoreboard(),
-    });
-    serde_json::to_writer(std::io::stdout().lock(), &out)?;
+    let film = Film::from_folder(&dir)?;
+    serde_json::to_writer(std::io::stdout().lock(), &film)?;
     Ok(())
 }

@@ -20,7 +20,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let dir = args.next().ok_or("usage: playback <film folder> <seconds>")?;
     let seconds = args.next().ok_or("give a time in seconds")?;
     let seconds: f64 = seconds.parse().map_err(|_| format!("{seconds} is not a number of seconds"))?;
-    let film = Film::from_chunks(common::load_folder(dir.as_ref())?)?;
+    let film = Film::from_folder(&dir)?;
     // Seconds into the match, from when its clock first ran; on a film
     // without a match clock, from the film's first frame.
     let start = film.match_start().unwrap_or_default();

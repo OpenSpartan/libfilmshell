@@ -21,6 +21,19 @@ fn no_chunks() {
     assert_eq!(Film::from_chunks(Vec::new()).unwrap_err(), Error::NoChunks);
 }
 
+/// A folder that can't be read names itself; one without chunk files
+/// (other files are skipped) holds no chunks.
+#[test]
+fn folders() {
+    let missing = Film::from_folder("no/such/folder").unwrap_err();
+    assert!(matches!(&missing, Error::Io { path, .. } if path.contains("such")), "{missing}");
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("no-chunks");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("notes.txt"), "not a chunk").unwrap();
+    assert_eq!(Chunk::read_folder(&dir).unwrap().len(), 0);
+    assert_eq!(Film::from_folder(&dir).unwrap_err(), Error::NoChunks);
+}
+
 #[test]
 fn gaps_and_repeats_are_named() {
     let gap = vec![chunk(0, ChunkKind::Header), chunk(3, ChunkKind::Replay), chunk(1, ChunkKind::Replay)];
@@ -142,4 +155,15 @@ fn a_chunk_that_inflates_without_bound_is_refused() {
     // The same stream, short of the limit, inflates (and fails its checksum).
     let chunks = vec![chunk(0, ChunkKind::Header), Chunk::new(1, ChunkKind::Replay, bomb(10))];
     assert_eq!(Film::from_chunks(chunks).unwrap_err(), Error::Inflate { index: 1 });
+}
+
+/// A set of players serializes as the list of their ids.
+#[cfg(feature = "serde")]
+#[test]
+fn player_sets_are_lists_of_ids() {
+    use filmshell::{PlayerId, PlayerMask};
+    let set: PlayerMask = [PlayerId(3), PlayerId(15)].into_iter().collect();
+    assert_eq!(serde_json::to_string(&set).unwrap(), "[3,15]");
+    assert_eq!(serde_json::from_str::<PlayerMask>("[15,3]").unwrap(), set);
+    assert!(serde_json::from_str::<PlayerMask>("[40]").is_err());
 }

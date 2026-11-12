@@ -939,6 +939,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 weapon,
                 position: vk.and_then(|k| at_frame(k, frame)),
                 inferred: false,
+                betrayal: false,
             };
             events.push((frame, Event::Kill(kill)));
         }
@@ -1400,18 +1401,19 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     // kill, at the frame its player let go of the life (else its last
     // sample).
     //
-    // Who killed is the game's decision, and the scoreboard records it: a
-    // kill counted then for the killer (once per count, the rows being per
-    // round; a kill event spends its own), else a suicide counted for the
-    // victim. Without either (the match over, no scoreboard) the game's own
-    // rule decides from the film's hits: the fatal hit's attacker when an
-    // enemy, else the most recent enemy to hit the victim in the 6 s
-    // before, else the most recent player to. The film can miss the fatal
-    // hit, so the scoreboard comes first. The assists are the other enemies
-    // whose hits on the life in the 6 s before add up to a fifth of its
-    // shield and health; the largest is the assistant. (The game's test has
-    // no time limit, but its damage records go: counting older hits names
-    // assists the scoreboard never counts.)
+    // Who killed is the game's decision, and the scoreboard records it: a kill
+    // counted then for the killer (once per count, the rows being per round; a
+    // kill event spends its own), else a suicide counted for the victim.
+    // Without either (the match over, no scoreboard) the game's own rule
+    // decides from the film's hits: the fatal hit's attacker when an enemy,
+    // else the most recent enemy to hit the victim in the 6 s before, else the
+    // most recent player to (a teammate's hit is a betrayal, as the match
+    // stats count it). The film can miss the fatal hit, so the scoreboard
+    // comes first. The assists are the other enemies whose
+    // hits on the life in the 6 s before add up to a fifth of its shield and
+    // health; the largest is the assistant. (The game's test has no time limit,
+    // but its damage records go: counting older hits names assists the
+    // scoreboard never counts.)
     let rises = |slot: u32| {
         let mut out: Vec<(u32, i64)> = Vec::new();
         let mut had: HashMap<(u32, u32), i32> = HashMap::new();
@@ -1444,7 +1446,10 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             .and_then(|h| crate::teams::at(h, frame - 1))
             .or(roster.players.get(p.0 as usize).and_then(|r| r.team))
     };
-    let enemies = |a: PlayerId, b: PlayerId, frame: i64| a != b && (!has_teams || team_then(a, frame) != team_then(b, frame));
+    // A player without a team (a free for all's bot) is everyone's enemy.
+    let enemies = |a: PlayerId, b: PlayerId, frame: i64| {
+        a != b && (!has_teams || team_then(a, frame).is_none_or(|t| team_then(b, frame) != Some(t)))
+    };
     let (body_max, shield_max) = crate::damage::spartan();
     let vitality = body_max + if vitals.as_ref().is_some_and(|v| v.shieldless()) { 0.0 } else { shield_max };
     if let Some(ff) = &fired {
@@ -1507,7 +1512,9 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         let mut pairs: Vec<(i64, bool, usize, usize)> = Vec::new();
         for (d, &(victim, _, frame, rule, _)) in unrecorded.iter().enumerate() {
             for (i, &(id, f)) in kill_counts.iter().enumerate() {
-                if !spent[i] && id != victim.0 as u32 && near(frame, f) {
+                // A counted kill is of an enemy: betrayals count apart.
+                let enemy = pid(id as i32).is_some_and(|k| enemies(k, victim, frame));
+                if !spent[i] && enemy && near(frame, f) {
                     pairs.push(((f - frame).abs(), pid(id as i32) != rule, d, i));
                 }
             }
@@ -1543,6 +1550,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 weapon,
                 position: at_frame(vk, frame),
                 inferred: true,
+                betrayal: false,
             };
             events.push((frame, Event::Kill(kill)));
         }
@@ -1819,6 +1827,18 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         }
         events.extend(scored);
         events.sort_by_key(|e| e.tick);
+    }
+
+    // A kill between players on one team the tick before is a betrayal.
+    let team_before = |p: PlayerId, t: Tick| {
+        players.iter().find(|x| x.id == p).and_then(|x| x.team_at(t.saturating_sub(1)))
+    };
+    for e in &mut events {
+        if let Event::Kill(k) = &mut e.event {
+            k.betrayal = k.killer.is_some_and(|killer| {
+                killer != k.victim && team_before(killer, e.tick).is_some_and(|t| team_before(k.victim, e.tick) == Some(t))
+            });
+        }
     }
 
     // What each player pressed and carried.
@@ -2126,6 +2146,7 @@ mod tests {
                 weapon: None,
                 position: None,
                 inferred: false,
+                betrayal: false,
             })
         };
         let at = |t: u32, event: Event| TimedEvent { tick: Tick(t), event };

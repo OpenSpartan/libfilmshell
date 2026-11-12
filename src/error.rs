@@ -53,6 +53,14 @@ pub enum Error {
         /// The chunk's index.
         index: u32,
     },
+    /// A folder or a file in it could not be read
+    /// ([`Chunk::read_folder`](crate::Chunk::read_folder)).
+    Io {
+        /// The folder or file.
+        path: String,
+        /// The operating system's message.
+        message: String,
+    },
 }
 
 impl fmt::Display for Error {
@@ -72,6 +80,7 @@ impl fmt::Display for Error {
             Error::NoTicks => write!(f, "no replay chunk records a tick"),
             Error::NotAChunkFile { name } => write!(f, "{name} is not the name of a film chunk file"),
             Error::UnknownChunk { index } => write!(f, "chunk {index} is not a film chunk"),
+            Error::Io { path, message } => write!(f, "{path}: {message}"),
         }
     }
 }

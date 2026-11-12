@@ -83,8 +83,8 @@ fn print_match(chunks: &[(u32, u32, Vec<u8>)]) -> Result<(), filmshell::Error> {
 
 Chunks saved as files named `filmChunk{N}` (as downloaded) or `filmChunk{N}_dec` (inflated) need no
 manifest: `Chunk::from_file(name, bytes)` takes the index from the file name and the kind from the
-bytes. The [`examples` folder](examples) has eight programs that read a film saved as a folder of
-chunk files:
+bytes, and `Film::from_folder(dir)` reads a folder of them. The [`examples` folder](examples) has
+eight programs that read a film saved that way:
 
 ```sh
 # The match, its players and the score
