@@ -2,10 +2,11 @@ use crate::text::{ParseIdError, serde_as_text};
 use std::fmt;
 use std::str::FromStr;
 
-/// A global tag id: the 32-bit name the game gives an asset (a weapon, a
-/// vehicle, a damage effect, a sound, a level). Films refer to everything in
-/// the game's content by these ids. They print and serialize as eight hex
-/// digits, and parse from up to eight, with or without `0x`.
+/// A global tag id: the 32-bit name the game gives an asset.
+///
+/// Weapons, vehicles, damage effects, sounds and levels are assets, and films
+/// refer to all of the game's content by these ids. They print and serialize as
+/// eight hex digits, and parse from up to eight, with or without `0x`.
 #[derive(Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TagId(pub u32);
 
@@ -61,10 +62,12 @@ impl From<u32> for TagId {
         TagId(v)
     }
 }
-/// A string id: the 32-bit murmur3 hash (x86, seed 0) the game names a
-/// string by, such as a localization key, a game event's property, an
-/// option's or a statistic's name. Like [`TagId`]s they print, serialize and
-/// parse as eight hex digits.
+/// A string id: the 32-bit murmur3 hash (x86, seed 0) the game names a string
+/// by.
+///
+/// The strings are such things as localization keys, game events' properties,
+/// and options' and statistics' names. Like [`TagId`]s they print, serialize
+/// and parse as eight hex digits.
 #[derive(Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct StringId(pub u32);
 

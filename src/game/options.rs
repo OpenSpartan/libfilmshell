@@ -45,7 +45,7 @@ pub struct ModeOption {
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct ModeOptions {
-    /// The options' name prefix ("CTFOptions").
+    /// The options' name prefix (`"CTFOptions"`).
     pub prefix: &'static str,
     /// The Options script's file name, lower-cased.
     pub script: &'static str,

@@ -168,7 +168,7 @@ impl Rule {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct StatDefinition {
-    /// The statistic's identifier ("AccuracyPercentage").
+    /// The statistic's identifier (`"AccuracyPercentage"`).
     pub name: String,
     /// The string id of `name`.
     pub id: StringId,

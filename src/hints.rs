@@ -1,8 +1,10 @@
 use crate::{Position, TagId, TeamId};
 
-/// A spawn point of the map variant, which the film doesn't carry. Spawn
-/// points let the library fit coordinates on a level it has no box for, and
-/// explain respawns ([`analysis::spawn_factors`](crate::analysis::spawn_factors)).
+/// A spawn point of the map variant, which the film doesn't carry.
+///
+/// Spawn points let the library fit coordinates on a level it has no box for,
+/// and explain respawns
+/// ([`analysis::spawn_factors`](crate::analysis::spawn_factors)).
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct SpawnPad {
@@ -48,12 +50,13 @@ impl SpawnPad {
     }
 }
 
-/// A level's play-space box for a level not in
-/// [`game::levels`](crate::game::levels), as the game's files hold it: in
-/// engine units, `[x, y, z]` with `z` up. World positions are ten times
-/// engine units with the horizontal axes turned: world x is `-10 * y`,
-/// world y is `10 * x`, world z is `10 * z`. The widths of the film's position fields follow
-/// from the box.
+/// A level's play-space box, for a level not in
+/// [`game::levels`](crate::game::levels).
+///
+/// The box is as the game's files hold it: in engine units, `[x, y, z]` with
+/// `z` up. World positions are ten times engine units with the horizontal axes
+/// turned: world x is `-10 * y`, world y is `10 * x`, world z is `10 * z`. The
+/// widths of the film's position fields follow from the box.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LevelBounds {
     /// The low corner.

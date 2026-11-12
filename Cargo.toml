@@ -58,6 +58,8 @@ unescaped_backticks = "warn"
 [lints.clippy]
 missing_errors_doc = "warn"
 missing_panics_doc = "warn"
+# A doc's first paragraph is its summary in the module listings.
+too_long_first_doc_paragraph = "warn"
 # Bit layouts read field by field: tuples of fields, binary literals
 # grouped by field, readers that take a layout's parts.
 type_complexity = "allow"

@@ -168,10 +168,11 @@ pub struct ZoneEvent {
     pub at: Option<[u32; 3]>,
 }
 
-/// The film's events in frame order. `layout` is how the level lays out a
-/// position, `player_of` maps an engine slot at a frame to the player's
-/// index (the events' masks name engine slots), and `team_of` gives a
-/// player's team.
+/// The film's events in frame order.
+///
+/// `layout` is how the level lays out a position, `player_of` maps an engine
+/// slot at a frame to the player's index (the events' masks name engine slots),
+/// and `team_of` gives a player's team.
 pub fn read(
     film: &Film,
     layout: Layout,
@@ -388,10 +389,12 @@ fn team_of_clauses(clauses: &[(u32, bool, u32)]) -> Option<i32> {
     clauses.iter().find(|c| c.0 == 3 && !c.1).and_then(|c| (c.2 > 0).then(|| c.2 as i32 - 1))
 }
 
-/// A zone's shape in world units: a box (`a` its full extent along its
-/// forward axis, `b` along its right) or a cylinder (`a` its radius),
-/// `angle` the world direction of its forward axis (radians from +X), the
-/// extents above and below its centre, and the team the map gives it.
+/// A zone's shape in world units.
+///
+/// A box (`a` its full extent along its forward axis, `b` along its right) or a
+/// cylinder (`a` its radius), `angle` the world direction of its forward axis
+/// (radians from +X), the extents above and below its centre, and the team the
+/// map gives it.
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct ZoneShape {
     pub cylinder: bool,

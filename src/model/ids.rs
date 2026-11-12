@@ -2,12 +2,13 @@ use crate::text::{ParseIdError, serde_as_text};
 use std::fmt;
 use std::str::FromStr;
 
-/// A player's place in the film's roster: everyone present at the start in
-/// the roster's order, then joiners and bots as they appear. Every player
-/// the model names is named by it. Ids can skip a number (a roster entry
-/// with neither an account nor a bot record is left out), so look players
-/// up with [`Film::player`](crate::Film::player) rather than by indexing
-/// [`Film::players`](crate::Film::players).
+/// A player's place in the film's roster.
+///
+/// The roster is everyone present at the start in its order, then joiners and
+/// bots as they appear. Every player the model names is named by it. Ids can
+/// skip a number (a roster entry with neither an account nor a bot record is
+/// left out), so look players up with [`Film::player`](crate::Film::player)
+/// rather than by indexing [`Film::players`](crate::Film::players).
 ///
 /// The film itself names players by engine slot, which a joiner can take
 /// over from someone who left; the library maps those to the player who
@@ -29,14 +30,14 @@ impl fmt::Display for PlayerId {
     }
 }
 
-/// A biped's or a vehicle's id: `(generation - 1) * 256 + index`, the index
-/// counted within the object's kind (a raw entity index less 512 for a
-/// biped, less 768 for a vehicle, as [`format`](crate::format) gives them),
-/// so bipeds and vehicles count ids separately: a biped and a vehicle can
-/// share a number. The game reuses an id once its
-/// object is gone, so an id is unique only among the objects that exist at
-/// the same time: a biped's id names one life, a vehicle's one
-/// [`VehicleTrack`](crate::VehicleTrack).
+/// A biped's or a vehicle's id: `(generation - 1) * 256 + index`.
+///
+/// The index is counted within the object's kind (a raw entity index less 512
+/// for a biped, less 768 for a vehicle, as [`format`](crate::format) gives
+/// them), so bipeds and vehicles count ids separately: a biped and a vehicle
+/// can share a number. The game reuses an id once its object is gone, so an id
+/// is unique only among the objects that exist at the same time: a biped's id
+/// names one life, a vehicle's one [`VehicleTrack`](crate::VehicleTrack).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct EntityId(pub u16);
@@ -188,12 +189,14 @@ impl FromStr for Guid {
     }
 }
 
-/// A position in world units. A world unit is a foot; the game's files use
-/// engine units of ten world units. `x` and `y` are horizontal; `z` is up,
-/// known only when the film's positions convert with the level's box
-/// ([`CoordinateSource::LevelBox`](crate::CoordinateSource::LevelBox)): on
-/// life samples on foot, and on the kill, flag and power seed positions taken
-/// from them.
+/// A position in world units.
+///
+/// A world unit is a foot; the game's files use engine units of ten world
+/// units. `x` and `y` are horizontal; `z` is up, known only when the film's
+/// positions convert with the level's box
+/// ([`CoordinateSource::LevelBox`](crate::CoordinateSource::LevelBox)): on life
+/// samples on foot, and on the kill, flag and power seed positions taken from
+/// them.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Position {

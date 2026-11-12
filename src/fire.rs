@@ -84,19 +84,22 @@ pub struct FilmFire {
     pub chatter: Vec<(i64, i32, u32, u32, Option<u32>)>,
 }
 
-/// The shots and kills of `film`, attributed to `paths`. `layout` is how
-/// the level lays out a position, which some event bodies read; `extra` are
-/// other weapons' tag ids the weapon list must hold (picked up, on the
-/// ground: `inventory.rs`). An event body's player index is taken for the
+/// The shots and kills of `film`, attributed to `paths`.
+///
+/// `layout` is how the level lays out a position, which some event bodies read;
+/// `extra` are other weapons' tag ids the weapon list must hold (picked up, on
+/// the ground: `inventory.rs`). An event body's player index is taken for the
 /// player's: [`read_mapped`] maps it.
 #[cfg_attr(not(feature = "research"), allow(dead_code))]
 pub fn read(film: &Film, layout: Layout, paths: &[PlayerPath], extra: &[u32]) -> FilmFire {
     read_mapped(film, layout, paths, extra, |id, _| id)
 }
 
-/// [`read`], with `player_of` mapping the engine slot an event body names at
-/// a frame to the player's index (`holders`): an event attributed by its
-/// body rather than its handles (a shot or a hit from a vehicle) names the
+/// [`read`], with `player_of` mapping an event body's engine slot to the
+/// player's index.
+///
+/// `player_of` takes the slot and the frame (`holders`). An event attributed by
+/// its body rather than its handles (a shot or a hit from a vehicle) names the
 /// slot.
 pub fn read_mapped(
     film: &Film,
@@ -254,10 +257,12 @@ pub fn threw_before(ff: &FilmFire, killer: usize, frame_ticks: &[u32], frame: i6
     ff.throws.get(killer).is_some_and(|t| t.iter().any(|&(f, _)| within_ticks(frame_ticks, f, frame, THROW_TICKS)))
 }
 
-/// The tick of HighlightEvents time 0, from the kill events themselves: the
-/// median over `deaths` (victim's player index, ms) of each one's nearest kill
-/// event on that victim, within `ZERO_SEARCH_TICKS` of `estimate`. A kill and
-/// its highlight are one moment, so this needs no model of the respawn.
+/// The tick of HighlightEvents time 0, from the kill events themselves.
+///
+/// It is the median over `deaths` (victim's player index, ms) of each one's
+/// nearest kill event on that victim, within `ZERO_SEARCH_TICKS` of
+/// `estimate`. A kill and its highlight are one moment, so this needs no model
+/// of the respawn.
 pub fn highlight_zero(ff: &FilmFire, frame_ticks: &[u32], deaths: &[(i32, f64)], estimate: f64) -> Option<f64> {
     let mut zeros: Vec<f64> = deaths
         .iter()

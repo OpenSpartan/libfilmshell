@@ -182,10 +182,11 @@ pub struct EngineState {
     pub rows: Vec<(StatOwner, Vec<i32>)>,
 }
 
-/// The game's scoreboard over the match: every value the statborg (the
-/// game's replicated scoreboard: a row of 56 slots per player and per team)
-/// sends as it changes, the match clock, and the engine's state at each
-/// seek snapshot.
+/// The game's scoreboard over the match.
+///
+/// It holds every value the statborg (the game's replicated scoreboard: a row
+/// of 56 slots per player and per team) sends as it changes, the match clock,
+/// and the engine's state at each seek snapshot.
 ///
 /// A value belongs to one round ([`StatChange::round`]), and modes that play
 /// rounds restart their rows each round: [`Scoreboard::final_stat`] is the

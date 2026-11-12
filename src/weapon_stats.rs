@@ -31,10 +31,11 @@ pub struct WeaponStats {
     pub hits_to_kill: Option<u32>,
 }
 
-/// The index into `ff.weapons` of the weapon behind each of `ff.hits`: the
-/// one the damage tag belongs to, else, for a projectile with no weapon on
-/// record, the attacker's last shot in the 2 s before. A melee swing, a
-/// grenade the list lacks, a vehicle or the world has none.
+/// The index into `ff.weapons` of the weapon behind each of `ff.hits`.
+///
+/// That is the weapon the damage tag belongs to, else, for a projectile with no
+/// weapon on record, the attacker's last shot in the 2 s before. A melee swing,
+/// a grenade the list lacks, a vehicle or the world has none.
 pub fn hit_weapons(ff: &FilmFire, frame_ticks: &[u32]) -> Vec<Option<usize>> {
     ff.hits
         .iter()

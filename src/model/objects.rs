@@ -21,10 +21,11 @@ impl PathPoint {
     }
 }
 
-/// A vehicle's track: one vehicle object, its positions from its first
-/// record to its last, and when it left the map. A vehicle sends its position
-/// when it moves, so one parked stays where its last record put it, often
-/// for minutes, until the game deletes it.
+/// A vehicle's track: one vehicle object's positions, and when it left the map.
+///
+/// The positions run from its first record to its last. A vehicle sends its
+/// position when it moves, so one parked stays where its last record put it,
+/// often for minutes, until the game deletes it.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]

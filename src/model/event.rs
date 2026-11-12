@@ -66,9 +66,11 @@ pub enum Event {
     Headshot(Headshot),
 }
 
-/// A headshot kill the game counted: the mode script's headshot event, which
-/// the scoreboard's headshot kills count. Sent within 2 ticks of the kill,
-/// which [`Kill::headshot`] marks, inferred kills included. PvP modes only.
+/// A headshot kill the game counted: the mode script's headshot event.
+///
+/// The scoreboard's headshot kills count these. The game sends one within 2
+/// ticks of the kill, which [`Kill::headshot`] marks, inferred kills included.
+/// PvP modes only.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
@@ -707,10 +709,11 @@ pub enum FlagEventKind {
     CaptureAssist,
 }
 
-/// A power seed scoring event in Big Team Stockpile: the mode's scripts name
-/// each one, and on the test films each player's count of each kind equals
-/// the match stats'. Picking a
-/// seed up is an [`Event::Pickup`] of the seed
+/// A power seed scoring event in Big Team Stockpile.
+///
+/// The mode's scripts name each one, and on the test films each player's count
+/// of each kind equals the match stats'. Picking a seed up is an
+/// [`Event::Pickup`] of the seed
 /// ([`game::Weapon::GenericPowerSeed`](crate::game::Weapon::GenericPowerSeed)).
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

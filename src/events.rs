@@ -70,11 +70,12 @@ impl From<&crate::components::Params> for Layout {
     }
 }
 
-/// An object handle: an entity index and its 2-bit generation. A unit
-/// handle (kind 1 with its unit bit set, kinds 4 and 6) indexes the unit
-/// range, entities 512-1023 (bipeds, then vehicles). A kind-0 handle keeps
-/// the entity itself (its index read from `OBJECT_BASE`); kinds 2, 3 and
-/// 5 keep their 8-bit index within bipeds, vehicles and class 4.
+/// An object handle: an entity index and its 2-bit generation.
+///
+/// A unit handle (kind 1 with its unit bit set, kinds 4 and 6) indexes the unit
+/// range, entities 512-1023 (bipeds, then vehicles). A kind-0 handle keeps the
+/// entity itself (its index read from `OBJECT_BASE`); kinds 2, 3 and 5 keep
+/// their 8-bit index within bipeds, vehicles and class 4.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Handle {
     pub index: u32,
@@ -125,9 +126,11 @@ pub struct Fire {
     pub variant: u32,
 }
 
-/// damage_aftermath fields as read: the damage tag, the attacker's player
-/// index, a 19-bit direction, an optional 31-bit value and three small fields
-/// (5, 5 and 6 bits), the first a scale that is 15 on a full direct hit.
+/// `damage_aftermath`'s fields as read.
+///
+/// The damage tag, the attacker's player index, a 19-bit direction, an optional
+/// 31-bit value and three small fields (5, 5 and 6 bits), the first a scale
+/// that is 15 on a full direct hit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Damage {
     pub tag: Option<u32>,
@@ -137,10 +140,11 @@ pub struct Damage {
     pub a: [u32; 3],
 }
 
-/// `PlayerKilledEvent`, in stream order: `a` the victim, `b` the killer, `x`
-/// the killer's percent of the damage, `flag` the death was the victim's own,
-/// `c` the assistant, `y` the assistant's percent (filler when there's no
-/// assistant).
+/// `PlayerKilledEvent`'s fields, in stream order.
+///
+/// `a` the victim, `b` the killer, `x` the killer's percent of the damage,
+/// `flag` the death was the victim's own, `c` the assistant, `y` the
+/// assistant's percent (filler when there's no assistant).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Killed {
     pub a: Option<u32>,
@@ -184,10 +188,12 @@ pub struct GameEvent {
     pub last: u32,
 }
 
-/// Game events the game sent again. Each one carries an 8-bit sequence
-/// number, one more than the event before; a film can record an event a
-/// second time 10 to 25 ticks later, sequence number and all. A repeat of
-/// one of the last 128 events within `RESEND_FRAMES` is that.
+/// Game events the game sent again.
+///
+/// Each one carries an 8-bit sequence number, one more than the event before; a
+/// film can record an event a second time 10 to 25 ticks later, sequence number
+/// and all. A repeat of one of the last 128 events within `RESEND_FRAMES` is
+/// that.
 #[derive(Debug, Default)]
 pub struct Resends {
     recent: std::collections::VecDeque<(usize, GameEvent)>,

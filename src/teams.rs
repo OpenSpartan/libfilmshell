@@ -85,12 +85,13 @@ pub fn finish(film: &Film, mut d: Designators) -> HashMap<u32, Vec<(i64, u32)>> 
 }
 
 /// Gives each player without a team the team their participant's designator
-/// names while they hold it: the last value up to the end of their tenure,
-/// else the first after it began. Nothing on a film whose designators name
-/// fewer than two teams, unless `team_rows` (the scoreboard keeps team rows,
-/// as a team game does): in free for all every designator names team 0
-/// too, and so does a team game with everyone on one team (both Land Grab
-/// matches among the test films).
+/// names while they hold it.
+///
+/// That is the last value up to the end of their tenure, else the first after
+/// it began. Nothing on a film whose designators name fewer than two teams,
+/// unless `team_rows` (the scoreboard keeps team rows, as a team game does): in
+/// free for all every designator names team 0 too, and so does a team game with
+/// everyone on one team (both Land Grab matches among the test films).
 pub fn assign(roster: &mut Roster, designators: &HashMap<u32, Vec<(i64, u32)>>, team_rows: bool) {
     let teams: std::collections::BTreeSet<u32> =
         designators.values().flatten().map(|&(_, v)| v).filter(|&v| v > 0).collect();
@@ -128,9 +129,10 @@ pub fn assign(roster: &mut Roster, designators: &HashMap<u32, Vec<(i64, u32)>>, 
 }
 
 /// Each roster player's team over the match, `(frame, team)` in frame order:
-/// their participant's designator while they hold its id. Infection moves a
-/// player to the infected when killed, so the team at a frame can differ from
-/// the last.
+/// their participant's designator while they hold its id.
+///
+/// Infection moves a player to the infected when killed, so the team at a frame
+/// can differ from the last.
 pub fn history(roster: &Roster, designators: &HashMap<u32, Vec<(i64, u32)>>) -> Vec<Vec<(i64, u32)>> {
     let mut out = vec![Vec::new(); roster.players.len()];
     for a in &roster.ids {

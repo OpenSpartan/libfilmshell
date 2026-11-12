@@ -41,14 +41,14 @@ pub fn hitches(game_ticks: &[u32]) -> Vec<(u32, u32)> {
     out
 }
 
-/// The clock HighlightEvents time runs on, in ticks for each frame. Its
-/// times are the server's milliseconds, which the packets' timestamps keep
+/// The clock HighlightEvents time runs on, in ticks for each frame.
+///
+/// Its times are the server's milliseconds, which the packets' timestamps keep
 /// (a death's record falls within a tick of its kill's packet on every
-/// reference film), so with `times_us`, each frame's timestamp, it is the
-/// first frame's tick plus the time since, in ticks. A server that falls
-/// behind runs fewer ticks than time: a 34-minute minigame ran 29 minutes of
-/// ticks. Without timestamps it is `game_ticks` without the ticks recorder
-/// hitches skipped.
+/// reference film), so with `times_us`, each frame's timestamp, it is the first
+/// frame's tick plus the time since, in ticks. A server that falls behind runs
+/// fewer ticks than time: a 34-minute minigame ran 29 minutes of ticks. Without
+/// timestamps it is `game_ticks` without the ticks recorder hitches skipped.
 pub fn highlight_ticks(game_ticks: &[u32], times_us: Option<&[u64]>) -> Vec<u32> {
     match times_us {
         Some(us) if us.len() == game_ticks.len() && !us.is_empty() => {

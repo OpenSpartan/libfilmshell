@@ -37,7 +37,7 @@ impl LevelBox {
 pub struct Level {
     /// The level's `levl` tag id, which the map variant names.
     pub id: TagId,
-    /// The level's file name ("ctf_aquarius", "fo11_blank").
+    /// The level's file name (`"ctf_aquarius"`, `"fo11_blank"`).
     pub name: &'static str,
     /// The level's English name, for the levels the game's map info names
     /// ("Aquarius", "Fragmentation"). Most multiplayer levels' map info gives

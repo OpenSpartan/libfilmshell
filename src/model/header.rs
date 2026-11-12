@@ -10,7 +10,7 @@ pub struct Header {
     /// set on a [`Film`](crate::Film): a header without one is refused with
     /// [`Error::UnknownHeader`](crate::Error::UnknownHeader).
     pub build: String,
-    /// The build's branch ("HI_1_13_0").
+    /// The build's branch (`"HI_1_13_0"`).
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub branch: Option<String>,
     /// When the film starts on the wall clock, Unix seconds. The only wall

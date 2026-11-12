@@ -1,8 +1,9 @@
 use crate::StringId;
 
-/// The English text of one of the game's text keys that films use: the kill
-/// feed's and the callouts' lines, medal and player event text, personal
-/// score text, map place names and HUD messages, by the key's string id
+/// The English text of a game text key that films use, by its string id.
+///
+/// The keys are the kill feed's and the callouts' lines, medal and player event
+/// text, personal score text, map place names and HUD messages
 /// ([`GameEvent::text`](crate::GameEvent::text),
 /// [`HudMessage::key`](crate::HudMessage::key)).
 ///
@@ -22,9 +23,10 @@ pub fn text(key: StringId) -> Option<&'static str> {
     table.binary_search_by_key(&key.0, |t| t.0).ok().map(|i| table[i].1)
 }
 
-/// One piece of a game text: words as written, or a place the text's markup
-/// fills in. The player, string and number places take the event's
-/// arguments in order ([`GameEvent::arguments`](crate::GameEvent::arguments),
+/// One piece of a game text: words as written, or a place its markup fills in.
+///
+/// The player, string and number places take the event's arguments in order
+/// ([`GameEvent::arguments`](crate::GameEvent::arguments),
 /// [`HudMessage::arguments`](crate::HudMessage::arguments)).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]

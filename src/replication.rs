@@ -93,11 +93,12 @@ pub struct Found {
     off: i32,
 }
 
-/// Every object update in the frames of chunks 1.., dispatched as
-/// `f(g, gp, frame, kind, id, off)`. `off` is the bit shift of the data
-/// blocks against a 4-component list: position's c1 is at `read(7 + off)`
-/// (0 for stubs). Returning false stops. The scan runs once per film; later
-/// calls read what it found.
+/// Every object update in the frames of chunks 1.., dispatched as `f(g, gp,
+/// frame, kind, id, off)`.
+///
+/// `off` is the bit shift of the data blocks against a 4-component list:
+/// position's c1 is at `read(7 + off)` (0 for stubs). Returning false stops.
+/// The scan runs once per film; later calls read what it found.
 pub fn for_each_object_update<'a, F>(film: &'a Film, mut f: F)
 where
     F: FnMut(&Shifted<'a>, i64, i64, Kind, i32, i32) -> bool,
@@ -303,8 +304,11 @@ pub fn detect_coord_widths(film: &Film) -> (i32, u32) {
 }
 
 /// A coordinate field of `width` bits at payload bit `at`, in 15-bit window
-/// units (field value times 2^(15 - width)): a field wider than 15 bits keeps its
-/// low bits as a fraction, a narrower one reads no bits of the next field.
+/// units.
+///
+/// That is the field's value times 2^(15 - width): a field wider than 15 bits
+/// keeps its low bits as a fraction, a narrower one reads no bits of the next
+/// field.
 #[inline]
 pub fn read_coord(g: &Shifted<'_>, at: i32, width: u32) -> f64 {
     g.read(at, width) as f64 * (2.0f64).powi(15 - width as i32)

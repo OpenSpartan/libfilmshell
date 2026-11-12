@@ -168,11 +168,14 @@ impl Handle {
     }
 }
 
-/// The model's [`EntityId`] of a biped (index 512 to 767) or vehicle (768 to
-/// 1023) with its generation, the id [`Life::entity`](crate::Life::entity),
+/// The model's [`EntityId`] of a biped's or a vehicle's entity index and
+/// generation.
+///
+/// Bipeds are indexes 512 to 767 and vehicles 768 to 1023. The id is the one
+/// [`Life::entity`](crate::Life::entity),
 /// [`VehicleTrack::entity`](crate::VehicleTrack::entity) and
-/// [`Sample::vehicle`](crate::Sample::vehicle) use. None for other entities
-/// and generation 0.
+/// [`Sample::vehicle`](crate::Sample::vehicle) use. None for other entities and
+/// generation 0.
 pub fn entity_id(index: u32, generation: u32) -> Option<EntityId> {
     let base = match index {
         512..=767 => 512,
@@ -421,16 +424,18 @@ impl<'a> Raw<'a> {
 }
 
 /// The game's name of event type `kind`, from the executable's event
-/// definitions ("action_weapon_fire", "PlayerKilledEvent"). The names are
+/// definitions (`"action_weapon_fire"`, `"PlayerKilledEvent"`). The names are
 /// the game's own, spelling included.
 pub fn event_name(kind: u32) -> Option<&'static str> {
     EVENT_NAMES.get(kind as usize).copied()
 }
 
-/// The game's name of entity type `entity_type`, a block of chunk 0's
-/// component registry ("biped", "weapon", "game-engine-statborg"), from the
-/// executable's entity definitions. The game names types 2 and 10 both
-/// "managed-engine-object".
+/// The game's name of entity type `entity_type`, a block of chunk 0's component
+/// registry.
+///
+/// The names are the executable's entity definitions' (`"biped"`, `"weapon"`,
+/// `"game-engine-statborg"`). The game names types 2 and 10 both
+/// `"managed-engine-object"`.
 pub fn entity_type_name(entity_type: u32) -> Option<&'static str> {
     ENTITY_TYPE_NAMES.get(entity_type as usize).copied().filter(|n| !n.is_empty())
 }

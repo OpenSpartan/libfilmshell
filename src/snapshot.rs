@@ -290,10 +290,12 @@ pub fn entities(c: &[u8], start: usize, end: usize, ctx: &Context) -> Vec<Entity
     out
 }
 
-/// An object's position in a snapshot, in engine units. Unlike an update's
-/// quantized codes it is three raw little-endian floats, after `[0][0][0]`
-/// on the dynamic-precision types (bipeds, vehicles) and `[0]` on the rest.
-/// None on any other branch; an object in a holder reads (0, 0, 0).
+/// An object's position in a snapshot, in engine units.
+///
+/// Unlike an update's quantized codes it is three raw little-endian floats,
+/// after `[0][0][0]` on the dynamic-precision types (bipeds, vehicles) and
+/// `[0]` on the rest. None on any other branch; an object in a holder reads (0,
+/// 0, 0).
 pub fn raw_position(c: &[u8], e: &Entity, state: i64) -> Option<[f32; 3]> {
     let lead: u32 = if matches!(e.entity_type, 35 | 40) { 3 } else { 1 };
     if u32_at(c, state) >> (32 - lead) != 0 {

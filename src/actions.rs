@@ -69,8 +69,9 @@ pub struct FilmActions {
 
 /// The actions of `film`, attributed to `paths` the way `fire.rs` does: the
 /// life the event's biped handle names, else the player of the body's engine
-/// slot (`player_of`, as `fire::read_mapped`). Headshots only when `pvp`.
-/// Packet framing only.
+/// slot (`player_of`, as `fire::read_mapped`).
+///
+/// Headshots only when `pvp`. Packet framing only.
 pub fn reader<'a>(
     paths: &'a [PlayerPath],
     pvp: bool,

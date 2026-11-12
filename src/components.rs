@@ -647,12 +647,13 @@ pub fn dequantize(q: u32, bits: u32, min: f64, max: f64, odd: bool, exact: bool)
 }
 
 /// A 19-bit direction code as a unit vector (engine x, y, z): a cube map,
-/// `face * 87381 + i * 294 + j`. Face 0-2 is +x, +y, +z, 3-5 the same axes
-/// negative; i and j index a 293-cell grid over -1 to 1 on the face's other
-/// two axes (in axis order), the middle cell exactly 0. 87,381 is
-/// `floor(2^19 / 6)`; the side, 294, is a run-time value, the one with which
-/// the velocity direction follows the movement heading and no code falls off
-/// the grid.
+/// `face * 87381 + i * 294 + j`.
+///
+/// Face 0-2 is +x, +y, +z, 3-5 the same axes negative; i and j index a 293-cell
+/// grid over -1 to 1 on the face's other two axes (in axis order), the middle
+/// cell exactly 0. 87,381 is `floor(2^19 / 6)`; the side, 294, is a run-time
+/// value, the one with which the velocity direction follows the movement
+/// heading and no code falls off the grid.
 pub fn direction(code: u32) -> [f64; 3] {
     const PER_FACE: u32 = 87381;
     const SIDE: u32 = 294;
@@ -2843,10 +2844,11 @@ fn for_each_biped_update(film: &Film, mut f: impl FnMut(&Shifted<'_>, i64, i32, 
     });
 }
 
-/// Z's width when the level catalogue doesn't give it: the width at which
-/// the most biped updates parse to an end that the next update follows
-/// [`SEPARATOR`] bits later, over the first 3,000 updates that parse to the
-/// end. None unless one width wins at least half of them.
+/// Z's width when the level catalogue doesn't give it.
+///
+/// It is the width at which the most biped updates parse to an end that the
+/// next update follows [`SEPARATOR`] bits later, over the first 3,000 updates
+/// that parse to the end. None unless one width wins at least half of them.
 pub fn detect_z_width(film: &Film, c1: u32, c2: u32) -> Option<u32> {
     let table = Table::read(&film.chunks[0], "biped-")?;
     const CANDS: std::ops::RangeInclusive<u32> = 8..=24;
