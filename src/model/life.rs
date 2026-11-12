@@ -85,7 +85,10 @@ pub struct Sample {
     /// The position in world units, when the film's coordinates are known.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
-    /// Aim yaw in radians, -π to π, in world axes (from +x toward +y).
+    /// Aim yaw in radians, -π to π, in world axes (from +x toward +y). In a
+    /// vehicle it is where the rider aims, which a vehicle's facing needn't
+    /// follow: [`VehicleTrack::heading_at`](crate::VehicleTrack::heading_at)
+    /// is the vehicle's.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub yaw: Option<f64>,
     /// Aim pitch in radians, up positive, within ±π/2.
