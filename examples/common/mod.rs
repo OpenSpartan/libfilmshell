@@ -8,7 +8,8 @@
 //! `filmChunk{N}` (as downloaded) or `filmChunk{N}_dec` (inflated) file name
 //! and the kind from the bytes.
 
-use filmshell::{Chunk, Film, GameEventArgument, StringId, game};
+use filmshell::game::{self, TextPart};
+use filmshell::{Chunk, Film, GameEventArgument, StringId};
 use std::path::Path;
 use std::process::ExitCode;
 
@@ -39,50 +40,31 @@ pub fn load_folder(dir: &Path) -> Result<Vec<Chunk<'static>>, Box<dyn std::error
 }
 
 /// A text with its markup filled in from the event's arguments, in order:
-/// `%p`, `%pa`, `%pe` and `%ps` a player, `%s` a string, `%i` a number,
-/// `&killfeed_<name>` an icon, shown as `[name]`. Colour (`%c` and a letter,
-/// closed by `%`) and style (`%zy`) are left out.
+/// players by name, strings by their text, numbers, and icons as `[name]`.
+/// Colour and style are left out.
 #[allow(dead_code)]
 pub fn fill(text: &str, arguments: &[GameEventArgument], film: &Film) -> String {
     let mut args = arguments.iter();
     let mut out = String::new();
-    let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
-        match c {
-            '%' => match chars.next() {
-                Some('p') => {
-                    if chars.peek().is_some_and(|c| matches!(c, 'a' | 'e' | 's')) {
-                        chars.next();
-                    }
-                    let player = match args.next() {
-                        Some(GameEventArgument::Player(Some(p))) => film.player_name(*p),
-                        _ => None,
-                    };
-                    out.push_str(player.unwrap_or("someone"));
+    for part in game::text_parts(text) {
+        match part {
+            TextPart::Words(w) => out.push_str(w),
+            TextPart::Player(_) => out.push_str(match args.next() {
+                Some(GameEventArgument::Player(Some(p))) => film.player_name(*p).unwrap_or("someone"),
+                _ => "someone",
+            }),
+            TextPart::String => match args.next() {
+                Some(&GameEventArgument::Word { value, .. }) => {
+                    out.push_str(game::text(StringId(value)).unwrap_or("?"))
                 }
-                Some(k @ ('s' | 'i')) => match args.next() {
-                    Some(&GameEventArgument::Word { value, .. }) if k == 's' => {
-                        out.push_str(game::text(StringId(value)).unwrap_or("?"))
-                    }
-                    Some(&GameEventArgument::Word { value, .. }) => out.push_str(&value.to_string()),
-                    _ => out.push('?'),
-                },
-                // Colour and style codes take one more letter.
-                Some('c' | 'z') => {
-                    chars.next();
-                }
-                // `%` alone closes coloured text.
-                _ => {}
+                _ => out.push('?'),
             },
-            '&' => {
-                let mut name = String::new();
-                while let Some(&c) = chars.peek().filter(|c| c.is_ascii_alphanumeric() || **c == '_') {
-                    name.push(c);
-                    chars.next();
-                }
-                out.push_str(&format!("[{}]", name.trim_start_matches("killfeed_")));
-            }
-            _ => out.push(c),
+            TextPart::Number => match args.next() {
+                Some(&GameEventArgument::Word { value, .. }) => out.push_str(&value.to_string()),
+                _ => out.push('?'),
+            },
+            TextPart::Icon(name) => out.push_str(&format!("[{}]", name.trim_start_matches("killfeed_"))),
+            _ => {}
         }
     }
     out

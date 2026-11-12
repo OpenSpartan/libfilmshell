@@ -50,7 +50,7 @@ pub use levels::{Level, LevelBox, catalogue_build, level, level_by_api_id, level
 pub use medals::{Medal, MedalDifficulty, MedalKind};
 pub use options::{ModeOption, ModeOptions, OptionValue, modes, murmur3, option_name};
 pub use sandbox::{Bounds, FireStats, ProjectileStats, fire_stats, projectile_stats, vehicle_bounds};
-pub use text::text;
+pub use text::{TextPart, text, text_parts};
 
 /// `Display` as the game's English name.
 macro_rules! display_name {
