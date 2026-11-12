@@ -95,21 +95,23 @@
 //!
 //! # Time and space
 //!
-//! Times are [`Tick`]s, 1/60 s of game time from the film's first frame.
-//! The match starts 16 s to 2 minutes later, when its clock first runs
-//! ([`Film::match_start`]), and [`Scoreboard::clock_at`] is the clock the
-//! game shows.
-//! A span that lasts through its ticks (a life, a ride, a vehicle's track)
-//! gives its first and last, both inclusive; one that ends when something is
-//! gone (an object off the map, a weapon picked up) gives that tick, and says
-//! so.
+//! Times are [`Tick`]s, 1/60 s of game time from the film's first frame. The
+//! match starts 16 s to 2 minutes later, when its clock first runs
+//! ([`Film::match_start`]), and [`Scoreboard::clock_at`] is the clock the game
+//! shows. A span that lasts through its ticks (a life, a ride, a vehicle's
+//! track) gives its first and last, both inclusive; one that ends when
+//! something is gone (an object off the map, a weapon picked up) gives that
+//! tick, and says so.
+//!
 //! Positions are in world units ([`Position`]): a world unit is a foot, and
 //! the game's files use engine units of ten world units. The model and
 //! [`analysis`] use world units; the [`game`] tables keep engine units. A film
 //! doesn't carry the box its positions are quantized over: the library knows
 //! it for the levels in its catalogue or from [`Hints::level_bounds`];
 //! otherwise it fits one (to [`Hints::spawn_pads`] where given) or leaves
-//! positions unconverted ([`Sample::raw`]).
+//! positions unconverted ([`Sample::raw`]). Directions, a player's aim
+//! ([`Sample::yaw`]) and a vehicle's heading ([`VehicleTrack::heading_at`]),
+//! are radians in world axes, -π to π from +x toward +y.
 //!
 //! # Checked against the match stats
 //!
@@ -147,21 +149,21 @@
 //!
 //! # Features
 //!
-//! - `serde`: derives `Serialize` and `Deserialize` on the model's data
-//!   (the players, lives, events, scoreboard and the rest of what the
-//!   accessors return, except [`PlayerAt`], [`Clock`], [`Hitch`] and the
-//!   [`format`](mod@format) types), the
-//!   [`analysis`] results ([`Rule`] and [`analysis::AccuracyTicks`] only
-//!   serialize), the inputs [`ChunkKind`] and [`Hints`] with its parts, and
-//!   the `game` enums and value types such as [`game::Bounds`]. [`Film`]
-//!   only serializes: as its model, each part under its accessor's name.
-//!   [`Chunk`], [`Error`] and the `game` catalogues' entries
-//!   ([`game::Level`], [`game::DamageEffect`] and the like) have neither. An
-//!   [`Event`] is an object with a `type` (`{"type": "kill", "victim": 3,
-//!   ...}`), enum variants are snake_case, [`TagId`]s, [`StringId`]s,
-//!   [`Xuid`]s and [`Guid`]s are strings, a [`PlayerMask`] is a list of
-//!   player ids, and empty `Option` and `Vec` fields are left out. With `serde_json`, turn on its `float_roundtrip` feature
-//!   for floats to read back exactly.
+//! - `serde`: derives `Serialize` and `Deserialize` on the model's data (the
+//!   players, lives, events, scoreboard and the rest of what the accessors
+//!   return, except [`PlayerAt`], [`Clock`], [`Hitch`] and the
+//!   [`format`](mod@format) types), the [`analysis`] results ([`Rule`] and
+//!   [`analysis::AccuracyTicks`] only serialize), the inputs [`ChunkKind`] and
+//!   [`Hints`] with its parts, and the `game` enums and value types such as
+//!   [`game::Bounds`]. [`Film`] only serializes: as its model, each part under
+//!   its accessor's name. [`Chunk`], [`Error`] and the `game` catalogues'
+//!   entries ([`game::Level`], [`game::DamageEffect`] and the like) have
+//!   neither. An [`Event`] is an object with a `type`
+//!   (`{"type": "kill", "victim": 3, ...}`), enum variants are snake_case,
+//!   [`TagId`]s, [`StringId`]s, [`Xuid`]s and [`Guid`]s are strings, a
+//!   [`PlayerMask`] is a list of player ids, and empty `Option` and `Vec`
+//!   fields are left out. With `serde_json`, turn on its `float_roundtrip`
+//!   feature for floats to read back exactly.
 //! - `research`: makes the internal readers public under a hidden
 //!   `research` module, for studying the format; they are outside the API's
 //!   stability guarantees.

@@ -91,7 +91,7 @@ impl fmt::Display for Error {
             Error::NotAChunkFile { name } => write!(f, "{name} is not the name of a film chunk file"),
             Error::UnknownChunk { index } => write!(f, "chunk {index} is not a film chunk"),
             Error::UnknownChunkType { index, chunk_type } => {
-                write!(f, "chunk {index} has type {chunk_type}, which is no film chunk type")
+                write!(f, "chunk {index} has type {chunk_type}; a film's are 1 (header), 2 (replay) and 3 (highlights)")
             }
             Error::Io { path, message, .. } => write!(f, "{}: {message}", path.display()),
         }
