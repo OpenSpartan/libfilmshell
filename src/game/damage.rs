@@ -59,7 +59,8 @@ pub struct DamageAmount {
     pub shield_scale: f64,
     /// The Spartan's body multiplier.
     pub body_scale: f64,
-    /// The effect's `DamageDefinitionFlags`.
+    /// The effect's `DamageDefinitionFlags` as the tag stores them; the
+    /// methods name the ones the library reads.
     pub flags: u32,
     /// The area's outer radius in engine units; 0 for a direct hit.
     pub radius: f64,
@@ -67,11 +68,11 @@ pub struct DamageAmount {
 
 impl DamageAmount {
     /// The flag set on an effect that can headshot.
-    pub const CAN_HEADSHOT: u32 = 1 << 1;
+    pub(crate) const CAN_HEADSHOT: u32 = 1 << 1;
     /// The flag set on an effect that goes straight to the body.
-    pub const SKIPS_SHIELDS: u32 = 1 << 9;
+    pub(crate) const SKIPS_SHIELDS: u32 = 1 << 9;
     /// The flag set on an effect whose damage beyond the shield is lost.
-    pub const NO_SPILL: u32 = 1 << 23;
+    pub(crate) const NO_SPILL: u32 = 1 << 23;
 
     /// Whether it deals one amount whatever the distance or the roll: a
     /// direct hit with equal bounds.
@@ -79,9 +80,20 @@ impl DamageAmount {
         self.radius == 0.0 && self.lower == self.upper[0] && self.lower == self.upper[1]
     }
 
-    /// Whether `flag` is set.
-    pub fn has(&self, flag: u32) -> bool {
-        self.flags & flag != 0
+    /// Whether the effect can headshot.
+    pub fn can_headshot(&self) -> bool {
+        self.flags & Self::CAN_HEADSHOT != 0
+    }
+
+    /// Whether the effect goes straight to the body, past the shield.
+    pub fn skips_shields(&self) -> bool {
+        self.flags & Self::SKIPS_SHIELDS != 0
+    }
+
+    /// Whether the damage the shield can't take spills to the body; an
+    /// effect that doesn't spill loses it.
+    pub fn spills(&self) -> bool {
+        self.flags & Self::NO_SPILL == 0
     }
 }
 
@@ -175,7 +187,7 @@ mod tests {
         assert_eq!(br.cause, DamageCause::Weapon);
         assert_eq!(br.weapon.and_then(Weapon::from_tag), Some(Weapon::Br75BattleRifle));
         let a = br.amount.unwrap();
-        assert!(a.is_fixed() && a.lower == 12.73 && a.shield_scale == 1.0 && a.has(DamageAmount::NO_SPILL));
+        assert!(a.is_fixed() && a.lower == 12.73 && a.shield_scale == 1.0 && !a.spills());
         assert_eq!(damage_effect(TagId(0xd9dbf765)).map(|d| (d.cause, d.amount)), Some((DamageCause::Collision, None)));
         assert_eq!(damage_effect(TagId(0x00403594)).map(|d| d.cause), Some(DamageCause::World));
         let hammer = damage_effect(TagId(0x877da252)).unwrap();

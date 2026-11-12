@@ -22,7 +22,7 @@
 //! and takes more health than its amount explains, the hit took what was
 //! left: the game's headshot path finished the victim.
 
-use crate::damage::{self, CAN_HEADSHOT, NO_SPILL, SKIPS_SHIELDS};
+use crate::damage;
 use crate::fire::FilmFire;
 use crate::vitals::Vitals;
 
@@ -42,10 +42,10 @@ impl HitDamage {}
 /// What `d` points of effect `a` take off a Spartan with `shield` and
 /// `body` points left.
 pub fn apply(a: &damage::Amount, d: f64, shield: f64, body: f64) -> (f64, f64) {
-    let (s, b) = if shield > 0.0 && a.flags & SKIPS_SHIELDS == 0 {
+    let (s, b) = if shield > 0.0 && !a.skips_shields() {
         let on_shield = d * a.shield_scale;
         if on_shield >= shield {
-            let rest = if a.flags & NO_SPILL != 0 { 0.0 } else { d * (1.0 - shield / on_shield) * a.body_scale };
+            let rest = if a.spills() { d * (1.0 - shield / on_shield) * a.body_scale } else { 0.0 };
             (shield, rest)
         } else {
             (on_shield, 0.0)
@@ -76,7 +76,7 @@ pub fn read(ff: &FilmFire, vitals: &Vitals) -> Vec<HitDamage> {
             let hit = match tag.and_then(damage::amount) {
                 Some(a) if a.is_fixed() && scale == FULL => {
                     let (s, mut b) = apply(&a, a.lower, shield, body);
-                    if h1 <= 0.0 && a.flags & CAN_HEADSHOT != 0 && seen.1 > b + 1.0 && shield - s < 1.0 {
+                    if h1 <= 0.0 && a.can_headshot() && seen.1 > b + 1.0 && shield - s < 1.0 {
                         b = body;
                     }
                     HitDamage { shield: s, body: b, measured: false }

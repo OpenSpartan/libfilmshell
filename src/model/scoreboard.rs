@@ -90,6 +90,14 @@ impl Stat {
     }
 }
 
+/// A named statistic's slot, so the [`Scoreboard`] lookups take a [`Stat`]
+/// or a raw slot alike.
+impl From<Stat> for u32 {
+    fn from(stat: Stat) -> u32 {
+        stat.slot()
+    }
+}
+
 /// One scoreboard value changing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -191,8 +199,8 @@ pub struct EngineState {
 /// and the engine's state at each seek snapshot.
 ///
 /// A value belongs to one round ([`StatChange::round`]), and modes that play
-/// rounds restart their rows each round: [`Scoreboard::final_stat`] is the
-/// last round's value, [`Scoreboard::total_stat`] the match's.
+/// rounds restart their rows each round: [`Scoreboard::final_value`] is the
+/// last round's value, [`Scoreboard::total`] the match's.
 ///
 /// ```no_run
 /// # fn run(film: &filmshell::Film, id: filmshell::PlayerId) {
@@ -201,8 +209,8 @@ pub struct EngineState {
 /// let board = film.scoreboard();
 /// let me = StatOwner::Player(id);
 /// // The scoreboard as playback shows it 5 minutes in, and the match's total.
-/// let now = board.value_at_stat(me, Stat::Kills, Tick::from_seconds(300.0));
-/// let total = board.total_stat(me, Stat::Kills);
+/// let now = board.value_at(me, Stat::Kills, Tick::from_seconds(300.0));
+/// let total = board.total(me, Stat::Kills);
 /// println!("{now} kills at 5:00, {total} in all");
 /// # }
 /// ```
@@ -222,16 +230,13 @@ pub struct Scoreboard {
 }
 
 impl Scoreboard {
-    /// The value of `slot` in `owner`'s row at `tick` (0 before any change).
-    /// Searches back from `tick` through the changes.
-    pub fn value_at(&self, owner: StatOwner, slot: u32, tick: Tick) -> i32 {
+    /// The value of `slot` (a [`Stat`] or a raw slot) in `owner`'s row at
+    /// `tick`, 0 before any change. Searches back from `tick` through the
+    /// changes.
+    pub fn value_at(&self, owner: StatOwner, slot: impl Into<u32>, tick: Tick) -> i32 {
+        let slot = slot.into();
         let upto = self.changes.partition_point(|c| c.tick <= tick);
         self.changes[..upto].iter().rfind(|c| c.owner == owner && c.slot == slot).map_or(0, |c| c.value)
-    }
-
-    /// The value of a named statistic at `tick`: see [`Scoreboard::value_at`].
-    pub fn value_at_stat(&self, owner: StatOwner, stat: Stat, tick: Tick) -> i32 {
-        self.value_at(owner, stat.slot(), tick)
     }
 
     /// The match clock's seconds at `tick`, as the game shows them: the time
@@ -255,10 +260,12 @@ impl Scoreboard {
         self.changes.iter().map(|c| c.round).max().map_or(1, |r| r + 1)
     }
 
-    /// The value of `slot` in `owner`'s row at the end of `round` (0 the
-    /// first), 0 when the row has none in it. A player who leaves has their
-    /// row cleared; their value is the one before the clear.
-    pub fn round_value(&self, owner: StatOwner, slot: u32, round: u32) -> i32 {
+    /// The value of `slot` (a [`Stat`] or a raw slot) in `owner`'s row at
+    /// the end of `round` (0 the first), 0 when the row has none in it. A
+    /// player who leaves has their row cleared; their value is the one before
+    /// the clear.
+    pub fn round_value(&self, owner: StatOwner, slot: impl Into<u32>, round: u32) -> i32 {
+        let slot = slot.into();
         let mine: Vec<&StatChange> =
             self.changes.iter().filter(|c| c.owner == owner && c.slot == slot && c.round == round).collect();
         match mine.split_last() {
@@ -270,28 +277,21 @@ impl Scoreboard {
         }
     }
 
-    /// The value of `slot` in `owner`'s row at the end of the match, in its
-    /// last round: see [`Scoreboard::round_value`].
-    pub fn final_value(&self, owner: StatOwner, slot: u32) -> i32 {
+    /// The value of `slot` (a [`Stat`] or a raw slot) in `owner`'s row at
+    /// the end of the match, in its last round: see
+    /// [`Scoreboard::round_value`].
+    pub fn final_value(&self, owner: StatOwner, slot: impl Into<u32>) -> i32 {
         self.round_value(owner, slot, self.rounds() - 1)
     }
 
-    /// The final value of a named statistic: see [`Scoreboard::final_value`].
-    pub fn final_stat(&self, owner: StatOwner, stat: Stat) -> i32 {
-        self.final_value(owner, stat.slot())
-    }
-
-    /// The match's total of `slot` in `owner`'s row: each round's value,
-    /// added up. The same as [`Scoreboard::final_value`] in a match of one
-    /// round. Meaningful for counts (kills, deaths, points), not for highs
-    /// such as the longest spree.
-    pub fn total(&self, owner: StatOwner, slot: u32) -> i32 {
+    /// The match's total of `slot` (a [`Stat`] or a raw slot) in `owner`'s
+    /// row: each round's value, added up. The same as
+    /// [`Scoreboard::final_value`] in a match of one round. Meaningful for
+    /// counts (kills, deaths, points), not for highs such as the longest
+    /// spree.
+    pub fn total(&self, owner: StatOwner, slot: impl Into<u32>) -> i32 {
+        let slot = slot.into();
         (0..self.rounds()).map(|r| self.round_value(owner, slot, r)).sum()
-    }
-
-    /// The match's total of a named statistic: see [`Scoreboard::total`].
-    pub fn total_stat(&self, owner: StatOwner, stat: Stat) -> i32 {
-        self.total(owner, stat.slot())
     }
 
     /// Whether `owner`'s whole row went to 0 at `tick`: three slots or more.

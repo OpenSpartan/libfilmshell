@@ -151,7 +151,7 @@ fn the_scoreboard_counts_the_kill_events() {
         for p in f.players().iter().filter(|p| !p.is_bot()) {
             let scored = f.kills().filter(|(_, k)| k.victim == p.id && k.scored == Some(true)).count() as i32;
             players += 1;
-            agree += usize::from(s.total_stat(StatOwner::Player(p.id), Stat::Deaths) == scored);
+            agree += usize::from(s.total(StatOwner::Player(p.id), Stat::Deaths) == scored);
         }
     }
     assert!(agree * 100 >= players * 95, "{agree} of {players} players");
@@ -520,7 +520,7 @@ fn scoreboard_totals_agree_with_the_match_stats() {
             for (stat, key) in [(Stat::Kills, "Kills"), (Stat::Deaths, "Deaths")] {
                 let Some(want) = core[key].as_i64() else { continue };
                 rows += 1;
-                let got = f.scoreboard().total_stat(row, stat) as i64;
+                let got = f.scoreboard().total(row, stat) as i64;
                 agree += usize::from(got == want);
                 if got != want {
                     println!("{name}: {} {key} {got}, the stats say {want}", p.id);
@@ -1057,7 +1057,7 @@ fn named_assists_are_counted_assists() {
         }
         for p in f.players() {
             let named = f.kills().filter(|(_, k)| k.assistant == Some(p.id) && k.is_scored()).count() as i32;
-            let counted = f.scoreboard().total_stat(StatOwner::Player(p.id), Stat::Assists);
+            let counted = f.scoreboard().total(StatOwner::Player(p.id), Stat::Assists);
             assert!(named <= counted, "{name}: {} named {named} times, {counted} assists", p.id);
         }
     }
@@ -1096,7 +1096,7 @@ fn team_scores_agree_with_the_match_stats() {
             let (Some(id), Some(want)) = (t["TeamId"].as_u64(), t["Stats"]["CoreStats"]["Score"].as_i64()) else {
                 continue;
             };
-            let got = f.scoreboard().total_stat(StatOwner::Team(TeamId(id as u8)), Stat::Score) as i64;
+            let got = f.scoreboard().total(StatOwner::Team(TeamId(id as u8)), Stat::Score) as i64;
             teams += 1;
             agree += usize::from(got == want);
             if got != want {
@@ -1137,7 +1137,7 @@ fn players_who_spawned_have_lives() {
         let Some(play) = f.lives().iter().filter_map(|l| l.start()).min() else { continue };
         let board = f.scoreboard();
         let spawned = |p: &&Player| match board.changes.is_empty() {
-            false => board.total_stat(StatOwner::Player(p.id), Stat::Spawns) > 0,
+            false => board.total(StatOwner::Player(p.id), Stat::Spawns) > 0,
             true => p.team.is_some() && p.present_at_start && p.left.is_none_or(|left| left > play),
         };
         for p in f.players().iter().filter(spawned) {

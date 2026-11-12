@@ -6,10 +6,6 @@ use crate::TagId;
 pub use crate::game::DamageAmount as Amount;
 pub use crate::game::DamageCause as Cause;
 
-pub const CAN_HEADSHOT: u32 = Amount::CAN_HEADSHOT;
-pub const SKIPS_SHIELDS: u32 = Amount::SKIPS_SHIELDS;
-pub const NO_SPILL: u32 = Amount::NO_SPILL;
-
 /// The damage numbers of a damage tag; None for an effect that deals none or
 /// that isn't known.
 pub fn amount(tag: u32) -> Option<Amount> {

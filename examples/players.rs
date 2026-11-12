@@ -24,7 +24,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let board = film.scoreboard();
     for team in board.teams() {
         let name = team.name().map_or(format!("team {team}"), str::to_string);
-        println!("{name}: {}", board.total_stat(StatOwner::Team(team), Stat::Score));
+        println!("{name}: {}", board.total(StatOwner::Team(team), Stat::Score));
     }
     for p in film.players() {
         let row = StatOwner::Player(p.id);
@@ -34,8 +34,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             p.name().unwrap_or("unnamed"),
             if p.is_bot() { "bot" } else { "" },
             p.team.and_then(|t| t.name()).unwrap_or_default(),
-            board.total_stat(row, Stat::Kills),
-            board.total_stat(row, Stat::Deaths),
+            board.total(row, Stat::Kills),
+            board.total(row, Stat::Deaths),
         );
     }
     Ok(())

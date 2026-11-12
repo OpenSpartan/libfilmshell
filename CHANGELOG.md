@@ -29,7 +29,7 @@ The first release, 0.1.0.
   it: Infection moves a survivor to the infected when killed, and some minigames change teams
   between rounds.
 - The scoreboard has every value the game sends, with the round it is for (`StatChange::round`);
-  `Scoreboard::total_stat` adds the rounds up, as the match stats do. The match clock's state is the
+  `Scoreboard::total` adds the rounds up, as the match stats do. The match clock's state is the
   index of its rate in the game's table: `MatchClock::rate`, `is_stopped`, `is_counting_down` and
   `is_counting_up`.
 - `Chunk::from_manifest` makes a chunk from a manifest entry (`Error::UnknownChunkType` for a type
