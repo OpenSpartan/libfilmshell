@@ -158,7 +158,8 @@ impl<'a> Chunk<'a> {
     }
 
     /// Whether the bytes are a zlib stream: a deflate method byte with a
-    /// valid header check. Inflated chunks never start this way.
+    /// valid header check. Replay and highlights chunks can't start this way
+    /// once inflated, and no test film's header does.
     pub fn is_compressed(&self) -> bool {
         is_zlib(&self.data)
     }

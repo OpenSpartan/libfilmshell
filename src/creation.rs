@@ -123,7 +123,7 @@ pub fn property_bits(kind: u32) -> u32 {
     }
 }
 
-/// The participant (engine player id) a managed player's creation data at
+/// The participant (engine slot) a managed player's creation data at
 /// `at` names: `[version][participant:6][6][1]`, the participant below 32
 /// (reader `1410d7540`).
 pub fn managed_player_participant(data: &[u8], at: i64) -> Option<u32> {

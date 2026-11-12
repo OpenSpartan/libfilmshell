@@ -6,9 +6,9 @@ use crate::StringId;
 /// ([`GameEvent::text`](crate::GameEvent::text),
 /// [`HudMessage::key`](crate::HudMessage::key)).
 ///
-/// The text is as the game stores it, with its markup: `%pa`, `%pe` and
-/// `%ps` are players and `%p` one (the event's player arguments name them),
-/// `%s` a string and `%i` a number, `&killfeed_<name>` a kill feed icon,
+/// The text is as the game stores it, with its markup: `%p`, `%pa`, `%pe`
+/// and `%ps` are players (the event's player arguments name them, in
+/// order), `%s` a string and `%i` a number, `&killfeed_<name>` a kill feed icon,
 /// `%c` and a letter opens coloured text that `%` closes, and a leading
 /// `%zy` sets the line's style. [`text_parts`] splits it.
 ///

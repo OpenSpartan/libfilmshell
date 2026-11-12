@@ -1046,7 +1046,7 @@ fn team_scores_agree_with_the_match_stats() {
 }
 
 /// No life starts before its player joined or after they left (a joiner
-/// takes the engine id of someone who left, and their lives aren't the
+/// takes the engine slot of someone who left, and their lives aren't the
 /// joiner's).
 #[test]
 fn lives_start_while_their_player_is_in_the_match() {

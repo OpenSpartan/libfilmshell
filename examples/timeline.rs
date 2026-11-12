@@ -29,8 +29,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     for e in film.events().iter().filter(|e| e.event.involves(me)) {
         let line = match &e.event {
-            // The deaths the game deals everyone alive when a round or the
-            // match ends count nothing.
+            // The deaths the scoreboard doesn't count: those after a round is
+            // decided, among them the deaths the game deals everyone alive when
+            // the match ends.
             Event::Kill(k) if k.victim == me && !k.is_scored() => "died, not counted".to_string(),
             Event::Kill(k) if k.victim == me => match k.credited_killer() {
                 Some(killer) => format!("killed by {}", name(killer)),

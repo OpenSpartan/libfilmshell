@@ -117,7 +117,8 @@ impl fmt::Display for Tick {
 /// The film's clock: which game tick each frame is, and where the
 /// highlights chunk's millisecond times fall.
 ///
-/// A frame is one tick packet of the replay chunks. At 60 Hz a frame is one
+/// A frame is one tick packet of the replay chunks (on a film framed by its
+/// markers, the span from one marker to the next). At 60 Hz a frame is one
 /// tick, on 30 Hz films two, and across a recorder hitch a few more.
 #[derive(Clone, Debug, Default)]
 pub struct Clock {

@@ -1,4 +1,5 @@
-//! Loading a film from a folder of chunk files.
+//! What the examples share: loading a film from a folder of chunk files,
+//! and filling in a game text's markup.
 //!
 //! The Halo Infinite film manifest lists each chunk with an `Index`, a
 //! `ChunkType` (1 header, 2 replay, 3 highlights) and a `FileRelativePath`

@@ -190,9 +190,10 @@ impl FromStr for Guid {
 
 /// A position in world units. A world unit is a foot; the game's files use
 /// engine units of ten world units. `x` and `y` are horizontal; `z` is up,
-/// and only life samples carry it, when their film's positions convert with
-/// the level's box
-/// ([`CoordinateSource::LevelBox`](crate::CoordinateSource::LevelBox)).
+/// known only when the film's positions convert with the level's box
+/// ([`CoordinateSource::LevelBox`](crate::CoordinateSource::LevelBox)): on
+/// life samples on foot, and on the kill, flag and power seed positions taken
+/// from them.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Position {

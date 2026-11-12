@@ -241,13 +241,14 @@ pub struct Kill {
     /// headshot events at all.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub headshot: Option<bool>,
-    /// Whether the scoreboard counted the death: the film's scoreboard
-    /// records it, or the highlights chunk does (the game records there every
-    /// death its scoreboard counts, and a film can miss the scoreboard's
-    /// update). It counts only while a round is under way, so the deaths the
-    /// game deals everyone still alive when a match ends are false. In a small
-    /// lobby, whose scoreboard isn't read, a death with cause World in the
-    /// film's last 6 s is false and every other death None.
+    /// Whether the scoreboard counted the death: the film's scoreboard records
+    /// it, or the highlights chunk does (the game records there every death its
+    /// scoreboard counts, and a film can miss the scoreboard's update). It
+    /// counts only while a round is under way: the deaths after a round is
+    /// decided, until the next starts, are false, among them those the game
+    /// deals everyone still alive when the match ends. In a small lobby, whose
+    /// scoreboard isn't read, a death with cause World 6 s before the film's
+    /// end (362 ticks, within 3) is false and every other death None.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub scored: Option<bool>,
     /// What the last hit on the victim in the 2 s before was.
@@ -282,9 +283,10 @@ impl Kill {
         self.killer.filter(|&k| k != self.victim && !self.suicide)
     }
 
-    /// Whether the scoreboard counted the death: false only for the deaths
-    /// the game deals everyone still alive when a round or the match ends
-    /// ([`Kill::scored`]).
+    /// Whether the scoreboard counted the death: false when [`Kill::scored`]
+    /// is, for the deaths after a round is decided, until the next starts,
+    /// among them those the game deals everyone still alive when the match
+    /// ends.
     pub fn is_scored(&self) -> bool {
         self.scored != Some(false)
     }
@@ -642,7 +644,7 @@ pub enum GameEventArgument {
 }
 
 /// A mode script's game event: an id whose meaning depends on the mode, up
-/// to seven keyed values, and the players it is about.
+/// to seven keyed values, and the player it was sent to.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
@@ -663,9 +665,11 @@ pub struct GameEvent {
     /// The text's arguments, in order.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub arguments: Vec<GameEventArgument>,
-    /// The players it was sent to: the game sends a response once to each of
-    /// its targets, so a medal's or a personal score's names the player who
-    /// earned it, and a kill feed line's each player who saw it.
+    /// The player it was sent to, as a set (one player on every event of
+    /// the test films). The game sends a response once to each of its
+    /// targets, each its own event: a medal's or a personal score's names the
+    /// player who earned it, and a kill feed line comes once for each player
+    /// shown it.
     pub players: PlayerMask,
 }
 

@@ -108,8 +108,7 @@ pub struct Packet<'a> {
     /// The chunk's index.
     pub chunk: u32,
     /// The packet kind: 0 a tick, 1 the first of a replay chunk, 2 the seek
-    /// snapshot, 8 player structs, 9 the first of the highlights chunk, 12
-    /// bot records.
+    /// snapshot, 8 player structs, 12 bot records.
     pub kind: u16,
     /// The packet's timestamp, microseconds.
     pub timestamp_us: u64,
@@ -119,13 +118,15 @@ pub struct Packet<'a> {
     pub offset: usize,
 }
 
-/// One frame: a tick packet.
+/// One frame: a tick packet, or on a film framed by its markers (the
+/// fallback when a replay chunk's packets don't walk to its end) the span
+/// from one marker to the next.
 #[derive(Clone, Copy, Debug)]
 #[non_exhaustive]
 pub struct Frame<'a> {
     /// The frame's index, counting the film's frames from 0: the index
-    /// [`Clock::tick`](crate::Clock::tick) and
-    /// [`Raw::for_each_entity_view`] take.
+    /// [`Clock::tick`](crate::Clock::tick) takes and
+    /// [`Raw::for_each_entity_view`] passes to its closure.
     pub index: usize,
     /// Its tick.
     pub tick: Tick,
@@ -135,9 +136,9 @@ pub struct Frame<'a> {
     pub chunk_data: &'a [u8],
     /// The payload's first and one-past-last byte in the chunk.
     pub span: (usize, usize),
-    /// The packet's timestamp, microseconds. Always set: the library frames
-    /// a film by its packets (None is for a frame found by its marker, which
-    /// the library's reading doesn't use).
+    /// The packet's timestamp, microseconds; None on a film framed by its
+    /// `A0 7B 42` markers, the fallback when a replay chunk's packets don't
+    /// walk to its end.
     pub timestamp_us: Option<u64>,
 }
 
@@ -369,7 +370,8 @@ impl<'a> Raw<'a> {
     /// Walks every frame's entity view in order, calling `f` with the frame
     /// index and its entries. Entities alive at a chunk's start are typed
     /// from its snapshot. Nothing when the film's component layouts aren't
-    /// known (they come with the position field widths).
+    /// known (they come with the position field widths) or its frames aren't
+    /// tick packets.
     pub fn for_each_entity_view(&self, mut f: impl FnMut(usize, &[EntityEntry])) {
         let Some(p) = self.params else { return };
         let mut walker = crate::payload::Walker::new(&self.film.chunks[0], p);

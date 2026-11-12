@@ -1,8 +1,9 @@
 //! What the library knows about the game itself, read from the game's files:
 //! weapons, vehicles, grenades, equipment and other objects by tag id,
-//! damage effects, medals, levels and their quantization boxes, the names
-//! and defaults of game variant options, the modes' event trees, and the
-//! English text of the text keys films use.
+//! damage effects, how each weapon fires and its magazine, each projectile's
+//! velocity, range and impact effect, vehicles' bounds, medals, levels and
+//! their quantization boxes, the names and defaults of game variant options,
+//! the modes' event trees, and the English text of the text keys films use.
 //!
 //! Everything here is a static table compiled into the library, in the game
 //! files' engine units. Lookups by tag id are binary searches.

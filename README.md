@@ -69,7 +69,8 @@ fn print_match(chunks: &[(u32, u32, Vec<u8>)]) -> Result<(), filmshell::Error> {
     for player in film.players() {
         println!("{}", name(player.id));
     }
-    // Leaves out the deaths the game deals everyone alive when a match ends.
+    // Leaves out the deaths the scoreboard doesn't count: those after a round is decided,
+    // among them the deaths the game deals everyone alive when the match ends.
     for (tick, kill) in film.kills().filter(|(_, k)| k.is_scored()) {
         match kill.credited_killer() {
             Some(killer) => println!("{tick}: {} killed {}", name(killer), name(kill.victim)),
@@ -96,7 +97,7 @@ cargo run --release --example timeline -- path/to/film 3
 cargo run --release --example feed -- path/to/film 3
 # The map 90 seconds in: every player, vehicle, grenade and weapon on the ground
 cargo run --release --example playback -- path/to/film 90
-# Every path and kill, drawn as a map
+# Every path and scored kill, drawn as a map
 cargo run --release --example trails -- path/to/film > map.svg
 # The packets and events underneath
 cargo run --release --example raw -- path/to/film
@@ -105,8 +106,9 @@ cargo run --release --features serde --example json -- path/to/film > film.json
 ```
 
 >[!NOTE]
->Positions are in world units, a foot each; the game's engine unit is ten world units. On every level in the library's
->catalogue they convert exactly. For any other level, give the level's bounds or the map's spawn
+>Positions are in world units, a foot each; the game's engine unit is ten world units. On the test films every level in
+>the library's catalogue converts exactly; a film whose fields don't fit the catalogue's box (another game build) gets
+>a fitted conversion, which `Film::coordinates` names. For any other level, give the level's bounds or the map's spawn
 >points with `Hints` and `Film::from_chunks_with`, or read the unconverted coordinates from
 >`Sample::raw`. A `Sample` records where a player was at a given tick, along with their aim, speed,
 >health, and shield.

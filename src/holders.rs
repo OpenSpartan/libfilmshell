@@ -1,4 +1,4 @@
-//! Who holds an engine player id at a frame. The listings give each player
+//! Who holds an engine slot at a frame. The listings give each player
 //! their id (`roster::Assignment`), and a joiner can take the id of a player
 //! who left; what the film says about an id, its statborg's values included,
 //! is its holder's.

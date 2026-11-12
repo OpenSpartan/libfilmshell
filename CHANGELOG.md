@@ -21,7 +21,7 @@ The first release, 0.1.0.
 - A life belongs to the player the film names as controlling it, else to the player whose death
   times in the highlights chunk it matches; none starts before its player joined or after they left.
   A player letting go of a life is a death only when the scoreboard counts one then, so a bot
-  removed to make room for a joiner doesn't die. On the test films every player's kills of other
+  removed to make room for a joiner doesn't die. On the test films every player's kills of enemy
   players and deaths, the bots' included, equal the match stats' (which stop counting a player whose
   scoreboard row a reconnect clears).
 - `Player::teams` and `Player::team_at` give a player's team over the match, as the game replicates
@@ -73,8 +73,9 @@ The first release, 0.1.0.
   (the vehicle of its type hit last), the damage and the riders killed with it; a hijack the
   hijacker's ride and the player thrown out. On the test films each player's hijacks equal the match
   stats'; the match stats count vehicle destroys by another rule.
-- `filmshell::game` holds the game's own tables: weapons, vehicles, medals, damage effects, and
-  levels with their English names, the services' level ids and their quantization boxes.
+- `filmshell::game` holds the game's own tables: weapons, vehicles, medals, damage effects, the
+  sandbox's numbers (`fire_stats`, `projectile_stats`, `vehicle_bounds`), and levels with their
+  English names, the services' level ids and their quantization boxes.
 - `filmshell::format` exposes the raw layers, with the game's names for every event and entity type;
   `filmshell::analysis` estimates what films don't state: accuracy, weapon numbers, spawn factors.
 - A film whose chunks inflate past 1 GiB, or a chunk past 256 MiB, is refused. `Hints` ignore spawn

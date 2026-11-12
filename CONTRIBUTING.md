@@ -18,7 +18,7 @@ folder with one folder per film, each holding the film's chunks (`filmChunk0`, `
 compressed as downloaded or inflated as `filmChunk{N}_dec`), its `film-metadata.json` (the
 manifest) and its `match-metadata.json` (the match stats; without it the comparisons with the
 match stats skip the film). Films older than version 41 go in a `films-unsupported` folder next to
-that folder, to check they are refused. Without the variable the tests look in `films/` here
+that folder, to check they are refused (checked only with the variable set). Without the variable the tests look in `films/` here
 (ignored by git), and with no films they check nothing. With the variable set, a missing film
 fails the tests.
 

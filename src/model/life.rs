@@ -101,8 +101,8 @@ pub struct Sample {
     /// in a mode without shields.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub shield: Option<f64>,
-    /// Whether the player is in a vehicle: the sample is then the vehicle's
-    /// position.
+    /// Whether the player is in a vehicle: `x` and `y` are then the
+    /// vehicle's, and there is no `z`.
     pub in_vehicle: bool,
     /// The vehicle, when known: [`Film::vehicle_at`](crate::Film::vehicle_at)
     /// finds its track.

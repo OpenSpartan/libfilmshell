@@ -426,8 +426,9 @@ impl Film {
         &self.zones
     }
 
-    /// King of the Hill's points on the current hill; None outside King of
-    /// the Hill.
+    /// King of the Hill's points on the current hill. None outside King of
+    /// the Hill, and on a King of the Hill film whose positions don't convert
+    /// with the level's box or whose hill points aren't read.
     pub fn hill_score(&self) -> Option<&HillScore> {
         self.hill_score.as_ref()
     }
@@ -436,7 +437,10 @@ impl Film {
     /// response in the mode's event tree, with the medal, personal score,
     /// announcer words and kill feed line it stands for. None when the
     /// library has no event tree for the film's scripts, the tree has no
-    /// response for the id, or the event's own text names another response.
+    /// response for the id, the event's own text names another response, or
+    /// the id is one the tree can't place for certain (inside a script's
+    /// loop, or in Firefight's own files) and the event's text doesn't
+    /// confirm it.
     /// The match stats also count
     /// personal scores the game gives no name, which have no response here:
     /// on the test films' Big Team Battle matches they are the whole
@@ -467,14 +471,14 @@ impl Film {
     /// The events in a range of ticks, in tick order: `film.events_in(a..b)`
     /// leaves out tick `b`, `film.events_in(a..=b)` keeps it.
     ///
-    /// Playback that steps from tick `last` to `now` shows what happened in
-    /// between:
+    /// Playback that steps from tick `last` to `now` shows what happened after
+    /// `last`, `now` included:
     ///
     /// ```no_run
     /// # fn run(film: &filmshell::Film, last: filmshell::Tick, now: filmshell::Tick) {
     /// use filmshell::Event;
     ///
-    /// for e in film.events_in(last..now) {
+    /// for e in film.events_in(last + 1..=now) {
     ///     if let Event::Kill(k) = &e.event {
     ///         println!("{} {} died", e.tick, film.player_name(k.victim).unwrap_or("someone"));
     ///     }
@@ -497,9 +501,10 @@ impl Film {
     }
 
     /// Every kill, in tick order: the deaths the film records a kill event
-    /// for and those it doesn't ([`Kill::inferred`]), and the deaths the game
-    /// deals everyone still alive when a match ends ([`Kill::is_scored`] is
-    /// false for those).
+    /// for and those it doesn't ([`Kill::inferred`]), the scoreboard's
+    /// uncounted ones included ([`Kill::is_scored`] is false for those: the
+    /// deaths after a round is decided, among them those the game deals
+    /// everyone still alive when the match ends).
     pub fn kills(&self) -> impl Iterator<Item = (Tick, &Kill)> + '_ {
         self.events.iter().filter_map(|e| match &e.event {
             Event::Kill(k) => Some((e.tick, k)),

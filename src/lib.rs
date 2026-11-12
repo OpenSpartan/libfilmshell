@@ -29,7 +29,9 @@
 //! let film = Film::from_chunks(chunks)?;
 //!
 //! let name = |id| film.player_name(id).unwrap_or("someone");
-//! // Leaves out the deaths the game deals everyone alive when a match ends.
+//! // Leaves out the deaths the scoreboard doesn't count: those after a round
+//! // is decided, among them the deaths the game deals everyone alive when
+//! // the match ends.
 //! for (tick, kill) in film.kills().filter(|(_, k)| k.is_scored()) {
 //!     match kill.credited_killer() {
 //!         Some(killer) => println!("{tick} {} killed {}", name(killer), name(kill.victim)),
@@ -110,13 +112,12 @@
 //! films (film version 41: Slayer, Juggernaut, Headhunter, CTF, Big Team
 //! Battle, King of the Hill, Strongholds, Land Grab, Oddball, Stockpile,
 //! Infection, Firefight, the minigames, Attrition and Elimination,
-//! Extraction, Escalation, Grifball) they check that the level, every
-//! player's kills and deaths over the match, and each team's score agree
-//! with the match stats. Every player's kills of enemy players (765
-//! players) and deaths (786) agree, bots included, though bots have no kill
-//! events or highlights records: their lives, deaths and kills come from
-//! the rest of the film. Every team's score agrees (136 teams). For one
-//! player the comparison stops partway:
+//! Extraction, Escalation, Grifball) they check the level, every player's
+//! kills of enemy players (765 players) and deaths (786), and every team's
+//! score (136 teams) against the match stats: all agree, bots included,
+//! though the game sends no kill event or highlights record for a bot's
+//! death: those deaths are inferred from the rest of the film
+//! ([`Kill::inferred`]). For one player the comparison stops partway:
 //! the game cleared their scoreboard row mid-match (a reconnect), and the
 //! match stats count only what came before; the film goes on to the end.
 //!
@@ -141,7 +142,8 @@
 //!
 //! - `serde`: derives `Serialize` and `Deserialize` on the model's data
 //!   (the players, lives, events, scoreboard and the rest of what the
-//!   accessors return, but [`PlayerAt`], [`Clock`] and [`Hitch`]), the
+//!   accessors return, except [`PlayerAt`], [`Clock`], [`Hitch`] and the
+//!   [`format`](mod@format) types), the
 //!   [`analysis`] results ([`Rule`] and [`analysis::AccuracyTicks`] only
 //!   serialize), and the `game` enums and value types such as
 //!   [`game::Bounds`]. [`Film`], the inputs ([`Chunk`], [`ChunkKind`],

@@ -15,7 +15,7 @@ const BIPEDS: std::ops::Range<u32> = 512..768;
 /// What the film says of one biped life.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Control {
-    /// The first player that controls it: (frame, engine player id).
+    /// The first player that controls it: (frame, engine slot).
     pub player: Option<(i64, u32)>,
     /// Where it was created: (frame, box index, position codes).
     pub spawn: Option<(i64, u32, [u32; 3])>,

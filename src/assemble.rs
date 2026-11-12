@@ -98,7 +98,7 @@ fn place(bx: u32, q: [u32; 3], w: [u32; 3], c: &Calibration, level: Option<&Leve
     Some((-c.scale_x * raw2 + c.offset_x, c.scale_y * raw1 + c.offset_y))
 }
 
-/// A mask of engine player ids (bit 31 - id) as a mask of the player indices
+/// A mask of engine slots (bit 31 - id) as a mask of the player indices
 /// that held them at `frame`.
 fn players_mask(holders: &Holders, mask: u32, frame: i64) -> u32 {
     (0..32u32)
@@ -206,8 +206,10 @@ fn sample_states(
                         yaw: s.aim.map(|(y, _)| (calib.scale_y * y.cos()).atan2(-calib.scale_x * y.sin())),
                         pitch: s.aim.map(|(_, p)| p),
                         speed: s.speed.filter(|_| !m.in_vehicle).map(|v| v * WORLD_PER_ENGINE),
+                        // Seated, the rider's biped sends no position: its
+                        // height would be the last one on foot.
                         z: level
-                            .filter(|_| calib.source == CalibSource::LevelTable)
+                            .filter(|_| calib.source == CalibSource::LevelTable && !m.in_vehicle)
                             .and_then(|b| s.position.and_then(|(bx, q)| b.world_z(bx, q[2]))),
                         health,
                         shield,
@@ -913,7 +915,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     if let Some(ff) = &fired {
         // Kills, with the fatal hit's cause and weapon.
         for (&(frame, victim, killer), d) in ff.kills.iter().zip(&ff.kill_details) {
-            // The event names engine player ids; a joiner may hold another's.
+            // The event names engine slots; a joiner may hold another's.
             let held = |id: Option<u32>| id.map(|i| holders.api(i, frame));
             let (victim, killer, assistant) = (held(victim), held(killer), held(d.assistant));
             let Some(victim) = victim.and_then(|v| pid(v as i32)) else { continue };

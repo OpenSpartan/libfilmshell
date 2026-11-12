@@ -60,7 +60,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             )?;
         }
     }
-    // Leaves out the deaths the game deals everyone alive when a match ends.
+    // Leaves out the deaths the scoreboard doesn't count: those after a round
+    // is decided, among them the deaths the game deals everyone alive when the
+    // match ends.
     for (_, kill) in film.kills().filter(|(_, k)| k.is_scored()) {
         let Some(p) = kill.position else { continue };
         let (x, y) = px(p);
