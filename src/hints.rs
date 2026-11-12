@@ -6,6 +6,7 @@ use crate::{Position, TagId, TeamId};
 /// and explain respawns
 /// ([`analysis::spawn_factors`](crate::analysis::spawn_factors)).
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct SpawnPad {
     /// Where it stands, in world units.
@@ -18,7 +19,9 @@ pub struct SpawnPad {
 
 /// Which spawns a [`SpawnPad`] serves.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum SpawnKind {
     /// The match's first spawns.
     Initial,
@@ -58,6 +61,7 @@ impl SpawnPad {
 /// turned: world x is `-10 * y`, world y is `10 * x`, world z is `10 * z`. The
 /// widths of the film's position fields follow from the box.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LevelBounds {
     /// The low corner.
     pub min: [f32; 3],
@@ -84,6 +88,7 @@ pub struct LevelBounds {
 /// # Ok::<(), filmshell::Error>(())
 /// ```
 #[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Hints {
     pub(crate) level: Option<TagId>,
     pub(crate) level_bounds: Option<LevelBounds>,

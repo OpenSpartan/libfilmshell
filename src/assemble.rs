@@ -1066,7 +1066,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 tag: TagId(g.tag),
                 position: Position::new(x, y),
                 from: tick(g.from),
-                to,
+                removed: to,
                 taken: g.taken,
             });
         }
@@ -1941,7 +1941,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 entity_type: o.entity_type,
                 position: Position::new(o.x, o.y),
                 from: tick(o.from),
-                to: o.to.map(tick),
+                removed: o.to.map(tick),
             })
             .collect(),
         _ => Vec::new(),

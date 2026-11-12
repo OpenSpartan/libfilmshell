@@ -4,7 +4,7 @@
 //! `Film::from_folder`. A downloader that has the film's manifest instead
 //! maps each of its entries (an `Index`, a `ChunkType`: 1 header, 2 replay,
 //! 3 highlights) to
-//! `Chunk::new(entry.Index, ChunkKind::from_manifest(entry.ChunkType)?, bytes)`.
+//! `Chunk::from_manifest(entry.Index, entry.ChunkType, bytes)?`.
 
 use filmshell::game::{self, TextPart};
 use filmshell::{Film, GameEventArgument, StringId};

@@ -57,6 +57,18 @@ impl fmt::Display for TagId {
     }
 }
 
+impl fmt::LowerHex for TagId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::LowerHex::fmt(&self.0, f)
+    }
+}
+
+impl fmt::UpperHex for TagId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::UpperHex::fmt(&self.0, f)
+    }
+}
+
 impl From<u32> for TagId {
     fn from(v: u32) -> TagId {
         TagId(v)
@@ -77,6 +89,12 @@ impl StringId {
     /// The raw id.
     pub const fn get(self) -> u32 {
         self.0
+    }
+
+    /// The English text of the game text key this id names, when the library
+    /// has it ([`game::text`](crate::game::text)).
+    pub fn text(self) -> Option<&'static str> {
+        crate::game::text(self)
     }
 
     /// The id of `name`, hashed as given: the game lower-cases some names
@@ -114,6 +132,18 @@ impl fmt::Debug for StringId {
 impl fmt::Display for StringId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:08x}", self.0)
+    }
+}
+
+impl fmt::LowerHex for StringId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::LowerHex::fmt(&self.0, f)
+    }
+}
+
+impl fmt::UpperHex for StringId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::UpperHex::fmt(&self.0, f)
     }
 }
 

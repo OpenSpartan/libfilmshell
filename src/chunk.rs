@@ -6,7 +6,9 @@ use std::path::Path;
 /// header chunk first, then the replay chunks, then the `HighlightEvents`
 /// chunk.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum ChunkKind {
     /// Chunk 0: the component registry, the header, the game and map
     /// variants and the roster. Manifest chunk type 1.
@@ -100,6 +102,18 @@ impl<'a> Chunk<'a> {
         Chunk { index, kind, data: data.into() }
     }
 
+    /// A chunk from an entry of the film's manifest: its `Index`, its
+    /// `ChunkType` (1 header, 2 replay, 3 highlights) and the bytes at its
+    /// `FileRelativePath`, compressed as downloaded or already inflated.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnknownChunkType`] for a `ChunkType` other than 1, 2 and 3.
+    pub fn from_manifest(index: u32, chunk_type: u32, data: impl Into<Cow<'a, [u8]>>) -> Result<Chunk<'a>, Error> {
+        let kind = ChunkKind::from_manifest(chunk_type).ok_or(Error::UnknownChunkType { index, chunk_type })?;
+        Ok(Chunk::new(index, kind, data))
+    }
+
     /// A chunk saved as a file: `filmChunk{N}` as downloaded or
     /// `filmChunk{N}_dec` inflated, `name` the file's name without its
     /// folder. The index comes from the name and the kind from the bytes
@@ -155,8 +169,11 @@ impl<'a> Chunk<'a> {
     /// of [`Chunk::from_file`].
     pub fn read_folder(dir: impl AsRef<Path>) -> Result<Vec<Chunk<'static>>, Error> {
         let dir = dir.as_ref();
-        let io =
-            |path: &Path, e: std::io::Error| Error::Io { path: path.display().to_string(), message: e.to_string() };
+        let io = |path: &Path, e: std::io::Error| Error::Io {
+            path: path.to_path_buf(),
+            kind: e.kind(),
+            message: e.to_string(),
+        };
         let mut chunks = Vec::new();
         for entry in std::fs::read_dir(dir).map_err(|e| io(dir, e))? {
             let path = entry.map_err(|e| io(dir, e))?.path();

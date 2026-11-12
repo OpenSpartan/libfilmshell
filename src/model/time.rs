@@ -123,7 +123,7 @@ impl fmt::Display for Tick {
 /// A frame is one tick packet of the replay chunks (on a film framed by its
 /// markers, the span from one marker to the next). At 60 Hz a frame is one
 /// tick, on 30 Hz films two, and across a recorder hitch a few more.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Clock {
     pub(crate) frame_ticks: Vec<u32>,
     /// Each frame's tick on the clock `HighlightEvents` times run on: the

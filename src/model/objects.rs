@@ -140,7 +140,7 @@ pub struct WorldObject {
     /// apart, and it went somewhere in between. None if it was there to the
     /// end.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
-    pub to: Option<Tick>,
+    pub removed: Option<Tick>,
 }
 
 impl WorldObject {
@@ -150,9 +150,9 @@ impl WorldObject {
     }
 
     /// Whether the snapshots had it on the map at `tick`: from
-    /// [`from`](WorldObject::from) until [`to`](WorldObject::to).
+    /// [`from`](WorldObject::from) until [`removed`](WorldObject::removed).
     pub fn on_map_at(&self, tick: Tick) -> bool {
-        self.from <= tick && self.to.is_none_or(|t| tick < t)
+        self.from <= tick && self.removed.is_none_or(|t| tick < t)
     }
 }
 
@@ -171,16 +171,16 @@ pub struct GroundWeapon {
     /// When it was removed, so not inclusive; None if it was still there at
     /// the end.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
-    pub to: Option<Tick>,
+    pub removed: Option<Tick>,
     /// Whether a player picked it up, rather than the game removing it.
     pub taken: bool,
 }
 
 impl GroundWeapon {
     /// Whether it lay on the ground at `tick`: from
-    /// [`from`](GroundWeapon::from) until [`to`](GroundWeapon::to).
+    /// [`from`](GroundWeapon::from) until [`removed`](GroundWeapon::removed).
     pub fn on_map_at(&self, tick: Tick) -> bool {
-        self.from <= tick && self.to.is_none_or(|t| tick < t)
+        self.from <= tick && self.removed.is_none_or(|t| tick < t)
     }
 }
 

@@ -8,24 +8,25 @@
 //! medals, voice lines, objectives), the scoreboard, and each player's inputs
 //! and ammunition.
 //!
-//! The library does no I/O. Hand it the chunks' bytes, compressed as
-//! downloaded or already inflated, from wherever they come from: with the
-//! manifest's chunk types ([`ChunkKind::from_manifest`]), or, for chunks
-//! saved as `filmChunk{N}` files, with [`Chunk::from_file`], which takes the
-//! index from the file name and the kind from the bytes.
+//! Hand the library the chunks' bytes, compressed as downloaded or already
+//! inflated, from wherever they come from: with the manifest's chunk types
+//! ([`Chunk::from_manifest`]), or, for chunks saved as `filmChunk{N}`
+//! files, with [`Chunk::from_file`], which takes the index from the file name
+//! and the kind from the bytes. [`Film::from_folder`] reads a folder of such
+//! files, the library's only I/O.
 //!
 //! # Quick start
 //!
 //! ```no_run
-//! use filmshell::{Chunk, ChunkKind, Film};
+//! use filmshell::{Chunk, Film};
 //!
 //! # struct Entry { index: u32, chunk_type: u32, bytes: Vec<u8> }
 //! # let manifest: Vec<Entry> = Vec::new();
 //! // One `Chunk` per manifest entry: its index, its type and its bytes.
-//! let chunks = manifest.iter().map(|e| {
-//!     let kind = ChunkKind::from_manifest(e.chunk_type).expect("a known chunk type");
-//!     Chunk::new(e.index, kind, e.bytes.as_slice())
-//! });
+//! let chunks = manifest
+//!     .iter()
+//!     .map(|e| Chunk::from_manifest(e.index, e.chunk_type, e.bytes.as_slice()))
+//!     .collect::<Result<Vec<_>, _>>()?;
 //! let film = Film::from_chunks(chunks)?;
 //!
 //! let name = |id| film.player_name(id).unwrap_or("someone");
@@ -149,10 +150,10 @@
 //!   accessors return, except [`PlayerAt`], [`Clock`], [`Hitch`] and the
 //!   [`format`](mod@format) types), the
 //!   [`analysis`] results ([`Rule`] and [`analysis::AccuracyTicks`] only
-//!   serialize), and the `game` enums and value types such as
-//!   [`game::Bounds`]. [`Film`] only serializes: as its model, each part
-//!   under its accessor's name. The inputs ([`Chunk`], [`ChunkKind`],
-//!   [`Hints`] and its parts), [`Error`] and the `game` catalogues' entries
+//!   serialize), the inputs [`ChunkKind`] and [`Hints`] with its parts, and
+//!   the `game` enums and value types such as [`game::Bounds`]. [`Film`]
+//!   only serializes: as its model, each part under its accessor's name.
+//!   [`Chunk`], [`Error`] and the `game` catalogues' entries
 //!   ([`game::Level`], [`game::DamageEffect`] and the like) have neither. An
 //!   [`Event`] is an object with a `type` (`{"type": "kill", "victim": 3,
 //!   ...}`), enum variants are snake_case, [`TagId`]s, [`StringId`]s,

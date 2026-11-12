@@ -53,11 +53,21 @@ pub enum Error {
         /// The chunk's index.
         index: u32,
     },
+    /// A manifest entry's `ChunkType` is none of a film's
+    /// ([`Chunk::from_manifest`](crate::Chunk::from_manifest)).
+    UnknownChunkType {
+        /// The entry's index.
+        index: u32,
+        /// The type it gave.
+        chunk_type: u32,
+    },
     /// A folder or a file in it could not be read
     /// ([`Chunk::read_folder`](crate::Chunk::read_folder)).
     Io {
         /// The folder or file.
-        path: String,
+        path: std::path::PathBuf,
+        /// What went wrong, as [`std::io::Error::kind`] gives it.
+        kind: std::io::ErrorKind,
         /// The operating system's message.
         message: String,
     },
@@ -80,7 +90,10 @@ impl fmt::Display for Error {
             Error::NoTicks => write!(f, "no replay chunk records a tick"),
             Error::NotAChunkFile { name } => write!(f, "{name} is not the name of a film chunk file"),
             Error::UnknownChunk { index } => write!(f, "chunk {index} is not a film chunk"),
-            Error::Io { path, message } => write!(f, "{path}: {message}"),
+            Error::UnknownChunkType { index, chunk_type } => {
+                write!(f, "chunk {index} has type {chunk_type}, which is no film chunk type")
+            }
+            Error::Io { path, message, .. } => write!(f, "{}: {message}", path.display()),
         }
     }
 }

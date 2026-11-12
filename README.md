@@ -56,14 +56,15 @@ matches you didn't play in.
 To extract film data, wrap each chunk in a `Chunk` and pass them all to `Film::from_chunks`:
 
 ```rust
-use filmshell::{Chunk, ChunkKind, Film};
+use filmshell::{Chunk, Film};
 
-/// `chunks`: (index, chunk type, bytes) for every chunk of one film.
+/// `chunks`: (index, chunk type, bytes) for every chunk of one film, as its manifest lists them.
 fn print_match(chunks: &[(u32, u32, Vec<u8>)]) -> Result<(), filmshell::Error> {
-    let film = Film::from_chunks(chunks.iter().map(|(index, chunk_type, bytes)| {
-        let kind = ChunkKind::from_manifest(*chunk_type).expect("a known chunk type");
-        Chunk::new(*index, kind, bytes.as_slice())
-    }))?;
+    let chunks = chunks
+        .iter()
+        .map(|(index, chunk_type, bytes)| Chunk::from_manifest(*index, *chunk_type, bytes.as_slice()))
+        .collect::<Result<Vec<_>, _>>()?;
+    let film = Film::from_chunks(chunks)?;
 
     let name = |id| film.player_name(id).unwrap_or("unknown");
     for player in film.players() {

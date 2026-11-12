@@ -168,6 +168,15 @@ pub(crate) struct AnalysisData {
 }
 
 /// `player`'s accuracy over the whole film.
+///
+/// ```no_run
+/// # fn run(film: &filmshell::Film, player: filmshell::PlayerId) {
+/// let a = filmshell::analysis::accuracy(film, player);
+/// if let Some(r) = a.ratio() {
+///     println!("{} of {} shots hit, about {:.0}%", a.hits, a.shots, r * 100.0);
+/// }
+/// # }
+/// ```
 pub fn accuracy(film: &Film, player: PlayerId) -> Accuracy {
     accuracy_at(film, player, Tick(u32::MAX))
 }

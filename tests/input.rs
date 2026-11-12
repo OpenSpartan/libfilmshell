@@ -26,7 +26,10 @@ fn no_chunks() {
 #[test]
 fn folders() {
     let missing = Film::from_folder("no/such/folder").unwrap_err();
-    assert!(matches!(&missing, Error::Io { path, .. } if path.contains("such")), "{missing}");
+    assert!(
+        matches!(&missing, Error::Io { path, kind, .. } if path.ends_with("such/folder") && *kind == std::io::ErrorKind::NotFound),
+        "{missing}"
+    );
     let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("no-chunks");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("notes.txt"), "not a chunk").unwrap();
@@ -82,6 +85,11 @@ fn manifest_types() {
     assert_eq!(ChunkKind::from_manifest(1), Some(ChunkKind::Header));
     assert_eq!(ChunkKind::from_manifest(3).map(ChunkKind::manifest_type), Some(3));
     assert_eq!(ChunkKind::from_manifest(7), None);
+    assert_eq!(Chunk::from_manifest(0, 1, Vec::new()).unwrap().kind, ChunkKind::Header);
+    assert_eq!(
+        Chunk::from_manifest(4, 7, Vec::new()).unwrap_err(),
+        Error::UnknownChunkType { index: 4, chunk_type: 7 }
+    );
 }
 
 /// Packets of the given types, each with a 4-byte payload.
@@ -166,4 +174,16 @@ fn player_sets_are_lists_of_ids() {
     assert_eq!(serde_json::to_string(&set).unwrap(), "[3,15]");
     assert_eq!(serde_json::from_str::<PlayerMask>("[15,3]").unwrap(), set);
     assert!(serde_json::from_str::<PlayerMask>("[40]").is_err());
+}
+
+/// A set of players lists its players in id order, and prints as a set.
+#[test]
+fn player_sets() {
+    use filmshell::{PlayerId, PlayerMask};
+    let set: PlayerMask = [PlayerId(15), PlayerId(0), PlayerId(31)].into_iter().collect();
+    assert_eq!(set.iter().collect::<Vec<_>>(), [PlayerId(0), PlayerId(15), PlayerId(31)]);
+    assert_eq!(set.iter().len(), 3);
+    assert_eq!(set.into_iter().count(), 3);
+    assert_eq!(format!("{set:?}"), "{0, 15, 31}");
+    assert_eq!(format!("{:x}", filmshell::TagId(0x2b1824d5)), "2b1824d5");
 }

@@ -16,8 +16,8 @@
 //! use filmshell::TagId;
 //!
 //! assert_eq!(Weapon::from_tag(TagId(0x2b1824d5)), Some(Weapon::Br75BattleRifle));
-//! let br_round = damage_effect(TagId(0x0000b29c)).unwrap();
-//! assert_eq!(br_round.cause, DamageCause::Weapon);
+//! let br_round = damage_effect(TagId(0x0000b29c)).map(|d| d.cause);
+//! assert_eq!(br_round, Some(DamageCause::Weapon));
 //! ```
 
 mod damage;

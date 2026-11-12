@@ -101,8 +101,49 @@ impl fmt::Display for TeamId {
 /// It holds ids 0 to 31 only. Voice lines, game events and zones name their
 /// players this way. With serde it is the list of its players' ids,
 /// `[3, 15]`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct PlayerMask(pub u32);
+
+impl fmt::Debug for PlayerMask {
+    /// The players' ids, as a set: `{3, 15}`.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_set().entries(self.iter().map(|p| p.0)).finish()
+    }
+}
+
+impl IntoIterator for PlayerMask {
+    type Item = PlayerId;
+    type IntoIter = PlayerMaskIter;
+
+    /// The players in the set, in id order.
+    fn into_iter(self) -> PlayerMaskIter {
+        self.iter()
+    }
+}
+
+/// The players of a [`PlayerMask`], in id order.
+#[derive(Clone, Debug)]
+pub struct PlayerMaskIter(u32);
+
+impl Iterator for PlayerMaskIter {
+    type Item = PlayerId;
+
+    fn next(&mut self) -> Option<PlayerId> {
+        // Player 0 is the top bit.
+        let id = self.0.leading_zeros();
+        (id < 32).then(|| {
+            self.0 &= !(0x8000_0000 >> id);
+            PlayerId(id as u8)
+        })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let n = self.0.count_ones() as usize;
+        (n, Some(n))
+    }
+}
+
+impl ExactSizeIterator for PlayerMaskIter {}
 
 #[cfg(feature = "serde")]
 impl serde::Serialize for PlayerMask {
@@ -129,8 +170,8 @@ impl PlayerMask {
     }
 
     /// The players in the set, in id order.
-    pub fn iter(self) -> impl Iterator<Item = PlayerId> {
-        (0..32u8).filter(move |&p| self.0 & (0x8000_0000 >> p) != 0).map(PlayerId)
+    pub fn iter(self) -> PlayerMaskIter {
+        PlayerMaskIter(self.0)
     }
 
     /// How many players are in the set.

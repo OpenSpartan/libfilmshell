@@ -24,7 +24,12 @@ pub struct LevelBox {
 }
 
 impl LevelBox {
-    /// The engine-unit coordinate of field value `q` on `axis`.
+    /// The engine-unit coordinate of field value `q` on `axis`: 0 for x, 1
+    /// for y, 2 for z.
+    ///
+    /// # Panics
+    ///
+    /// When `axis` is over 2.
     pub fn engine(&self, axis: usize, q: u32) -> f64 {
         let (min, max) = (self.min[axis] as f64, self.max[axis] as f64);
         min + (q as f64 + 0.5) * (max - min) / 2f64.powi(self.widths[axis] as i32)

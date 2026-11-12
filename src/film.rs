@@ -302,6 +302,13 @@ impl Film {
     }
 
     /// One player's lives, in order.
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film, player: filmshell::PlayerId) {
+    /// // How long the player was alive, in ticks.
+    /// let alive: i64 = film.lives_of(player).filter_map(|l| Some(l.end()? - l.start()? + 1)).sum();
+    /// # }
+    /// ```
     pub fn lives_of(&self, player: PlayerId) -> impl Iterator<Item = &Life> + '_ {
         self.lives.iter().filter(move |l| l.player == Some(player))
     }
@@ -429,6 +436,15 @@ impl Film {
 
     /// Every vehicle on the map at `tick`, with where it was, in the order
     /// of [`Film::vehicles`]: driven, ridden or standing empty.
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film, now: filmshell::Tick) {
+    /// for (track, at) in film.vehicles_at(now) {
+    ///     let name = track.vehicle().map_or("a vehicle", |v| v.name());
+    ///     println!("{name} at ({:.0}, {:.0})", at.x, at.y);
+    /// }
+    /// # }
+    /// ```
     pub fn vehicles_at(&self, tick: Tick) -> impl Iterator<Item = (&VehicleTrack, Position)> + '_ {
         self.vehicles.iter().filter_map(move |v| Some((v, v.position_at(tick)?)))
     }
@@ -546,6 +562,19 @@ impl Film {
     }
 
     /// Every event, in tick order.
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film) {
+    /// use filmshell::{Event, EventKind};
+    ///
+    /// let shots = film.events().iter().filter(|e| e.event.kind() == EventKind::Shot).count();
+    /// for e in film.events() {
+    ///     if let Event::Hijack(h) = &e.event {
+    ///         println!("{} hijacked a {}", e.tick, h.vehicle);
+    ///     }
+    /// }
+    /// # }
+    /// ```
     pub fn events(&self) -> &[TimedEvent] {
         &self.events
     }
@@ -587,6 +616,20 @@ impl Film {
     /// uncounted ones included ([`Kill::is_scored`] is false for those: the
     /// deaths after a round is decided, among them those the game deals
     /// everyone still alive when the match ends).
+    ///
+    /// Each weapon's scored kills:
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film) {
+    /// use std::collections::BTreeMap;
+    ///
+    /// let mut by_weapon: BTreeMap<&str, u32> = BTreeMap::new();
+    /// for (_, kill) in film.kills().filter(|(_, k)| k.is_scored() && k.credited_killer().is_some()) {
+    ///     let weapon = kill.weapon.and_then(|w| w.name()).unwrap_or("unknown");
+    ///     *by_weapon.entry(weapon).or_default() += 1;
+    /// }
+    /// # }
+    /// ```
     pub fn kills(&self) -> impl Iterator<Item = (Tick, &Kill)> + '_ {
         self.events.iter().filter_map(|e| match &e.event {
             Event::Kill(k) => Some((e.tick, k)),
@@ -598,6 +641,16 @@ impl Film {
     /// film, in its order, with the medal's tick. The tick is None when the
     /// highlight clock isn't known ([`Clock::highlight_zero`]); only medals
     /// with a tick are also in the event stream as [`Event::Medal`].
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film) {
+    /// for (tick, award) in film.medals() {
+    ///     let medal = award.medal().map_or("an unknown medal".to_string(), |m| m.to_string());
+    ///     let name = film.player_name(award.player).unwrap_or("someone");
+    ///     println!("{tick:?} {name} earned {medal}");
+    /// }
+    /// # }
+    /// ```
     pub fn medals(&self) -> impl Iterator<Item = (Option<Tick>, MedalAward)> + '_ {
         self.highlights.iter().filter_map(|h| match h.kind {
             HighlightKind::Medal(index) => Some((h.tick, MedalAward { player: h.player?, index })),
@@ -618,6 +671,16 @@ impl Film {
     /// What `player` pressed and carried over the match. None for a player
     /// whose biped updates the library doesn't read: in small lobbies (four
     /// players or fewer), and for a player who never spawned.
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film, player: filmshell::PlayerId, now: filmshell::Tick) {
+    /// if let Some(state) = film.player_state(player) {
+    ///     let input = state.input_at(now);
+    ///     let grenades = state.grenades_at(now);
+    ///     println!("{input:?} {grenades:?}");
+    /// }
+    /// # }
+    /// ```
     pub fn player_state(&self, player: PlayerId) -> Option<&PlayerState> {
         self.states.iter().find(|s| s.0 == player).map(|s| &s.1)
     }
