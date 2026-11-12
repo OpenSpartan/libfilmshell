@@ -696,9 +696,9 @@ fn flag_events_count_as_the_match_stats_do() {
 }
 
 /// How long each player carried the flag, the skull or a power seed, alive
-/// with its item in their slots, is the match stats' time as its carrier:
-/// within a second, and a few seconds over where the film counts carrying
-/// outside a round.
+/// with its item in their slots while a round was in play (the match stats
+/// stop counting when the mode scripts announce a round won), is the match
+/// stats' time as its carrier: within a second for nearly all.
 #[test]
 fn carriers_carry_as_long_as_the_match_stats_say() {
     fn seconds(v: &serde_json::Value) -> Option<f64> {
@@ -728,6 +728,21 @@ fn carriers_carry_as_long_as_the_match_stats_say() {
         };
         let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
         let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        // The match stats stop counting when a round is won, as the mode
+        // scripts announce it, until the next round starts.
+        let won: Vec<Tick> = f
+            .events()
+            .iter()
+            .filter(|e| match &e.event {
+                Event::GameEvent(g) => f
+                    .game_response(g)
+                    .is_some_and(|r| r.name.starts_with("roundWon") || r.name.starts_with("gameplayComplete")),
+                _ => false,
+            })
+            .map(|e| e.tick)
+            .collect();
+        let starts = f.scoreboard().round_starts();
+        let in_play = |t: Tick| won.iter().rfind(|&&w| w <= t).is_none_or(|&w| starts.iter().any(|&s| s > w && s <= t));
         for p in f.players() {
             let Some(want) = stats_row(&stats, p).and_then(|r| seconds(&r["PlayerTeamStats"][0]["Stats"][group][key]))
             else {
@@ -736,7 +751,7 @@ fn carriers_carry_as_long_as_the_match_stats_say() {
             let Some(state) = f.player_state(p.id) else { continue };
             let ticks = (0..=f.clock().end().0)
                 .map(Tick)
-                .filter(|&t| state.carrying(t) == Some(item) && f.alive_at(p.id, t))
+                .filter(|&t| state.carrying(t) == Some(item) && f.alive_at(p.id, t) && in_play(t))
                 .count();
             let got = ticks as f64 / f64::from(Tick::PER_SECOND);
             if want == 0.0 && got == 0.0 {
@@ -744,6 +759,9 @@ fn carriers_carry_as_long_as_the_match_stats_say() {
             }
             players += 1;
             close += usize::from((got - want).abs() <= 1.0);
+            if (got - want).abs() > 1.0 {
+                println!("{name}: player {} carried {got:.1} s, stats {want:.1} s", p.id);
+            }
             assert!(
                 got - want > -1.0 && got - want < 10.0,
                 "{name}: player {} carried {got:.1} s, stats {want:.1} s",

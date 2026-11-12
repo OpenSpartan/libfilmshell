@@ -127,7 +127,8 @@
 //!   seeds ([`SeedEvent`]), all equal.
 //! - Hijacks ([`Hijack`]) equal.
 //! - Time carrying the flag, the skull or a power seed
-//!   ([`PlayerAt::carrying`]) within a second for 151 of 155 players.
+//!   ([`PlayerAt::carrying`]), counted while a round is in play, within a
+//!   second for 152 of 155 players.
 //! - The personal score of the mode scripts' events
 //!   ([`Film::game_response`]) equal on every Capture the Flag, Oddball, King
 //!   of the Hill, Stockpile, Attrition and Extraction film, and for 93% of
