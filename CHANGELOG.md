@@ -87,7 +87,8 @@ The first release, 0.1.0.
   stats'; the match stats count vehicle destroys by another rule.
 - `filmshell::game` holds the game's own tables: weapons, vehicles, medals, damage effects, the
   sandbox's numbers (`fire_stats`, `projectile_stats`, `vehicle_bounds`), and levels with their
-  English names, the services' level ids and their quantization boxes.
+  English names, the services' level ids and their quantization boxes. `TeamId::name` gives the
+  multiplayer teams' names, Eagle to Hazard.
 - `filmshell::format` exposes the raw layers, with the game's names for every event and entity type;
   `filmshell::analysis` estimates what films don't state: accuracy, weapon numbers, spawn factors.
 - A film whose chunks inflate past 1 GiB, or a chunk past 256 MiB, is refused. `Hints` ignore spawn

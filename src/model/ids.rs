@@ -78,6 +78,18 @@ impl FromStr for Xuid {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TeamId(pub u8);
 
+impl TeamId {
+    /// The team's name in the game: Eagle, Cobra, Hades, Valkyrie, Rampart,
+    /// Cutlass, Valor and Hazard for teams 0 to 7. None past them.
+    ///
+    /// ```
+    /// assert_eq!(filmshell::TeamId(1).name(), Some("Cobra"));
+    /// ```
+    pub fn name(self) -> Option<&'static str> {
+        crate::game::teams_data::TEAM_NAMES.get(self.0 as usize).copied()
+    }
+}
+
 impl fmt::Display for TeamId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)

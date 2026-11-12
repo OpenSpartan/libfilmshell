@@ -23,7 +23,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // The scoreboard's values added up over every round.
     let board = film.scoreboard();
     for team in board.teams() {
-        println!("team {team}: {}", board.total_stat(StatOwner::Team(team), Stat::Score));
+        let name = team.name().map_or(format!("team {team}"), str::to_string);
+        println!("{name}: {}", board.total_stat(StatOwner::Team(team), Stat::Score));
     }
     for p in film.players() {
         let row = StatOwner::Player(p.id);
@@ -32,7 +33,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             p.id.0,
             p.name().unwrap_or("unnamed"),
             if p.is_bot() { "bot" } else { "" },
-            p.team.map_or(String::new(), |t| format!("team {t}")),
+            p.team.and_then(|t| t.name()).unwrap_or_default(),
             board.total_stat(row, Stat::Kills),
             board.total_stat(row, Stat::Deaths),
         );

@@ -4,7 +4,9 @@
 //! effects, how each weapon fires and its magazine, each projectile's velocity,
 //! range and impact effect, vehicles' bounds, medals, levels and their
 //! quantization boxes, the names and defaults of game variant options, the
-//! modes' event trees, and the English text of the text keys films use.
+//! modes' event trees, the multiplayer teams' names
+//! ([`TeamId::name`](crate::TeamId::name)), and the English text of the text
+//! keys films use.
 //!
 //! Everything here is a static table compiled into the library, in the game
 //! files' engine units. Lookups by tag id are binary searches.
@@ -39,6 +41,8 @@ mod options_data;
 mod sandbox;
 #[rustfmt::skip]
 mod sandbox_data;
+#[rustfmt::skip]
+pub(crate) mod teams_data;
 mod text;
 #[rustfmt::skip]
 mod text_data;
