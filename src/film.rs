@@ -409,7 +409,22 @@ impl Film {
         let grenades = state.and_then(|s| s.grenades_at(tick)).filter(|g| g.tick >= start);
         let carrying = state.and_then(|s| s.carrying(tick));
         let player = self.player(player)?;
-        Some(PlayerAt { player, life, sample, weapon, ammo, energy, heat, grenades, carrying, ride, vehicle })
+        let (position, yaw) = (life.position_at(tick), life.yaw_at(tick));
+        Some(PlayerAt {
+            player,
+            life,
+            sample,
+            position,
+            yaw,
+            weapon,
+            ammo,
+            energy,
+            heat,
+            grenades,
+            carrying,
+            ride,
+            vehicle,
+        })
     }
 
     /// [`Film::player_at`] for every player alive at `tick`, in id order:
@@ -736,6 +751,12 @@ pub struct PlayerAt<'a> {
     pub life: &'a Life,
     /// Their last sample at or before the tick.
     pub sample: &'a Sample,
+    /// Where they were at the tick, between samples
+    /// ([`Life::position_at`]).
+    pub position: Option<Position>,
+    /// Which way they aimed at the tick, between samples
+    /// ([`Life::yaw_at`]).
+    pub yaw: Option<f64>,
     /// The weapon in their hands: None in a vehicle, where they fire its
     /// weapons, and in small lobbies, whose weapon state isn't read.
     pub weapon: Option<TagId>,

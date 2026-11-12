@@ -47,16 +47,16 @@
 //!
 //! Everything is read up front, so playback can seek to any tick: at any
 //! [`Tick`], [`Film::players_at`] gives every living player with their
-//! sample (where they were, their aim, health and shield), the weapon in
-//! their hands, the objective they carry and the vehicle they ride, and
-//! [`Film::events_in`] what happened in a stretch of time. [`Film::life_at`],
-//! [`Film::weapon_at`] and [`Film::vehicle_at`] look up one thing. The rest
-//! of the map at a tick is [`Film::vehicles_at`] (with
+//! position and aim at that tick (between samples), their last sample (health,
+//! shield, speed), the weapon in their hands, the objective they carry and the
+//! vehicle they ride, and [`Film::events_in`] what happened in a stretch of
+//! time. [`Film::life_at`], [`Film::weapon_at`] and [`Film::vehicle_at`] look
+//! up one thing. The rest of the map at a tick is [`Film::vehicles_at`] (with
 //! [`VehicleTrack::heading_at`] for which way each faces),
-//! [`Film::grenades_at`],
-//! [`Film::projectiles_at`], [`Film::ground_weapons_at`] and
-//! [`Film::world_objects_at`], with [`Zone::state_at`] for a zone mode.
-//! [`Clock`] maps the film's frames to ticks.
+//! [`Film::grenades_at`], [`Film::projectiles_at`],
+//! [`Film::ground_weapons_at`] and [`Film::world_objects_at`], with
+//! [`Zone::state_at`] for a zone mode. [`Clock`] maps the film's frames to
+//! ticks.
 //!
 //! A viewer's loop, one tick at a time:
 //!
@@ -68,9 +68,8 @@
 //! let mut now = Tick(0);
 //! while now <= film.clock().end() {
 //!     for p in film.players_at(now) {
-//!         // Between samples, where the player was and aimed this tick.
-//!         let _at = p.life.position_at(now);
-//!         let _aim = p.life.yaw_at(now);
+//!         // Where the player was and aimed this tick, between samples.
+//!         let (_at, _aim) = (p.position, p.yaw);
 //!     }
 //!     // What happened since the last frame drawn, this tick included.
 //!     for _event in film.events_in(from..=now) {}

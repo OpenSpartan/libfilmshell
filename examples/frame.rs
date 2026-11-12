@@ -122,10 +122,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Players: a dot where they are and a line the way they aim; a rider's
     // dot sits on their vehicle.
     for p in &players {
-        let Some(pos) = p.life.position_at(at) else { continue };
+        let Some(pos) = p.position else { continue };
         let (x, y) = px(pos.x, pos.y);
         let c = colour(p.player.team);
-        if let Some(yaw) = p.life.yaw_at(at).filter(|_| p.vehicle.is_none()) {
+        if let Some(yaw) = p.yaw.filter(|_| p.vehicle.is_none()) {
             let (ax, ay) = px(pos.x + AIM * yaw.cos(), pos.y + AIM * yaw.sin());
             writeln!(
                 svg,

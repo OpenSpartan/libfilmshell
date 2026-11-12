@@ -49,7 +49,8 @@ The first release, 0.1.0.
   change, so they are None until its first shot or reload.
 - `Display` for `Carried`, `FlagEventKind`, `SeedEventKind` and `ZoneEventKind`: short lowercase
   names.
-- Playback: `Film::players_at` gives every living player at a tick with their life, sample, weapon
+- Playback: `Film::players_at` gives every living player at a tick with their position and aim at
+  the tick, life, sample, weapon
   and its rounds, charge or heat, grenades, the objective they carry, ride and vehicle; `life_at`,
   `sample_at`, `weapon_at`, `ride_at`, `vehicle_at` and `events_in` look up one thing, and
   `Life::position_at` and `Life::yaw_at` place a player and their aim between samples. The rest of
