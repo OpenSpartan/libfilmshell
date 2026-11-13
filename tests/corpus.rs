@@ -65,16 +65,17 @@ fn every_variant_has_its_mode_icon() {
         let v = f.variant().unwrap();
         let icon = v.icon.unwrap_or_else(|| panic!("{name}: no icon"));
         assert!(icon < 20, "{name}: {icon}");
-        let want = match v.mode() {
-            GameMode::CaptureTheFlag => Some(1),
-            GameMode::Oddball => Some(2),
-            GameMode::Extraction => Some(7),
-            GameMode::Strongholds => Some(8),
-            GameMode::KingOfTheHill => Some(12),
-            GameMode::Firefight | GameMode::FirefightKingOfTheHill => Some(19),
-            _ => None,
+        let want: &[u8] = match v.mode() {
+            GameMode::CaptureTheFlag => &[1],
+            GameMode::Oddball => &[2],
+            GameMode::Extraction => &[7],
+            // Land Grab runs Strongholds' scripts with an icon of its own.
+            GameMode::Strongholds => &[8, 14],
+            GameMode::KingOfTheHill => &[12],
+            GameMode::Firefight | GameMode::FirefightKingOfTheHill => &[19],
+            _ => &[],
         };
-        assert!(want.is_none_or(|w| w == icon), "{name}: {:?} has {icon}", v.mode());
+        assert!(want.is_empty() || want.contains(&icon), "{name}: {:?} has {icon}", v.mode());
     }
 }
 
