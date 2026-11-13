@@ -115,6 +115,7 @@ packets and the model as JSON.
   carrier within 0.15 s for 146 of 155.
 - `Display` for `Carried`, `FlagEventKind`, `SeedEventKind` and `ZoneEventKind`: short lowercase
   names.
+- `GameVariant::icon`: the mode's icon, an index into the game's sheet of mode icons.
 
 ### Game events and text
 

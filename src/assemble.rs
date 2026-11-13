@@ -2060,6 +2060,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             })
             .collect(),
         scripts: scripts.iter().cloned().collect(),
+        icon: v.icon,
         stat_settings: crate::variant_stats::read(&film.chunks[0]).map(|d| StatSettings {
             stats: d
                 .stats

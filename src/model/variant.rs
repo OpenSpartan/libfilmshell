@@ -304,6 +304,10 @@ pub struct GameVariant {
     /// The stat definitions and engine settings.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub stat_settings: Option<StatSettings>,
+    /// The mode's icon: an index into the game's sheet of mode icons (the
+    /// variant's m_iconIndex). 0 is Slayer's, 1 CTF's, 2 Oddball's.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub icon: Option<u8>,
 }
 
 impl GameVariant {
