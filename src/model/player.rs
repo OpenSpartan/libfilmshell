@@ -7,15 +7,18 @@ use super::{PlayerId, TeamId, Tick, Xuid};
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum PlayerKind {
     /// A person signed in with an Xbox account.
+    #[non_exhaustive]
     Human {
         /// The account.
         xuid: Xuid,
-        /// The gamertag, from chunk 0's roster or the player's
-        /// HighlightEvents records.
+        /// The gamertag, from chunk 0's roster, a player struct (the packets
+        /// that list players as they join) or the player's `HighlightEvents`
+        /// records.
         #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
         gamertag: Option<String>,
     },
     /// A bot.
+    #[non_exhaustive]
     Bot {
         /// The bot's profile, which picks its appearance: the bot id the
         /// Halo services list it under (`bid(N)`).
@@ -30,16 +33,23 @@ pub enum PlayerKind {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Player {
-    /// The player's index.
+    /// The player's id.
     pub id: PlayerId,
     /// Person or bot.
     pub kind: PlayerKind,
-    /// The player's team: from their HighlightEvents records, else from the
-    /// team their engine player id carries while they hold it, which a
-    /// free-for-all game leaves out.
+    /// The player's team: from their `HighlightEvents` records, else from the
+    /// team their engine slot carries while they hold it. None in free
+    /// for all. A player can change teams during a match (Infection moves a
+    /// survivor to the infected when killed): this is the last, and
+    /// [`Player::team_at`] the one at a tick.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub team: Option<TeamId>,
-    /// In the match from its start.
+    /// Each team the player was on, from the tick they joined it, in tick
+    /// order: the team designator the game replicates for their participant.
+    /// Empty in free for all.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
+    pub teams: Vec<TeamChange>,
+    /// Whether they were in the match from its start.
     pub present_at_start: bool,
     /// When a player who joined in progress first appears.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
@@ -50,7 +60,8 @@ pub struct Player {
 }
 
 impl Player {
-    /// The gamertag or the bot's name.
+    /// The gamertag or the bot's name: None when the film carries no name
+    /// for the player.
     pub fn name(&self) -> Option<&str> {
         match &self.kind {
             PlayerKind::Human { gamertag, .. } => gamertag.as_deref(),
@@ -70,4 +81,23 @@ impl Player {
     pub fn is_bot(&self) -> bool {
         matches!(self.kind, PlayerKind::Bot { .. })
     }
+
+    /// The player's team at `tick`: the last of [`Player::teams`] by then,
+    /// else the first, else [`Player::team`]. A death that moves a player to
+    /// another team (Infection's) moves them at the kill's tick, so the
+    /// teams a kill was between are those of the tick before.
+    pub fn team_at(&self, tick: Tick) -> Option<TeamId> {
+        self.teams.iter().rfind(|c| c.tick <= tick).or(self.teams.first()).map(|c| c.team).or(self.team)
+    }
+}
+
+/// A player's team from a tick on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct TeamChange {
+    /// When the player joined the team.
+    pub tick: Tick,
+    /// The team.
+    pub team: TeamId,
 }

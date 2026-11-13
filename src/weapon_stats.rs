@@ -1,6 +1,6 @@
 //! Which weapon dealt each hit, and each weapon's numbers in the film: how
 //! it fires and what its hits deal, from the projectile and damage effect
-//! its hits actually used, so a variant that swaps them shows its own.
+//! its hits used, so a variant that swaps them shows its own.
 
 use crate::damage::{self, Cause};
 use crate::fire::FilmFire;
@@ -31,10 +31,11 @@ pub struct WeaponStats {
     pub hits_to_kill: Option<u32>,
 }
 
-/// The index into `ff.weapons` of the weapon behind each of `ff.hits`: the
-/// one the damage tag belongs to, else, for a projectile with no weapon on
-/// record, the attacker's last shot in the 2 s before. A melee swing, a
-/// grenade the list lacks, a vehicle or the world has none.
+/// The index into `ff.weapons` of the weapon behind each of `ff.hits`.
+///
+/// That is the weapon the damage tag belongs to, else, for a projectile with no
+/// weapon on record, the attacker's last shot in the 2 s before. A melee swing,
+/// a grenade the list lacks, a vehicle or the world has none.
 pub fn hit_weapons(ff: &FilmFire, frame_ticks: &[u32]) -> Vec<Option<usize>> {
     ff.hits
         .iter()
@@ -58,7 +59,8 @@ pub fn hit_weapons(ff: &FilmFire, frame_ticks: &[u32]) -> Vec<Option<usize>> {
         .collect()
 }
 
-/// Hits of `a` at `d` that down a Spartan with `shield` and `body`.
+/// How many hits of `d` points of effect `a` down a Spartan with `shield`
+/// and `body` points.
 fn hits_to_kill(a: &damage::Amount, d: f64, mut shield: f64, mut body: f64) -> Option<u32> {
     for n in 1..=200 {
         let (s, b) = apply(a, d, shield, body);
@@ -98,7 +100,7 @@ pub fn stats(ff: &FilmFire, hit_weapons: &[Option<usize>], shieldless: bool) -> 
                 .or(row_projectile)
                 .and_then(sandbox::projectile);
             let amount =
-                tag.or(proj.and_then(|p| p.impact.map(|i| i.0))).and_then(damage::amount).filter(|a| a.fixed());
+                tag.or(proj.and_then(|p| p.impact.map(|i| i.0))).and_then(damage::amount).filter(|a| a.is_fixed());
             Some(WeaponStats {
                 rounds_per_second: row.rounds_per_second,
                 burst: row.burst,

@@ -41,8 +41,9 @@ pub const SPRINT: u8 = 8;
 
 /// Registry block of bipeds.
 const BIPED: u32 = 35;
-/// First entity of the bipeds, and of the objects kind-5 handles index.
+/// First entity of the bipeds.
 const BIPED_BASE: u32 = 512;
+/// First entity of the objects kind-5 handles index (projectiles).
 const PROJECTILE_BASE: u32 = 1024;
 /// The headshot-kill id of PlayerGameEventSmall.
 const HEADSHOT: u32 = 0x027;
@@ -61,16 +62,20 @@ pub struct FilmActions {
     /// Detonations: frame, the projectile (entity, generation) when the
     /// event names it, and the level codes.
     pub blasts: Vec<(i64, Option<(u32, u32)>, [u32; 3])>,
-    /// Headshot kills: frame and player index.
+    /// Headshot kills: frame and the player's engine slot (`holders` maps
+    /// it to the player).
     pub headshots: Vec<(i64, i32)>,
 }
 
 /// The actions of `film`, attributed to `paths` the way `fire.rs` does: the
-/// life the event's biped handle names, else the body's player index.
+/// life the event's biped handle names, else the player of the body's engine
+/// slot (`player_of`, as `fire::read_mapped`).
+///
 /// Headshots only when `pvp`. Packet framing only.
 pub fn reader<'a>(
     paths: &'a [PlayerPath],
     pvp: bool,
+    player_of: impl Fn(u32, i64) -> u32 + 'a,
     out: &'a mut FilmActions,
 ) -> impl FnMut(usize, &[u8], &Payload) + 'a {
     let mut slot_owner: HashMap<i32, usize> = HashMap::new();
@@ -85,8 +90,9 @@ pub fn reader<'a>(
     // Per life: the last spartan-ability state and weapon slot seen.
     let mut ability: HashMap<i32, u32> = HashMap::new();
     let mut weapon_slot: HashMap<i32, u32> = HashMap::new();
-    move |frame, _, p| {
-        let frame = frame as i64;
+    let mut resends = crate::events::Resends::default();
+    move |frame_index, _, p| {
+        let frame = frame_index as i64;
         for e in &p.events {
             // A kind-2 handle (an 8-bit biped index), else a unit handle.
             let life = e.handles[0].and_then(|h| match e.kind {
@@ -95,7 +101,7 @@ pub fn reader<'a>(
             });
             let owner = |player: Option<u32>| {
                 life.and_then(|s| slot_owner.get(&s))
-                    .or_else(|| player.and_then(|p| by_index.get(&(p as i32))))
+                    .or_else(|| player.and_then(|p| by_index.get(&(player_of(p, frame) as i32))))
                     .copied()
             };
             let (k, kind, arg) = match e.body {
@@ -119,10 +125,8 @@ pub fn reader<'a>(
                     continue;
                 }
                 Body::Game(g) if pvp && g.id == HEADSHOT => {
-                    for pi in (0..32).filter(|p| g.last & (0x8000_0000u32 >> p) != 0) {
-                        if by_index.contains_key(&pi) {
-                            out.headshots.push((frame, pi));
-                        }
+                    if resends.fresh(frame_index, &g) {
+                        out.headshots.extend((0..32).filter(|p| g.last & (0x8000_0000u32 >> p) != 0).map(|pi| (frame, pi)));
                     }
                     continue;
                 }

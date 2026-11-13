@@ -1,6 +1,72 @@
 use super::Tick;
 use crate::TagId;
-use crate::game::Grenade;
+use crate::game::{Grenade, Weapon};
+
+/// An objective a player carries. The game puts an item for it in the
+/// carrier's weapon slots, where it stays whichever weapon they hold: that
+/// item is how a carrier is known.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+pub enum Carried {
+    /// A Capture the Flag flag. Its item is a pistol of the flag's own
+    /// (`magnum_pistol_ctf`), which the game gives the carrier on the grab.
+    Flag,
+    /// An Oddball skull.
+    Skull,
+    /// Grifball's ball.
+    Ball,
+    /// A Stockpile power seed.
+    PowerSeed,
+}
+
+impl std::fmt::Display for Carried {
+    /// A short lowercase name: "flag", "power seed".
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Carried::Flag => "flag",
+            Carried::Skull => "skull",
+            Carried::Ball => "ball",
+            Carried::PowerSeed => "power seed",
+        })
+    }
+}
+
+impl Carried {
+    /// The flag carrier's pistol tags.
+    const FLAG_PISTOLS: [TagId; 2] = [TagId(0x2a392328), TagId(0x0001_6415)];
+
+    /// The objective a weapon slot's item stands for, if any.
+    pub fn from_item(tag: TagId) -> Option<Carried> {
+        if Self::FLAG_PISTOLS.contains(&tag) {
+            return Some(Carried::Flag);
+        }
+        match Weapon::from_tag(tag)? {
+            Weapon::GenericSkull | Weapon::GenericSkullEscalation => Some(Carried::Skull),
+            Weapon::GenericBall => Some(Carried::Ball),
+            Weapon::GenericPowerSeed => Some(Carried::PowerSeed),
+            _ => None,
+        }
+    }
+}
+
+/// One stretch of a player carrying an objective
+/// ([`Film::carries`](crate::Film::carries)): from the tick its item came into
+/// their weapon slots to the last tick they held it alive, both inclusive.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct Carry {
+    /// The carrier.
+    pub player: crate::PlayerId,
+    /// What they carried.
+    pub item: Carried,
+    /// The first tick they carried it.
+    pub from: Tick,
+    /// The last tick they carried it.
+    pub to: Tick,
+}
 
 /// A player's movement input from `tick` on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -13,7 +79,13 @@ pub struct Input {
     pub forward: i8,
     /// Sideways throttle, -31 (right) to 31 (left).
     pub left: i8,
-    /// The control record's 5-bit stance field, when sent.
+    /// The control record's 5-bit stance field, when sent. Bit 4 (0x10) is
+    /// the jump button: on the test films, 89% to 98% of the jumps the
+    /// biped's vertical speed shows have it set within 3 frames. The other
+    /// bits are only measured: a player pushing the stick with bit 0 set
+    /// moves most often at 10 to 14 world units a second (crouched, by the
+    /// speed), with bit 3 at 18 to 30 (running, and sprinting at the top),
+    /// and with bit 2 faster than a sprint.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub stance: Option<u8>,
 }
@@ -27,10 +99,13 @@ pub struct Ammo {
     pub tick: Tick,
     /// The weapon slot, 0 to 3.
     pub slot: u32,
-    /// Rounds in the magazine.
-    pub loaded: i32,
-    /// Rounds in reserve.
-    pub reserve: i32,
+    /// Rounds in the magazine, 0 for a weapon that has none (an energy
+    /// weapon's charge is its [`Energy`]); None until the game sends them.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub loaded: Option<u32>,
+    /// Rounds in reserve; None until the game sends them.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub reserve: Option<u32>,
 }
 
 /// An energy weapon's charge from `tick` on.
@@ -57,7 +132,8 @@ pub struct Heat {
     pub slot: u32,
     /// The heat, percent.
     pub percent: i32,
-    /// The heat field's flags (overheated, venting).
+    /// The heat field's flags as the game sends them; they include
+    /// overheated and venting, but which bit is which isn't known.
     pub flags: u32,
 }
 
@@ -68,7 +144,8 @@ pub struct Heat {
 pub struct GrenadeCount {
     /// From when.
     pub tick: Tick,
-    /// Frag, plasma, dynamo and spike grenades.
+    /// Frag, plasma, dynamo and spike grenades, in that order (measured on
+    /// the test films).
     pub counts: [u32; 4],
 }
 
@@ -122,6 +199,12 @@ fn latest<T>(series: &[T], tick: Tick, at: impl Fn(&T) -> Tick) -> Option<&T> {
     series.partition_point(|x| at(x) <= tick).checked_sub(1).map(|i| &series[i])
 }
 
+/// The last entry for `slot` of a series of all slots' changes at or before
+/// `tick`.
+fn latest_in<T>(series: &[T], tick: Tick, at: impl Fn(&T) -> (Tick, u32), slot: u32) -> Option<&T> {
+    series[..series.partition_point(|x| at(x).0 <= tick)].iter().rfind(|x| at(x).1 == slot)
+}
+
 /// What a player carried and pressed over the match, each series at its
 /// changes.
 ///
@@ -161,7 +244,16 @@ pub struct PlayerState {
 impl PlayerState {
     /// The weapon in `slot` at `tick`.
     pub fn weapon_in(&self, slot: u32, tick: Tick) -> Option<TagId> {
-        self.weapons.iter().take_while(|w| w.tick <= tick).filter(|w| w.slot == slot).last()?.weapon
+        latest_in(&self.weapons, tick, |w| (w.tick, w.slot), slot)?.weapon
+    }
+
+    /// The tick the weapon in `slot` at `tick` came into it: the first of
+    /// the slot's latest run of entries with that weapon.
+    fn weapon_since(&self, slot: u32, tick: Tick) -> Option<Tick> {
+        let upto = self.weapons.partition_point(|w| w.tick <= tick);
+        let mut mine = self.weapons[..upto].iter().rev().filter(|w| w.slot == slot);
+        let last = mine.next()?;
+        Some(mine.take_while(|w| w.weapon == last.weapon).last().unwrap_or(last).tick)
     }
 
     /// The weapon slot held at `tick`.
@@ -174,9 +266,30 @@ impl PlayerState {
         self.weapon_in(self.held_slot(tick)?, tick)
     }
 
-    /// The magazine and reserve of `slot` at `tick`.
+    /// The objective carried at `tick`: the one whose item is in a weapon
+    /// slot ([`Carried`]).
+    ///
+    /// The item comes and goes on the tick of the mode's own grab, steal and
+    /// capture events (on the test films' Capture the Flag matches, every
+    /// grab and steal and 89 of 90 captures). The match stats' time as a
+    /// carrier counts only the carrier's life while a round is in play, and
+    /// adds up each carry truncated to tenths of a second (measured: 146 of
+    /// the test films' 155 carriers within 0.15 s).
+    pub fn carrying(&self, tick: Tick) -> Option<Carried> {
+        (0..4).find_map(|slot| self.weapon_in(slot, tick).and_then(Carried::from_item))
+    }
+
+    /// The magazine and reserve of the weapon in `slot` at `tick`, as it
+    /// last sent them.
+    ///
+    /// A weapon sends its rounds when they change, so this is None until the
+    /// weapon's first shot or reload since it came into the slot: a reading
+    /// sent before then was another weapon's. The series runs across lives,
+    /// and a weapon of the same kind in the next life is the same weapon
+    /// here; [`Film::player_at`](crate::Film::player_at) keeps to one life.
     pub fn ammo_in(&self, slot: u32, tick: Tick) -> Option<&Ammo> {
-        self.ammo.iter().take_while(|a| a.tick <= tick).filter(|a| a.slot == slot).last()
+        let since = self.weapon_since(slot, tick)?;
+        latest_in(&self.ammo, tick, |a| (a.tick, a.slot), slot).filter(|a| a.tick >= since)
     }
 
     /// The grenades carried at `tick`.
@@ -189,14 +302,18 @@ impl PlayerState {
         latest(&self.inputs, tick, |i| i.tick)
     }
 
-    /// The charge of the energy weapon in `slot` at `tick`.
+    /// The charge of the energy weapon in `slot` at `tick`, as it last sent
+    /// it: None until it sends one, as for [`PlayerState::ammo_in`].
     pub fn energy_in(&self, slot: u32, tick: Tick) -> Option<&Energy> {
-        self.energy.iter().take_while(|e| e.tick <= tick).filter(|e| e.slot == slot).last()
+        let since = self.weapon_since(slot, tick)?;
+        latest_in(&self.energy, tick, |e| (e.tick, e.slot), slot).filter(|e| e.tick >= since)
     }
 
-    /// The heat of the weapon in `slot` at `tick`.
+    /// The heat of the weapon in `slot` at `tick`, as it last sent it: None
+    /// until it sends one, as for [`PlayerState::ammo_in`].
     pub fn heat_in(&self, slot: u32, tick: Tick) -> Option<&Heat> {
-        self.heat.iter().take_while(|h| h.tick <= tick).filter(|h| h.slot == slot).last()
+        let since = self.weapon_since(slot, tick)?;
+        latest_in(&self.heat, tick, |h| (h.tick, h.slot), slot).filter(|h| h.tick >= since)
     }
 
     /// The equipment's charge at `tick`.

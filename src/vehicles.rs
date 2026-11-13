@@ -1,6 +1,6 @@
-//! Vehicles by id: the tag a vehicle id stands for when (its creates in the
-//! tick packets, and the snapshots for what was created before the film),
-//! and which vehicle each part belongs to.
+//! Vehicles by id: the tag a vehicle id stands for over time (from its
+//! creates in the tick packets, and from the snapshots for vehicles created
+//! before the film), and which vehicle each part belongs to.
 //!
 //! A vehicle id is `(generation - 1) * 256 + index - 768`, the id the vehicle
 //! updates and `unit_exit_vehicle` use (`replication`, `events::Handle::
@@ -19,7 +19,7 @@ use std::collections::HashMap;
 
 /// The registry block of vehicles.
 pub const VEHICLE: u32 = 40;
-/// Entity indexes of vehicles.
+/// The vehicles' entity indexes: the first, and the one after the last.
 const FIRST: u32 = 768;
 const END: u32 = 1024;
 /// Engine units between a part and its vehicle in a snapshot.
@@ -41,6 +41,14 @@ pub struct Vehicles {
     tags: HashMap<i32, Vec<(i64, u32)>>,
     /// Per part id: (its tag, its vehicle's id).
     parent: HashMap<i32, (u32, i32)>,
+    /// Per id, the frames of its deletes, in order.
+    deletes: HashMap<i32, Vec<i64>>,
+    /// Per id, (frame, forward unit vector in engine axes) of each update
+    /// that sends its orientation, in frame order.
+    forwards: HashMap<i32, Vec<(i64, [f64; 3])>>,
+    /// Per id, (frame, health as a fraction of its maximum) of each update
+    /// that sends it, in frame order.
+    health: HashMap<i32, Vec<(i64, f64)>>,
 }
 
 impl Vehicles {
@@ -57,10 +65,22 @@ impl Vehicles {
     pub fn reader(&mut self) -> impl FnMut(usize, &[u8], &Payload) + '_ {
         move |i, _, p| {
             for op in &p.ops {
-                if let (OpKind::Create { tag: Some(t) }, Some(id)) = (&op.kind, id(op.index, op.generation)) {
-                    if op.entity_type.is_none_or(|e| e == VEHICLE) {
-                        self.tags.entry(id).or_default().push((i as i64, *t));
+                let Some(id) = id(op.index, op.generation).filter(|_| op.entity_type.is_none_or(|e| e == VEHICLE))
+                else {
+                    continue;
+                };
+                match &op.kind {
+                    OpKind::Create { tag: Some(t) } => self.tags.entry(id).or_default().push((i as i64, *t)),
+                    OpKind::Delete => self.deletes.entry(id).or_default().push(i as i64),
+                    OpKind::Update { fields, .. } => {
+                        if let Some(forward) = fields.orientation.and_then(|o| o.forward()) {
+                            self.forwards.entry(id).or_default().push((i as i64, forward));
+                        }
+                        if let Some(h) = fields.health {
+                            self.health.entry(id).or_default().push((i as i64, h));
+                        }
                     }
+                    _ => {}
                 }
             }
         }
@@ -111,6 +131,34 @@ impl Vehicles {
     /// tags, in order.
     pub fn starts(&self, id: i32) -> &[(i64, u32)] {
         self.tags.get(&id).map_or(&[], Vec::as_slice)
+    }
+
+    /// When the vehicle `id` named at `frame` left the map: its first delete
+    /// at or after `frame`, or the id's next start, when that comes first
+    /// (the id then names another vehicle, so this one is gone). None if
+    /// neither follows.
+    pub fn removed(&self, id: i32, frame: i64) -> Option<i64> {
+        let delete = self.deletes.get(&id).and_then(|d| d.iter().find(|&&f| f >= frame).copied());
+        let start = self.starts(id).iter().map(|s| s.0).find(|&f| f > frame);
+        delete.into_iter().chain(start).min()
+    }
+
+    /// The forward directions `id` sent from frame `from` up to `until`
+    /// (not inclusive), engine axes.
+    pub fn forwards(&self, id: i32, from: i64, until: Option<i64>) -> &[(i64, [f64; 3])] {
+        let all = self.forwards.get(&id).map_or(&[][..], Vec::as_slice);
+        let a = all.partition_point(|x| x.0 < from);
+        let b = until.map_or(all.len(), |u| all.partition_point(|x| x.0 < u));
+        &all[a..b.max(a)]
+    }
+
+    /// The health readings `id` sent from frame `from` up to `until` (not
+    /// inclusive).
+    pub fn health(&self, id: i32, from: i64, until: Option<i64>) -> &[(i64, f64)] {
+        let all = self.health.get(&id).map_or(&[][..], Vec::as_slice);
+        let a = all.partition_point(|x| x.0 < from);
+        let b = until.map_or(all.len(), |u| all.partition_point(|x| x.0 < u));
+        &all[a..b.max(a)]
     }
 
     /// Ties each part in a snapshot to the vehicle standing where it does.

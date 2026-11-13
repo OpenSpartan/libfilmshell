@@ -106,7 +106,7 @@ pub struct EntityOp {
     pub kind: OpKind,
     /// A create's initial components, when it lists any and they parse:
     /// blocks as an update's (`zones.rs` reads navpoints' and zones').
-    pub init: Option<Fields>,
+    pub init: Option<Box<Fields>>,
     /// A projectile create's player index and shooter's unit, when it names
     /// them.
     pub shooter: (Option<u32>, Option<Handle>),
@@ -148,7 +148,6 @@ const DEVICE: u32 = 43;
 /// for the zone's multiplayer properties and orientation (`zones.rs`).
 pub const CRATE: u32 = 38;
 
-/// Bits of a non-object component, where known.
 /// Types whose creates carry no `[set:1]` component list. The create reader
 /// reads the list only when the definition's initial component mask
 /// (`+0x30`) is non-empty; these definitions' mask is empty. Every other
@@ -158,6 +157,7 @@ const NO_INITIAL_COMPONENTS: [u32; 10] = [7, 13, 14, 20, 23, 28, 29, 46, 47, 49]
 /// Entity type `supply_lines_items` (64 rows of supply-lines-item-unlocked).
 const SUPPLY_LINES_ITEMS: u32 = 27;
 
+/// Bits of a non-object component, where known.
 fn non_object_width(entity_type: u32, component: u32) -> Option<u32> {
     match (entity_type, component) {
         // The high-frequency entity's tick counter.
@@ -345,7 +345,7 @@ impl Walker {
                         let (fields, next) = self.data(c, r.at, t, &list);
                         if next.is_ok() {
                             if let Some(op) = ops.last_mut() {
-                                op.init = Some(fields);
+                                op.init = Some(Box::new(fields));
                             }
                         }
                         return next.map(Some);
@@ -552,6 +552,7 @@ pub fn walk_shared(film: &Film, params: Params, readers: &mut [&mut Reader<'_>])
 
 /// Every type-0 payload of `film` walked in order: f(frame index, payload).
 /// Packet framing only (a frame is a packet); nothing under marker framing.
+#[cfg_attr(not(any(feature = "raw", test)), allow(dead_code))]
 pub fn for_each_payload(film: &Film, walker: &mut Walker, mut f: impl FnMut(usize, &Payload)) {
     for_each_payload_in(film, walker, |i, _, p| f(i, p));
 }
@@ -603,10 +604,9 @@ pub fn for_each_payload_in(film: &Film, walker: &mut Walker, mut f: impl FnMut(u
 const RESOLVE_DEPTH: u32 = 32;
 
 /// A packet stopped at an ambiguous entity, read again under each type it
-/// fits: when every candidate under which the walk reads to the end of the
-/// entity view, with the control view ending in the packet's last byte, puts
-/// the entries at the same bits, that walk, with the entity's own entries
-/// left untyped. None otherwise.
+/// fits. When every candidate that reads to the end of the entity view (the
+/// control view ending on the packet's last byte) puts the entries at the
+/// same bits: that walk, the entity's own entries untyped. Else None.
 fn resolve(walker: &mut Walker, c: &[u8], start: usize, end: usize, depth: u32) -> Option<Payload> {
     let (index, mut fits) = walker.ambiguous.borrow_mut().take()?;
     // Candidates whose update ends at the same bit read the rest of the
@@ -656,13 +656,15 @@ fn resolve(walker: &mut Walker, c: &[u8], start: usize, end: usize, depth: u32) 
 }
 
 /// The event views of every type-0 payload of `film`: f(frame index, the
-/// events read). Packet framing only.
+/// events read), game events the game sent again left out
+/// ([`events::Resends`]). Packet framing only.
 pub fn for_each_event_view(film: &Film, widths: impl Into<events::Layout>, mut f: impl FnMut(usize, &[Event])) {
     let widths = widths.into();
     if film.framing != crate::container::Framing::Packets {
         return;
     }
     let mut out = Vec::new();
+    let mut resends = events::Resends::default();
     for fr in film.frames() {
         if fr.end - fr.start < 2 {
             continue;
@@ -670,6 +672,7 @@ pub fn for_each_event_view(film: &Film, widths: impl Into<events::Layout>, mut f
         out.clear();
         let mut r = Bits { c: fr.chunk, at: 8 * fr.start as i64 + 1 };
         let _ = events::walk(&mut r, widths, &mut out);
+        out.retain(|e| if let events::Body::Game(g) = &e.body { resends.fresh(fr.index, g) } else { true });
         f(fr.index, &out);
     }
 }

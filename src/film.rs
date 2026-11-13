@@ -9,22 +9,29 @@ use crate::{Chunk, ChunkKind, Error, Hints, TagId};
 /// Built from the film's chunks with [`Film::from_chunks`]; everything the
 /// library reads is computed then, so the accessors are cheap.
 pub struct Film {
+    /// The inflated chunks, kept for the raw layers only.
+    #[cfg(feature = "raw")]
     pub(crate) raw: crate::container::Film,
+    #[cfg(feature = "raw")]
     pub(crate) params: Option<crate::components::Params>,
+    #[cfg(feature = "raw")]
     pub(crate) has_highlights: bool,
-    pub(crate) encoding: crate::format::Encoding,
+    pub(crate) encoding: Encoding,
     pub(crate) header: Header,
     pub(crate) clock: Clock,
     pub(crate) players: Vec<Player>,
     pub(crate) variant: Option<GameVariant>,
-    pub(crate) level: Option<Level>,
+    pub(crate) level: Option<&'static Level>,
+    pub(crate) level_id: Option<TagId>,
     pub(crate) coordinates: Option<Coordinates>,
     pub(crate) lives: Vec<Life>,
-    pub(crate) vehicles: Vec<Vehicle>,
+    pub(crate) vehicles: Vec<VehicleTrack>,
     pub(crate) rides: Vec<Ride>,
     pub(crate) world: Vec<WorldObject>,
     pub(crate) ground: Vec<GroundWeapon>,
     pub(crate) grenades: Vec<GrenadeFlight>,
+    pub(crate) projectiles: Vec<ProjectileFlight>,
+    pub(crate) event_group: Option<&'static crate::game::events::EventGroup>,
     pub(crate) zones: Vec<Zone>,
     pub(crate) hill_score: Option<HillScore>,
     pub(crate) events: Vec<TimedEvent>,
@@ -36,6 +43,47 @@ pub struct Film {
 
 /// The most missing chunk indices [`Error::MissingChunks`] lists.
 const MISSING_LISTED: usize = 16;
+
+/// The film's model, each part under its accessor's name: `header`,
+/// `variant`, `level_id`, `coordinates`, `match_start`, `frame_ticks` (the
+/// clock: [`Clock::frame_ticks`]), `players`, `lives`, `rides`, `vehicles`,
+/// `world_objects`, `ground_weapons`, `grenades`, `projectiles`, `zones`,
+/// `hill_score`, `events`, `highlights`, `scoreboard` and `player_states`
+/// (by player id). Serialize only: a film is read from its chunks.
+#[cfg(feature = "serde")]
+impl serde::Serialize for Film {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        struct States<'a>(&'a [(PlayerId, PlayerState)]);
+        impl serde::Serialize for States<'_> {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                s.collect_map(self.0.iter().map(|(p, st)| (p.0, st)))
+            }
+        }
+        let mut f = s.serialize_struct("Film", 20)?;
+        f.serialize_field("header", &self.header)?;
+        f.serialize_field("variant", &self.variant)?;
+        f.serialize_field("level_id", &self.level_id)?;
+        f.serialize_field("coordinates", &self.coordinates)?;
+        f.serialize_field("match_start", &self.match_start())?;
+        f.serialize_field("frame_ticks", self.clock.frame_ticks())?;
+        f.serialize_field("players", &self.players)?;
+        f.serialize_field("lives", &self.lives)?;
+        f.serialize_field("rides", &self.rides)?;
+        f.serialize_field("vehicles", &self.vehicles)?;
+        f.serialize_field("world_objects", &self.world)?;
+        f.serialize_field("ground_weapons", &self.ground)?;
+        f.serialize_field("grenades", &self.grenades)?;
+        f.serialize_field("projectiles", &self.projectiles)?;
+        f.serialize_field("zones", &self.zones)?;
+        f.serialize_field("hill_score", &self.hill_score)?;
+        f.serialize_field("events", &self.events)?;
+        f.serialize_field("highlights", &self.highlights)?;
+        f.serialize_field("scoreboard", &self.scoreboard)?;
+        f.serialize_field("player_states", &States(&self.states))?;
+        f.end()
+    }
+}
 
 impl std::fmt::Debug for Film {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -54,23 +102,55 @@ impl Film {
     ///
     /// The chunks must be numbered 0 to n without gaps: chunk 0 the header,
     /// then the replay chunks, then optionally the highlights chunk.
-    /// In a release build reading takes a second or two for a 10-minute
-    /// match, a few seconds for a long one.
+    /// Everything is read up front: in a release build about 1.3 s for a
+    /// 9-minute Big Team Battle match of 27 players, 4 s for an 18-minute one
+    /// of 35. The read uses a second thread where the platform has threads,
+    /// and takes about a third longer where it hasn't (wasm). Unoptimized, as in a debug build of a crate that depends on
+    /// this one, it is about ten times slower; `[profile.dev.package.filmshell]
+    /// opt-level = 3` in that crate's `Cargo.toml` avoids it. The crate's
+    /// [Quick start](crate#quick-start) shows a film read from a manifest.
     ///
     /// # Errors
     ///
-    /// When the chunks don't make up a film: none given, a gap or a repeat
-    /// in their indices, a kind out of place, a chunk that doesn't inflate,
-    /// one larger than [`MAX_CHUNK_BYTES`](crate::MAX_CHUNK_BYTES) or chunks
-    /// together larger than [`MAX_FILM_BYTES`](crate::MAX_FILM_BYTES), a
-    /// header the library doesn't know, or replay chunks that record no
-    /// tick. The [`Error`] says which.
+    /// When the chunks don't make up a film:
+    ///
+    /// - [`Error::NoChunks`]: none given.
+    /// - [`Error::DuplicateChunk`], [`Error::MissingChunks`]: a repeat or a
+    ///   gap in their indices.
+    /// - [`Error::UnexpectedKind`]: a chunk 0 that isn't the header, a
+    ///   header elsewhere, or highlights that aren't the last chunk.
+    /// - [`Error::NoReplay`]: no replay chunk.
+    /// - [`Error::Inflate`], [`Error::TooLarge`]: a chunk that doesn't
+    ///   inflate, or one larger than [`MAX_CHUNK_BYTES`](crate::MAX_CHUNK_BYTES),
+    ///   or chunks together larger than [`MAX_FILM_BYTES`](crate::MAX_FILM_BYTES).
+    /// - [`Error::UnknownHeader`]: chunk 0 isn't a film header this library
+    ///   reads, among them those of films before version 41.
+    /// - [`Error::NoTicks`]: replay chunks that record no tick.
     pub fn from_chunks<'a>(chunks: impl IntoIterator<Item = Chunk<'a>>) -> Result<Film, Error> {
         Film::from_chunks_with(chunks, &Hints::default())
     }
 
-    /// [`Film::from_chunks`] with what the caller knows beyond the film:
-    /// see [`Hints`].
+    /// Reads the film saved as chunk files in folder `dir`
+    /// ([`Chunk::read_folder`]).
+    ///
+    /// ```no_run
+    /// let film = filmshell::Film::from_folder("path/to/film")?;
+    /// println!("{} players", film.players().len());
+    /// # Ok::<(), filmshell::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// As [`Chunk::read_folder`] and [`Film::from_chunks`].
+    pub fn from_folder(dir: impl AsRef<std::path::Path>) -> Result<Film, Error> {
+        Film::from_chunks(Chunk::read_folder(dir)?)
+    }
+
+    /// [`Film::from_chunks`] with facts the film lacks ([`Hints`]): a level
+    /// box or spawn points for a level the catalogue lacks
+    /// ([`Film::coordinates`] is None, or not [`CoordinateSource::LevelBox`]),
+    /// a level id in place of the film's, and spawn points for
+    /// [`analysis::spawn_factors`](crate::analysis::spawn_factors).
     ///
     /// # Errors
     ///
@@ -143,10 +223,52 @@ impl Film {
         &self.header
     }
 
-    /// The film's clock: which tick each frame is, and where HighlightEvents
+    /// The film's clock: which tick each frame is, and where `HighlightEvents`
     /// times fall.
     pub fn clock(&self) -> &Clock {
         &self.clock
+    }
+
+    /// The tick the match started: when its clock first ran.
+    ///
+    /// Ticks count from the film's first frame. On the test films that frame
+    /// comes 16 s to 2 minutes before the match starts, while players load
+    /// in, and on most of them the first lives start within a few ticks of
+    /// the match start. Time into the match is
+    /// `tick - start` ticks, and the clock the game shows is
+    /// [`Scoreboard::clock_at`]. None on a film without a match clock (on the
+    /// test films, the small lobbies and a few others).
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film) {
+    /// use filmshell::Tick;
+    ///
+    /// if let Some(start) = film.match_start() {
+    ///     let two_minutes_in = start + 120 * Tick::PER_SECOND;
+    ///     for p in film.players_at(two_minutes_in) {
+    ///         println!("{}: {:?}", p.player.id, p.sample.position);
+    ///     }
+    /// }
+    /// # }
+    /// ```
+    pub fn match_start(&self) -> Option<Tick> {
+        self.scoreboard.match_clock.iter().find(|c| c.rate() != 0.0).map(|c| c.tick)
+    }
+
+    /// The tick `seconds` into the match ([`Film::match_start`]), to the
+    /// nearest tick: `film.match_tick(90.0)` is a minute and a half in. None
+    /// before the match starts and on a film without a match clock.
+    pub fn match_tick(&self, seconds: f64) -> Option<Tick> {
+        if seconds.is_nan() || seconds < 0.0 {
+            return None;
+        }
+        Some(self.match_start()? + Tick::from_seconds(seconds).get())
+    }
+
+    /// Seconds into the match at `tick`, negative before the match starts.
+    /// None on a film without a match clock.
+    pub fn match_seconds(&self, tick: Tick) -> Option<f64> {
+        self.match_start().map(|s| (tick - s) as f64 / f64::from(Tick::PER_SECOND))
     }
 
     /// Everyone who played, in id order.
@@ -154,7 +276,7 @@ impl Film {
         &self.players
     }
 
-    /// The player with id `id`.
+    /// The player with id `id`, or None when no player has it.
     pub fn player(&self, id: PlayerId) -> Option<&Player> {
         match self.players.get(id.index()) {
             Some(p) if p.id == id => Some(p),
@@ -162,7 +284,8 @@ impl Film {
         }
     }
 
-    /// The gamertag or bot name of the player `id`.
+    /// The gamertag or bot name of the player `id`: None when no player has
+    /// the id, or the film carries no name for them.
     pub fn player_name(&self, id: PlayerId) -> Option<&str> {
         self.player(id)?.name()
     }
@@ -177,11 +300,17 @@ impl Film {
         self.variant.as_ref().map_or(GameMode::Other, GameVariant::mode)
     }
 
-    /// The level, when the catalogue or the hints know it. With
-    /// [`Hints::level_bounds`] it is a level made from the box: no name,
-    /// `structure` 0, and the hinted or header level id, else 0.
-    pub fn level(&self) -> Option<&Level> {
-        self.level.as_ref()
+    /// The level the film is on, when the library's catalogue has it
+    /// ([`game::levels`](crate::game::levels)). Positions convert with its
+    /// box unless [`Hints::level_bounds`] gives another.
+    pub fn level(&self) -> Option<&'static Level> {
+        self.level
+    }
+
+    /// The `levl` tag of the level the film is on: the one
+    /// [`Hints::level`] names, else the film's.
+    pub fn level_id(&self) -> Option<TagId> {
+        self.level_id
     }
 
     /// How raw positions map to world units, when the library could tell.
@@ -196,32 +325,120 @@ impl Film {
     }
 
     /// One player's lives, in order.
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film, player: filmshell::PlayerId) {
+    /// // How long the player was alive, in ticks: a life lasts to its
+    /// // `until`, else to the film's end.
+    /// let end = film.clock().end();
+    /// let alive: i64 = film
+    ///     .lives_of(player)
+    ///     .filter_map(|l| Some(l.until.unwrap_or(end) - l.start()? + 1))
+    ///     .sum();
+    /// # }
+    /// ```
     pub fn lives_of(&self, player: PlayerId) -> impl Iterator<Item = &Life> + '_ {
         self.lives.iter().filter(move |l| l.player == Some(player))
     }
 
-    /// Where `player` was at `tick`: their last sample at or before it, in
-    /// the life under way then. None while the player isn't alive: before
-    /// their first life, after a death until the next spawn, and after a
-    /// player who left was last listed. A life no kill ended that another
-    /// life follows ends at its last sample.
+    /// Every stretch of a player carrying the flag, the skull, Grifball's ball
+    /// or a power seed, in the order they started: what
+    /// [`PlayerAt::carrying`] gives tick by tick, as spans. A carry ends with
+    /// its item leaving the carrier's slots or with the carrier's life. The
+    /// match stats' time as a carrier counts only carries while a round is
+    /// in play ([`PlayerState::carrying`]).
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film) {
+    /// use filmshell::Tick;
+    ///
+    /// for c in film.carries() {
+    ///     let seconds = (c.to - c.from + 1) as f64 / f64::from(Tick::PER_SECOND);
+    ///     println!("{} carried the {} for {seconds:.1} s", film.player_name(c.player).unwrap_or("someone"), c.item);
+    /// }
+    /// # }
+    /// ```
+    pub fn carries(&self) -> Vec<Carry> {
+        let mut out = Vec::new();
+        for (player, state) in &self.states {
+            let changes: Vec<Tick> = state.weapons.iter().map(|w| w.tick).collect();
+            for life in self.lives_of(*player) {
+                let (Some(start), end) = (life.start(), life.until.unwrap_or(self.clock.end())) else { continue };
+                // The carried item can change only where a weapon slot does.
+                let mut points = vec![start];
+                points.extend(changes.iter().copied().filter(|&t| t > start && t <= end));
+                points.dedup();
+                let mut open: Option<(Carried, Tick)> = None;
+                for (k, &t) in points.iter().enumerate() {
+                    let now = state.carrying(t);
+                    if let Some((item, from)) = open.filter(|&(item, _)| Some(item) != now) {
+                        out.push(Carry { player: *player, item, from, to: t - 1 });
+                        open = None;
+                    }
+                    if open.is_none() {
+                        open = now.map(|item| (item, t));
+                    }
+                    if k + 1 == points.len() {
+                        if let Some((item, from)) = open.take() {
+                            out.push(Carry { player: *player, item, from, to: end });
+                        }
+                    }
+                }
+            }
+        }
+        out.sort_by_key(|c| (c.from, c.player));
+        out
+    }
+
+    /// Seconds until `player` respawns, at `tick`: while they are dead and a
+    /// respawn countdown runs ([`RespawnCountdown`]), its length less the
+    /// time since it started. On the test films the next life starts within
+    /// a few ticks of the countdown's end. None while the player is alive or
+    /// no countdown runs.
+    pub fn respawn_in(&self, player: PlayerId, tick: Tick) -> Option<f64> {
+        if self.alive_at(player, tick) {
+            return None;
+        }
+        let upto = self.events.partition_point(|e| e.tick <= tick);
+        // Countdowns run seconds, so a minute back is far enough to look. A
+        // countdown the film records twice a few ticks apart started at the
+        // first.
+        let mut countdowns =
+            self.events[..upto].iter().rev().take_while(|e| tick - e.tick <= 3600).filter_map(|e| match &e.event {
+                Event::RespawnCountdown(r) if r.player == player => Some((e.tick, r.seconds)),
+                _ => None,
+            });
+        let (mut start, seconds) = countdowns.next()?;
+        for (t, s) in countdowns {
+            if s != seconds || start - t > 30 {
+                break;
+            }
+            start = t;
+        }
+        let left = f64::from(seconds) - (tick - start) as f64 / f64::from(Tick::PER_SECOND);
+        (left > 0.0).then_some(left)
+    }
+
+    /// The life `player` is in at `tick`: the last to start at or before it,
+    /// while it lasts ([`Life::until`]). None while the player isn't alive:
+    /// before their first life, after a death until the next spawn, after
+    /// they left, and past the film's end.
     ///
     /// Looks through the film's lives, so it costs O(lives) a call.
+    pub fn life_at(&self, player: PlayerId, tick: Tick) -> Option<&Life> {
+        if tick > self.clock.end() {
+            return None;
+        }
+        self.lives_of(player)
+            .take_while(|l| l.start().is_some_and(|s| s <= tick))
+            .last()
+            .filter(|l| !l.is_over_at(tick))
+    }
+
+    /// Where `player` was at `tick`: their last sample at or before it, in
+    /// the life they are in then ([`Film::life_at`]).
     pub fn sample_at(&self, player: PlayerId, tick: Tick) -> Option<&Sample> {
-        let mut lives = self.lives_of(player).peekable();
-        let mut current = None;
-        while let Some(l) = lives.next_if(|l| l.start().is_some_and(|s| s <= tick)) {
-            current = Some(l);
-        }
-        let life = current?;
-        let last = lives.peek().is_none();
-        if !last && life.death.is_none() && life.end().is_some_and(|e| tick > e) {
-            return None;
-        }
-        if last && self.player(player).and_then(|p| p.left).is_some_and(|left| tick > left) {
-            return None;
-        }
-        life.at(tick)
+        self.life_at(player, tick)?.sample_at(tick)
     }
 
     /// Whether `player` is alive at `tick`, by the rules of
@@ -230,7 +447,7 @@ impl Film {
         self.sample_at(player, tick).is_some()
     }
 
-    /// Every player alive at `tick` with their sample then, in player order:
+    /// Every player alive at `tick` with their sample then, in id order:
     /// one frame of playback. O(players × lives).
     ///
     /// ```no_run
@@ -249,25 +466,108 @@ impl Film {
         self.players.iter().filter_map(move |p| Some((p.id, self.sample_at(p.id, tick)?)))
     }
 
-    /// The players of `team`, in index order.
-    pub fn team(&self, team: TeamId) -> impl Iterator<Item = &Player> + '_ {
+    /// Everything playback draws for `player` at `tick`: their life and
+    /// sample then, the weapon in their hands with its rounds, charge or
+    /// heat, their grenades, the objective they carry, and the ride and
+    /// vehicle they're in. None while they aren't alive
+    /// ([`Film::life_at`]). The sample is the last at or before `tick`;
+    /// [`Life::position_at`] places the player between samples.
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film, id: filmshell::PlayerId) {
+    /// use filmshell::Tick;
+    ///
+    /// match film.player_at(id, Tick::from_seconds(90.0)) {
+    ///     Some(now) => match now.position {
+    ///         Some(p) => println!("at ({:.1}, {:.1})", p.x, p.y),
+    ///         None => println!("alive, at a place the film can't convert"),
+    ///     },
+    ///     None => println!("not on the map"),
+    /// }
+    /// # }
+    /// ```
+    pub fn player_at(&self, player: PlayerId, tick: Tick) -> Option<PlayerAt<'_>> {
+        let life = self.life_at(player, tick)?;
+        let sample = life.sample_at(tick)?;
+        let ride = self.ride_at(player, tick);
+        let vehicle =
+            ride.and_then(|r| self.ride_vehicle(r)).or_else(|| sample.vehicle.and_then(|v| self.vehicle_at(v, tick)));
+        let state = self.player_state(player);
+        let on_foot = state.filter(|_| !sample.in_vehicle);
+        let weapon = on_foot.and_then(|s| s.weapon_at(tick));
+        // Readings from before this life's spawn are an earlier life's.
+        let start = life.start().unwrap_or(tick);
+        let ammo = on_foot.and_then(|s| s.ammo_in(s.held_slot(tick)?, tick)).filter(|a| a.tick >= start);
+        let energy = on_foot.and_then(|s| s.energy_in(s.held_slot(tick)?, tick)).filter(|e| e.tick >= start);
+        let heat = on_foot.and_then(|s| s.heat_in(s.held_slot(tick)?, tick)).filter(|h| h.tick >= start);
+        let grenades = state.and_then(|s| s.grenades_at(tick)).filter(|g| g.tick >= start);
+        let carrying = state.and_then(|s| s.carrying(tick));
+        let player = self.player(player)?;
+        let (position, yaw) = (life.position_at(tick), life.yaw_at(tick));
+        Some(PlayerAt {
+            player,
+            life,
+            sample,
+            position,
+            yaw,
+            weapon,
+            ammo,
+            energy,
+            heat,
+            grenades,
+            carrying,
+            ride,
+            vehicle,
+        })
+    }
+
+    /// [`Film::player_at`] for every player alive at `tick`, in id order:
+    /// one frame of playback. O(players × lives).
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film) {
+    /// use filmshell::Tick;
+    ///
+    /// for p in film.players_at(Tick::from_seconds(90.0)) {
+    ///     let holding = p.weapon.and_then(|w| w.name()).unwrap_or("nothing");
+    ///     println!("{} holds {holding}", p.player.name().unwrap_or("someone"));
+    /// }
+    /// # }
+    /// ```
+    pub fn players_at(&self, tick: Tick) -> impl Iterator<Item = PlayerAt<'_>> + '_ {
+        self.players.iter().filter_map(move |p| self.player_at(p.id, tick))
+    }
+
+    /// The players of `team`, in id order.
+    pub fn players_on(&self, team: TeamId) -> impl Iterator<Item = &Player> + '_ {
         self.players.iter().filter(move |p| p.team == Some(team))
     }
 
     /// Every vehicle track, in the order of their first record.
-    pub fn vehicles(&self) -> &[Vehicle] {
+    pub fn vehicles(&self) -> &[VehicleTrack] {
         &self.vehicles
     }
 
-    /// The track of the vehicle `entity` names at `tick`: of the tracks with
-    /// that id, the last to start at or before `tick`. Ids are reused, so
-    /// the tick picks the vehicle; a vehicle may stop sending positions while
-    /// still in use, so the track can end before `tick`.
-    pub fn vehicle_at(&self, entity: EntityId, tick: Tick) -> Option<&Vehicle> {
-        self.vehicles
-            .iter()
-            .filter(|v| v.entity == entity && v.span().is_some_and(|(from, _)| from <= tick))
-            .max_by_key(|v| v.span().map(|s| s.0))
+    /// The track of the vehicle `entity` names at `tick`, while that vehicle
+    /// is on the map ([`VehicleTrack::on_map_at`]). Ids are reused, so the
+    /// tick picks the vehicle.
+    pub fn vehicle_at(&self, entity: EntityId, tick: Tick) -> Option<&VehicleTrack> {
+        self.vehicles.iter().filter(|v| v.entity == entity && v.on_map_at(tick)).max_by_key(|v| v.span().map(|s| s.0))
+    }
+
+    /// Every vehicle on the map at `tick`, with where it was, in the order
+    /// of [`Film::vehicles`]: driven, ridden or standing empty.
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film, now: filmshell::Tick) {
+    /// for (track, at) in film.vehicles_at(now) {
+    ///     let name = track.vehicle().map_or("a vehicle", |v| v.name());
+    ///     println!("{name} at ({:.0}, {:.0})", at.x, at.y);
+    /// }
+    /// # }
+    /// ```
+    pub fn vehicles_at(&self, tick: Tick) -> impl Iterator<Item = (&VehicleTrack, Position)> + '_ {
+        self.vehicles.iter().filter_map(move |v| Some((v, v.position_at(tick)?)))
     }
 
     /// Every ride, in tick order.
@@ -281,8 +581,8 @@ impl Film {
     }
 
     /// The track of the vehicle a ride is in, when it has one.
-    pub fn ride_vehicle(&self, ride: &Ride) -> Option<&Vehicle> {
-        self.vehicles.get(ride.vehicle?)
+    pub fn ride_vehicle(&self, ride: &Ride) -> Option<&VehicleTrack> {
+        self.vehicles.get(ride.vehicle?.0)
     }
 
     /// The rides of one life, in tick order: its player's rides that start
@@ -295,9 +595,15 @@ impl Film {
     }
 
     /// What stood on the map, from the seek snapshots. Empty unless the
-    /// film's coordinates are exact.
+    /// film's positions convert exactly ([`CoordinateSource::LevelBox`]).
     pub fn world_objects(&self) -> &[WorldObject] {
         &self.world
+    }
+
+    /// What the snapshots had on the map at `tick`
+    /// ([`WorldObject::on_map_at`]).
+    pub fn world_objects_at(&self, tick: Tick) -> impl Iterator<Item = &WorldObject> + '_ {
+        self.world.iter().filter(move |o| o.on_map_at(tick))
     }
 
     /// Weapons that lay on the ground.
@@ -305,9 +611,33 @@ impl Film {
         &self.ground
     }
 
+    /// The weapons lying on the ground at `tick`
+    /// ([`GroundWeapon::on_map_at`]).
+    pub fn ground_weapons_at(&self, tick: Tick) -> impl Iterator<Item = &GroundWeapon> + '_ {
+        self.ground.iter().filter(move |g| g.on_map_at(tick))
+    }
+
     /// Thrown grenades' flights, in throw order.
-    pub fn grenade_flights(&self) -> &[GrenadeFlight] {
+    pub fn grenades(&self) -> &[GrenadeFlight] {
         &self.grenades
+    }
+
+    /// The grenades in the air at `tick`, with where each was
+    /// ([`GrenadeFlight::position_at`]), in throw order.
+    pub fn grenades_at(&self, tick: Tick) -> impl Iterator<Item = (&GrenadeFlight, Position)> + '_ {
+        self.grenades.iter().filter_map(move |g| Some((g, g.position_at(tick)?)))
+    }
+
+    /// Every projectile's flight but thrown grenades' (those are
+    /// [`Film::grenades`]), in the order they were fired.
+    pub fn projectiles(&self) -> &[ProjectileFlight] {
+        &self.projectiles
+    }
+
+    /// The projectiles in flight at `tick`, with where each was, in the order
+    /// they were fired.
+    pub fn projectiles_at(&self, tick: Tick) -> impl Iterator<Item = (&ProjectileFlight, Position)> + '_ {
+        self.projectiles.iter().filter_map(move |p| Some((p, p.position_at(tick)?)))
     }
 
     /// The zones or hills of a zone mode.
@@ -315,24 +645,112 @@ impl Film {
         &self.zones
     }
 
-    /// King of the Hill's points on the current hill.
+    /// King of the Hill's points on the current hill. None outside King of
+    /// the Hill, and on a King of the Hill film whose positions don't convert
+    /// with the level's box or whose hill points aren't read.
     pub fn hill_score(&self) -> Option<&HillScore> {
         self.hill_score.as_ref()
     }
 
+    /// What a mode script's game event is in this film's mode.
+    ///
+    /// It is the event's response in the mode's event tree, with the medal,
+    /// personal score, announcer words and kill feed line it stands for. None
+    /// when the library has no event tree for the film's scripts, the tree has
+    /// no response for the id, the event's own text names another response, or
+    /// the id is one the tree can't place for certain (inside a script's loop,
+    /// or in Firefight's own files) and the event's text doesn't confirm it.
+    /// The match stats also count personal scores the game gives no name, which
+    /// have no response here: on the test films' Big Team Battle matches they
+    /// are the whole difference between a player's named points and their
+    /// stats' score for 91 of 95 players.
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film) {
+    /// use filmshell::Event;
+    ///
+    /// for e in film.events() {
+    ///     let Event::GameEvent(g) = &e.event else { continue };
+    ///     if let Some((points, text)) = film.game_response(g).and_then(|r| r.score) {
+    ///         println!("{} +{points} {text}", e.tick);
+    ///     }
+    /// }
+    /// # }
+    /// ```
+    pub fn game_response(&self, event: &GameEvent) -> Option<&'static crate::game::GameResponse> {
+        self.event_group?.response(event.id, event.text.map(|t| t.0))
+    }
+
     /// Every event, in tick order.
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film) {
+    /// use filmshell::{Event, EventKind};
+    ///
+    /// let shots = film.events().iter().filter(|e| e.event.kind() == EventKind::Shot).count();
+    /// for e in film.events() {
+    ///     if let Event::Hijack(h) = &e.event {
+    ///         println!("{} hijacked a {}", e.tick, h.vehicle);
+    ///     }
+    /// }
+    /// # }
+    /// ```
     pub fn events(&self) -> &[TimedEvent] {
         &self.events
     }
 
-    /// The events from `from` up to and including `to`.
-    pub fn events_between(&self, from: Tick, to: Tick) -> &[TimedEvent] {
-        let a = self.events.partition_point(|e| e.tick < from);
-        let b = self.events.partition_point(|e| e.tick <= to);
+    /// The events in a range of ticks, in tick order: `film.events_in(a..b)`
+    /// leaves out tick `b`, `film.events_in(a..=b)` keeps it.
+    ///
+    /// Playback that steps from tick `last` to `now` shows what happened after
+    /// `last`, `now` included:
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film, last: filmshell::Tick, now: filmshell::Tick) {
+    /// use filmshell::Event;
+    ///
+    /// for e in film.events_in(last + 1..=now) {
+    ///     if let Event::Kill(k) = &e.event {
+    ///         println!("{} {} died", e.tick, film.player_name(k.victim).unwrap_or("someone"));
+    ///     }
+    /// }
+    /// # }
+    /// ```
+    pub fn events_in(&self, range: impl std::ops::RangeBounds<Tick>) -> &[TimedEvent] {
+        use std::ops::Bound;
+        let a = match range.start_bound() {
+            Bound::Included(&t) => self.events.partition_point(|e| e.tick < t),
+            Bound::Excluded(&t) => self.events.partition_point(|e| e.tick <= t),
+            Bound::Unbounded => 0,
+        };
+        let b = match range.end_bound() {
+            Bound::Included(&t) => self.events.partition_point(|e| e.tick <= t),
+            Bound::Excluded(&t) => self.events.partition_point(|e| e.tick < t),
+            Bound::Unbounded => self.events.len(),
+        };
         &self.events[a..b.max(a)]
     }
 
-    /// Every kill, in tick order.
+    /// Every kill, in tick order: the deaths the film records a kill event
+    /// for and those it doesn't ([`Kill::inferred`]), the scoreboard's
+    /// uncounted ones included ([`Kill::is_scored`] is false for those: the
+    /// deaths after a round is decided, among them those the game deals
+    /// everyone still alive when the match ends).
+    ///
+    /// Each weapon's scored kills:
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film) {
+    /// use std::collections::BTreeMap;
+    ///
+    /// let mut by_weapon: BTreeMap<&str, u32> = BTreeMap::new();
+    /// let scored = film.kills().filter(|(_, k)| k.is_scored() && k.credited_killer().is_some());
+    /// for (_, kill) in scored {
+    ///     let weapon = kill.weapon.and_then(|w| w.name()).unwrap_or("unknown");
+    ///     *by_weapon.entry(weapon).or_default() += 1;
+    /// }
+    /// # }
+    /// ```
     pub fn kills(&self) -> impl Iterator<Item = (Tick, &Kill)> + '_ {
         self.events.iter().filter_map(|e| match &e.event {
             Event::Kill(k) => Some((e.tick, k)),
@@ -340,10 +758,20 @@ impl Film {
         })
     }
 
-    /// Every medal the HighlightEvents chunk records for a player of the
+    /// Every medal the highlights chunk records for a player of the
     /// film, in its order, with the medal's tick. The tick is None when the
-    /// film fixes no highlight clock; only medals with a tick are also in
-    /// the event stream as [`Event::Medal`].
+    /// highlight clock isn't known ([`Clock::highlight_zero`]); only medals
+    /// with a tick are also in the event stream as [`Event::Medal`].
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film) {
+    /// for (tick, award) in film.medals() {
+    ///     let medal = award.medal().map_or("an unknown medal".to_string(), |m| m.to_string());
+    ///     let name = film.player_name(award.player).unwrap_or("someone");
+    ///     println!("{tick:?} {name} earned {medal}");
+    /// }
+    /// # }
+    /// ```
     pub fn medals(&self) -> impl Iterator<Item = (Option<Tick>, MedalAward)> + '_ {
         self.highlights.iter().filter_map(|h| match h.kind {
             HighlightKind::Medal(index) => Some((h.tick, MedalAward { player: h.player?, index })),
@@ -351,7 +779,7 @@ impl Film {
         })
     }
 
-    /// The HighlightEvents chunk's records, in its order.
+    /// The highlights chunk's records, in its order.
     pub fn highlights(&self) -> &[Highlight] {
         &self.highlights
     }
@@ -364,7 +792,17 @@ impl Film {
     /// What `player` pressed and carried over the match. None for a player
     /// whose biped updates the library doesn't read: in small lobbies (four
     /// players or fewer), and for a player who never spawned.
-    pub fn state(&self, player: PlayerId) -> Option<&PlayerState> {
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film, player: filmshell::PlayerId, now: filmshell::Tick) {
+    /// if let Some(state) = film.player_state(player) {
+    ///     let input = state.input_at(now);
+    ///     let grenades = state.grenades_at(now);
+    ///     println!("{input:?} {grenades:?}");
+    /// }
+    /// # }
+    /// ```
+    pub fn player_state(&self, player: PlayerId) -> Option<&PlayerState> {
         self.states.iter().find(|s| s.0 == player).map(|s| &s.1)
     }
 
@@ -377,11 +815,116 @@ impl Film {
         if self.sample_at(player, tick)?.in_vehicle {
             return None;
         }
-        self.state(player)?.weapon_at(tick)
+        self.player_state(player)?.weapon_at(tick)
     }
 
-    /// The film's raw layers: chunks, packets, frames.
+    /// How the film's tick packets carry the bipeds' positions: each biped's
+    /// entity records in a small lobby, else the composite updates.
+    pub fn encoding(&self) -> Encoding {
+        self.encoding
+    }
+
+    /// A game text with its markup filled in from an event's arguments, in
+    /// order ([`game::text_parts`](crate::game::text_parts)): players by
+    /// name, strings by their text, numbers as written, and kill feed icons
+    /// as their name in brackets (`[hydra]`). Colour and style are left out.
+    /// A player the arguments don't name, or whose name the film lacks, is
+    /// written "someone"; a missing string or number "?".
+    ///
+    /// ```no_run
+    /// # fn run(film: &filmshell::Film) {
+    /// use filmshell::Event;
+    ///
+    /// // Each personal score the mode scripts gave, in the game's words.
+    /// for e in film.events() {
+    ///     let Event::GameEvent(g) = &e.event else { continue };
+    ///     let Some(text) = film.game_response(g).and_then(|r| r.score).map(|s| s.1) else { continue };
+    ///     println!("{} {}", e.tick, film.fill_text(text, &g.arguments));
+    /// }
+    /// # }
+    /// ```
+    pub fn fill_text(&self, text: &str, arguments: &[GameEventArgument]) -> String {
+        use crate::game::TextPart;
+        let mut args = arguments.iter();
+        let mut out = String::new();
+        for part in crate::game::text_parts(text) {
+            match part {
+                TextPart::Words(w) => out.push_str(w),
+                TextPart::Player(_) => out.push_str(match args.next() {
+                    Some(GameEventArgument::Player(Some(p))) => self.player_name(*p).unwrap_or("someone"),
+                    _ => "someone",
+                }),
+                TextPart::String => match args.next() {
+                    Some(&GameEventArgument::Word { value, .. }) => {
+                        out.push_str(crate::game::text(crate::StringId(value)).unwrap_or("?"))
+                    }
+                    _ => out.push('?'),
+                },
+                TextPart::Number => match args.next() {
+                    Some(&GameEventArgument::Word { value, .. }) => out.push_str(&value.to_string()),
+                    _ => out.push('?'),
+                },
+                TextPart::Icon(name) => {
+                    out.push('[');
+                    out.push_str(name.trim_start_matches("killfeed_"));
+                    out.push(']');
+                }
+                _ => {}
+            }
+        }
+        out
+    }
+
+    /// The film's raw layers: chunks, packets, frames. With the `raw`
+    /// feature, outside the crate's semantic versioning
+    /// ([`format`](crate::format)).
+    #[cfg(feature = "raw")]
     pub fn raw(&self) -> crate::format::Raw<'_> {
         crate::format::Raw::new(&self.raw, self.has_highlights, self.params, self.encoding)
     }
+}
+
+/// A player alive at one tick, with what playback draws for them:
+/// [`Film::player_at`].
+#[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
+pub struct PlayerAt<'a> {
+    /// The player.
+    pub player: &'a Player,
+    /// The life they are in.
+    pub life: &'a Life,
+    /// Their last sample at or before the tick.
+    pub sample: &'a Sample,
+    /// Where they were at the tick, between samples
+    /// ([`Life::position_at`]).
+    pub position: Option<Position>,
+    /// Which way they aimed at the tick, between samples
+    /// ([`Life::yaw_at`]).
+    pub yaw: Option<f64>,
+    /// The weapon in their hands: None in a vehicle, where they fire its
+    /// weapons, and in small lobbies, whose weapon state isn't read.
+    pub weapon: Option<TagId>,
+    /// The rounds in that weapon and in reserve, as it last sent them in
+    /// this life. A weapon sends them when they change, so this is None from
+    /// the spawn or the pickup to its first shot or reload. A weapon the
+    /// player spawned with then holds a full magazine,
+    /// [`game::fire_stats`](crate::game::fire_stats)' `magazine`, unless the
+    /// game variant changes ammunition.
+    pub ammo: Option<&'a Ammo>,
+    /// That weapon's charge, for an energy weapon: None until it sends one,
+    /// as for `ammo`.
+    pub energy: Option<&'a Energy>,
+    /// That weapon's heat, for a weapon that heats up: None until it sends
+    /// one, as for `ammo`.
+    pub heat: Option<&'a Heat>,
+    /// The grenades they carry, as sent since they spawned: None until the
+    /// game sends a count in this life.
+    pub grenades: Option<&'a GrenadeCount>,
+    /// The objective they carry: a flag, the skull, Grifball's ball or a
+    /// power seed.
+    pub carrying: Option<Carried>,
+    /// The ride they are on.
+    pub ride: Option<&'a Ride>,
+    /// The track of the vehicle they are in.
+    pub vehicle: Option<&'a VehicleTrack>,
 }

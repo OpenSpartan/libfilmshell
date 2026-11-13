@@ -8,17 +8,23 @@ mod common;
 
 use filmshell::{Film, Stat, StatOwner};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> std::process::ExitCode {
+    common::main(run)
+}
+
+fn run() -> Result<(), Box<dyn std::error::Error>> {
     let dir = std::env::args().nth(1).ok_or("usage: players <film folder>")?;
-    let film = Film::from_chunks(common::load_folder(dir.as_ref())?)?;
+    let film = Film::from_folder(&dir)?;
 
     let variant = film.variant().map_or("unknown variant", |v| v.name.as_str());
-    let level = film.level().map_or("unknown level", |l| l.display_name.unwrap_or(l.name));
+    let level = film.level().map_or("unknown level", |l| l.title());
     println!("{variant} on {level}, {:.0} s", film.clock().end().seconds());
 
+    // The scoreboard's values added up over every round.
     let board = film.scoreboard();
     for team in board.teams() {
-        println!("team {team}: {}", board.final_stat(StatOwner::Team(team), Stat::Score));
+        let name = team.name().map_or(format!("team {team}"), str::to_string);
+        println!("{name}: {}", board.total(StatOwner::Team(team), Stat::Score));
     }
     for p in film.players() {
         let row = StatOwner::Player(p.id);
@@ -27,9 +33,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             p.id.0,
             p.name().unwrap_or("unnamed"),
             if p.is_bot() { "bot" } else { "" },
-            p.team.map_or(String::new(), |t| format!("team {t}")),
-            board.final_stat(row, Stat::Kills),
-            board.final_stat(row, Stat::Deaths),
+            p.team.and_then(|t| t.name()).unwrap_or_default(),
+            board.total(row, Stat::Kills),
+            board.total(row, Stat::Deaths),
         );
     }
     Ok(())

@@ -64,6 +64,10 @@ pub struct FilmFire {
     /// Parallel to `hits`: the victim's life slot, the damage tag and the
     /// body's first 5-bit scale (`hit_damage.rs`).
     pub hit_details: Vec<(i32, Option<u32>, u32)>,
+    /// damage_aftermath events on vehicles: frame, the vehicle's id (a part's
+    /// when the hit landed on a part), the attacker's path as for `hits`, and
+    /// the damage tag.
+    pub vehicle_hits: Vec<(i64, i32, Option<usize>, Option<u32>)>,
     /// Per path: each grenade or object thrown (biped_throw_initiate), its
     /// frame and the 3-bit grenade type (None: a thrown object named by tag).
     /// The thrower is the first handle (an 8-bit biped index and generation,
@@ -80,11 +84,30 @@ pub struct FilmFire {
     pub chatter: Vec<(i64, i32, u32, u32, Option<u32>)>,
 }
 
-/// The shots and kills of `film`, attributed to `paths`. `layout` is how
-/// the level lays out a position, which some event bodies read; `extra` are
-/// other weapons' tag ids the weapon list must hold (picked up, on the
-/// ground: `inventory.rs`).
+/// The shots and kills of `film`, attributed to `paths`.
+///
+/// `layout` is how the level lays out a position, which some event bodies read;
+/// `extra` are other weapons' tag ids the weapon list must hold (picked up, on
+/// the ground: `inventory.rs`). An event body's player index is taken for the
+/// player's: [`read_mapped`] maps it.
+#[cfg_attr(not(feature = "research"), allow(dead_code))]
 pub fn read(film: &Film, layout: Layout, paths: &[PlayerPath], extra: &[u32]) -> FilmFire {
+    read_mapped(film, layout, paths, extra, |id, _| id)
+}
+
+/// [`read`], with `player_of` mapping an event body's engine slot to the
+/// player's index.
+///
+/// `player_of` takes the slot and the frame (`holders`). An event attributed by
+/// its body rather than its handles (a shot or a hit from a vehicle) names the
+/// slot.
+pub fn read_mapped(
+    film: &Film,
+    layout: Layout,
+    paths: &[PlayerPath],
+    extra: &[u32],
+    player_of: impl Fn(u32, i64) -> u32,
+) -> FilmFire {
     let mut slot_owner: HashMap<i32, usize> = HashMap::new();
     let mut by_index: HashMap<i32, usize> = HashMap::new();
     for (k, p) in paths.iter().enumerate() {
@@ -99,6 +122,7 @@ pub fn read(film: &Film, layout: Layout, paths: &[PlayerPath], extra: &[u32]) ->
     let mut damage = Vec::new();
     let mut hits = Vec::new();
     let mut hit_details = Vec::new();
+    let mut vehicle_hits = Vec::new();
     let mut throws = vec![Vec::new(); paths.len()];
     let mut exits = vec![Vec::new(); paths.len()];
     let mut voice = Vec::new();
@@ -110,7 +134,7 @@ pub fn read(film: &Film, layout: Layout, paths: &[PlayerPath], extra: &[u32]) ->
                     let slot = e.handles[0].and_then(|h| h.biped_slot());
                     let owner = slot
                         .and_then(|s| slot_owner.get(&s))
-                        .or_else(|| f.player.and_then(|p| by_index.get(&(p as i32))));
+                        .or_else(|| f.player.and_then(|p| by_index.get(&(player_of(p, frame as i64) as i32))));
                     if let (Some(&k), Some(w)) = (owner, f.weapon) {
                         raw.push((frame as i64, k, w));
                     }
@@ -146,7 +170,7 @@ pub fn read(film: &Film, layout: Layout, paths: &[PlayerPath], extra: &[u32]) ->
                         .map(|h| (h.generation as i32 - 1) * 256 + h.index as i32);
                     let owner = life
                         .and_then(|s| slot_owner.get(&s))
-                        .or_else(|| player.and_then(|p| by_index.get(&(p as i32))));
+                        .or_else(|| player.and_then(|p| by_index.get(&(player_of(p, frame as i64) as i32))));
                     if let Some(&k) = owner {
                         throws[k].push((frame as i64, grenade));
                     }
@@ -154,13 +178,17 @@ pub fn read(film: &Film, layout: Layout, paths: &[PlayerPath], extra: &[u32]) ->
                 Body::Damage(d) => {
                     let life =
                         |k: usize| e.handles[k].and_then(|h| h.biped_slot()).and_then(|s| slot_owner.get(&s)).copied();
-                    let attacker = life(1).or_else(|| d.player.and_then(|p| by_index.get(&(p as i32)).copied()));
+                    let attacker = life(1)
+                        .or_else(|| d.player.and_then(|p| by_index.get(&(player_of(p, frame as i64) as i32)).copied()));
                     if let (Some(victim), Some(slot)) = (life(0), e.handles[0].and_then(|h| h.biped_slot())) {
                         hits.push((frame as i64, attacker, victim));
                         hit_details.push((slot, d.tag, d.a[0]));
                         if let Some(t) = d.tag {
                             damage.push((frame as i64, victim, t));
                         }
+                    }
+                    if let Some(v) = e.handles[0].and_then(|h| h.vehicle_slot()) {
+                        vehicle_hits.push((frame as i64, v, attacker, d.tag));
                     }
                 }
                 _ => {}
@@ -181,6 +209,7 @@ pub fn read(film: &Film, layout: Layout, paths: &[PlayerPath], extra: &[u32]) ->
         damage,
         hits,
         hit_details,
+        vehicle_hits,
         throws,
         exits,
         voice,
@@ -189,7 +218,7 @@ pub fn read(film: &Film, layout: Layout, paths: &[PlayerPath], extra: &[u32]) ->
 }
 
 impl FilmFire {
-    /// The index in `weapons` of the weapon named as tag id `tag` is: a tag
+    /// The index in `weapons` of the weapon `tag` names: a tag
     /// behind a damage effect is often a variant or base of the one in the film.
     pub fn named(&self, tag: u32) -> Option<usize> {
         let name = weapons::weapon(tag).name?;
@@ -228,10 +257,12 @@ pub fn threw_before(ff: &FilmFire, killer: usize, frame_ticks: &[u32], frame: i6
     ff.throws.get(killer).is_some_and(|t| t.iter().any(|&(f, _)| within_ticks(frame_ticks, f, frame, THROW_TICKS)))
 }
 
-/// The tick of HighlightEvents time 0, from the kill events themselves: the
-/// median over `deaths` (victim's player index, ms) of each one's nearest kill
-/// event on that victim, within `ZERO_SEARCH_TICKS` of `estimate`. A kill and
-/// its highlight are one moment, so this needs no model of the respawn.
+/// The tick of HighlightEvents time 0, from the kill events themselves.
+///
+/// It is the median over `deaths` (victim's player index, ms) of each one's
+/// nearest kill event on that victim, within `ZERO_SEARCH_TICKS` of
+/// `estimate`. A kill and its highlight are one moment, so this needs no model
+/// of the respawn.
 pub fn highlight_zero(ff: &FilmFire, frame_ticks: &[u32], deaths: &[(i32, f64)], estimate: f64) -> Option<f64> {
     let mut zeros: Vec<f64> = deaths
         .iter()

@@ -2,12 +2,12 @@
 //! stationary holds, lives to players, deaths, and the small-lobby decoder.
 
 use crate::bits::bits_at;
-use crate::container::{detect_encoding_mode, Film, MIN_PLAYER_FRAMES};
+use crate::container::{Film, MIN_PLAYER_FRAMES};
 use crate::events::Body;
 use crate::highlights::{EventType, HighlightEvent};
 use crate::lives::{assign_lives, LifeAssignment, LifePlayer, LifeSlot, LIFE_TUNING, TICKS_PER_MS};
 use crate::payload::for_each_event_view;
-use crate::replication::{detect_c2_width, detect_coord_layout, extract_multiplayer_composite};
+use crate::replication::extract_multiplayer_composite;
 use crate::types::*;
 use indexmap::IndexMap;
 use std::collections::{HashMap, HashSet};
@@ -133,13 +133,13 @@ fn slot_end_deaths(slots: &Slots, n_players: usize, roster: Option<&[RosterEntry
 }
 
 /// Deaths without HighlightEvents to time them, from what the film says: a
-/// life whose player gave up control of it died then (a life a new round
-/// ends is deleted instead, and the match's end releases every life after
-/// the last sample), and each death the scoreboard counts on a player's row
-/// that no such life accounts for ends the life of theirs last seen by
-/// then. A death is at the life's last sample up to `DEATH_TAIL` frames
-/// after it; a life ends in one death at most. None when the film says
-/// neither.
+/// life whose player gave up control of it died then, when the scoreboard
+/// counts a death then (a life a new round ends is deleted instead, and the
+/// match's end releases every life after the last sample), and each death
+/// the scoreboard counts on a player's row that no such life accounts for
+/// ends the life of theirs last seen by then. A death is at the life's last
+/// sample up to `DEATH_TAIL` frames after it; a life ends in one death at
+/// most. None when the film says neither.
 fn recorded_deaths(
     slots: &Slots,
     paths: &[PlayerPath],
@@ -160,17 +160,23 @@ fn recorded_deaths(
             .flatten()
             .filter_map(|&s| slots.get(&s).filter(|v| !v.is_empty()).map(|v| (s, v)))
             .collect();
+        let entry = usize::try_from(p.player_index).ok().and_then(|i| roster.get(i));
+        let counted = entry.and_then(|e| e.death_frames.as_ref());
         let mut used: HashSet<i32> = HashSet::new();
         let mut released: Vec<i64> = Vec::new();
         for &(slot_id, v) in &lives {
             let end = owners.get(&slot_id).filter(|o| o.released).and_then(|o| o.end).filter(|&e| e <= last_frame);
             let Some(end) = end else { continue };
+            // A release the scoreboard counts no death at is a bot's removal
+            // or the end of the match.
+            if counted.is_some_and(|d| !d.iter().any(|&(a, b)| end >= a.saturating_sub(DEATH_TAIL) && end <= b + DEATH_TAIL)) {
+                continue;
+            }
             used.insert(slot_id);
             released.push(end);
             out.push(DeathPosition { slot_id, gp: at(v, end).unwrap_or(v[0].gp) });
         }
-        let entry = usize::try_from(p.player_index).ok().and_then(|i| roster.get(i));
-        for &d in entry.and_then(|e| e.death_frames.as_ref()).into_iter().flatten() {
+        for &(_, d) in counted.into_iter().flatten() {
             if released.iter().any(|&e| (e - d).abs() <= DEATH_TAIL) {
                 continue;
             }
@@ -859,12 +865,12 @@ fn for_each_entity_record<'a>(film: &'a Film, f: &mut dyn FnMut(EntityRecord<'a>
 }
 
 /// c2 start bit for small-lobby records, by the same smoothness test as
-/// `detect_coord_layout`. Falls back to 20 (Aquarius).
-fn detect_record_seam(records: &[EntityRecord<'_>]) -> i64 {
+/// `detect_coord_layout`, `level` the level's own when it is catalogued.
+/// Falls back to 20 (Aquarius).
+fn detect_record_seam(records: &[EntityRecord<'_>], level: Option<i64>) -> i64 {
     const CANDS: [i64; 8] = [19, 20, 21, 22, 23, 24, 25, 26];
     let sample = &records[..records.len().min(2000)];
-    let mut best = 20;
-    let mut best_score = f64::INFINITY;
+    let mut scores: Vec<(i64, f64)> = Vec::new();
     for cand in CANDS {
         let mut by_id: HashMap<i32, (u32, Vec<f64>)> = HashMap::new();
         for r in sample {
@@ -891,13 +897,15 @@ fn detect_record_seam(records: &[EntityRecord<'_>]) -> i64 {
             continue;
         }
         p95s.sort_by(f64::total_cmp);
-        let median = p95s[p95s.len() >> 1];
-        if median < best_score {
-            best_score = median;
-            best = cand;
-        }
+        scores.push((cand, p95s[p95s.len() >> 1]));
     }
-    best
+    let best = scores.iter().map(|s| s.1).fold(f64::INFINITY, f64::min);
+    // A player who barely moves reads as smooth at every seam: the level's
+    // wins a tie.
+    if let Some(&(seam, _)) = scores.iter().find(|&&(c, m)| Some(c) == level && m <= best) {
+        return seam;
+    }
+    scores.iter().find(|s| s.1 == best).map_or(20, |s| s.0)
 }
 
 struct SmallLobbyLife {
@@ -911,10 +919,10 @@ struct SmallLobbyLife {
 /// Every small-lobby entity record decoded into per-life samples, in
 /// small-lobby units: raw1 = 0x4000 + c1's 15-bit window / 64 (c2's bits
 /// below c1 masked off), raw2 = the window at the seam >> 3.
-fn extract_small_lobby_lives(film: &Film) -> (Vec<SmallLobbyLife>, i64) {
+fn extract_small_lobby_lives(film: &Film, level: Option<&crate::levels::LevelBox>) -> (Vec<SmallLobbyLife>, i64) {
     let mut records: Vec<EntityRecord<'_>> = Vec::new();
     for_each_entity_record(film, &mut |r| records.push(r));
-    let c2_start = detect_record_seam(&records);
+    let c2_start = detect_record_seam(&records, level.map(|b| (b.c1_at() + b.widths[0] as i32) as i64));
     let c2_in_c1 = 0.max(15 - (c2_start - 7));
     struct L {
         samples: Vec<RawSample>,
@@ -1106,7 +1114,12 @@ fn stitch_small_lobby(
 
 /// The roster and its HighlightEvents deaths as life players. None when any
 /// entry lacks its spawns or deaths from the scoreboard.
-fn life_players_of(roster: &[RosterEntry], highlights: &[HighlightEvent], xuids: &[String]) -> Option<Vec<LifePlayer>> {
+fn life_players_of(
+    roster: &[RosterEntry],
+    highlights: &[HighlightEvent],
+    xuids: &[String],
+    game_ticks: &[u32],
+) -> Option<Vec<LifePlayer>> {
     let mut deaths_by_xuid: HashMap<&str, Vec<f64>> = HashMap::new();
     for e in highlights {
         if e.event_type == EventType::Death {
@@ -1136,6 +1149,13 @@ fn life_players_of(roster: &[RosterEntry], highlights: &[HighlightEvent], xuids:
             left: r.left_in_progress.unwrap_or(false),
             death_ms: times.filter(|t| t.len() as f64 == deaths),
             listed: r.listed,
+            in_match: r.in_match,
+            death_ticks: r.death_frames.as_ref().map(|d| {
+                let tick = |f: i64| usize::try_from(f).ok().and_then(|f| game_ticks.get(f)).map(|&t| t as f64);
+                d.iter()
+                    .filter_map(|&(a, b)| Some((if a == i64::MIN { f64::NEG_INFINITY } else { tick(a)? }, tick(b)?)))
+                    .collect()
+            }),
         });
     }
     Some(out)
@@ -1214,6 +1234,12 @@ fn life_slots_of(
             end: end as f64,
             x: Some(first.c1),
             y: Some(first.c2),
+            released: owner
+                .filter(|o| o.released)
+                .and_then(|o| o.end)
+                .and_then(|e| usize::try_from(e).ok())
+                .filter(|&e| e + 1 < game_ticks.len())
+                .map(|e| game_ticks[e] as f64),
         });
     }
     out
@@ -1317,7 +1343,7 @@ pub struct ExtractionResult {
     pub paths: Vec<PlayerPath>,
     /// The detected c2 start bit (7 plus c1's field width).
     pub coord_layout: i64,
-    /// multiplayer-composite: c2's detected width (`detect_c2_width`).
+    /// multiplayer-composite: c2's detected width (`detect_coord_widths`).
     pub c2_width: Option<u32>,
     /// multiplayer-composite: one death per life that ended in one.
     pub deaths: Option<Vec<DeathPosition>>,
@@ -1341,15 +1367,6 @@ pub struct ExtractionResult {
 pub struct Layout {
     pub mode: EncodingMode,
     pub composite: Option<(i32, u32)>,
-}
-
-pub fn detect_layout(film: &Film, n_players: Option<usize>) -> Layout {
-    let mode = detect_encoding_mode(film, n_players);
-    let composite = (mode == EncodingMode::MultiplayerComposite).then(|| {
-        let c2_start = detect_coord_layout(film);
-        (c2_start, detect_c2_width(film, c2_start))
-    });
-    Layout { mode, composite }
 }
 
 pub fn extract_all_player_positions(
@@ -1396,11 +1413,11 @@ pub fn extract_all_player_positions(
         hold_through_stubs(&mut slots, &ex.stubs, &ex.tick_gp);
         let recordless = add_recordless_lives(film, &mut slots, owners, widths, level);
 
+        let hl_ticks = film.highlight_ticks();
         let life_players = match roster {
-            Some(r) if !r.is_empty() && !highlights.is_empty() => life_players_of(r, highlights, xuids),
+            Some(r) if !r.is_empty() && !highlights.is_empty() => life_players_of(r, highlights, xuids, &hl_ticks),
             _ => None,
         };
-        let hl_ticks = film.highlight_ticks();
         let assignment =
             life_players.zip(roster).and_then(|(lp, r)| {
                 assign_lives(&life_slots_of(&slots, &hl_ticks, attachments.read, owners, &recordless, r), &lp)
@@ -1456,7 +1473,7 @@ pub fn extract_all_player_positions(
         };
     }
 
-    let (lives, c2_start) = extract_small_lobby_lives(film);
+    let (lives, c2_start) = extract_small_lobby_lives(film, level);
     let paths = stitch_small_lobby(&lives, roster, None);
     ExtractionResult {
         paths,
@@ -1473,12 +1490,17 @@ pub fn extract_all_player_positions(
 }
 
 /// Small-lobby deaths: each linked respawn ends the previous life.
-pub fn small_lobby_deaths(film: &Film, n_players: usize, roster: Option<&[RosterEntry]>) -> Vec<DeathPosition> {
+pub fn small_lobby_deaths(
+    film: &Film,
+    n_players: usize,
+    roster: Option<&[RosterEntry]>,
+    level: Option<&crate::levels::LevelBox>,
+) -> Vec<DeathPosition> {
     if n_players < 1 {
         return Vec::new();
     }
     let mut deaths = Vec::new();
-    let (lives, _) = extract_small_lobby_lives(film);
+    let (lives, _) = extract_small_lobby_lives(film, level);
     stitch_small_lobby(&lives, roster, Some(&mut deaths));
     deaths.sort_by_key(|d| d.gp);
     deaths

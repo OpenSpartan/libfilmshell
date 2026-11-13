@@ -526,11 +526,11 @@ impl Component {
     }
 }
 
-/// The box of a position in the game's default box: three
-/// 22-bit fields, in no box of the level.
+/// The box index given to a position in the game's default box (three
+/// 22-bit fields), in no box of the level.
 pub const DEFAULT_BOX: u32 = 0xffff;
-/// Bits of each field of a position relative to a parent: a box of plus or
-/// minus 100 units at the precision's step, 1/120 of a unit.
+/// Bits of each of the three fields of a position local to the unit's
+/// parent (`14076e420`).
 const ATTACHED_BITS: u32 = 14;
 
 /// Bits between one update's last data block and the next update.
@@ -647,20 +647,34 @@ pub fn dequantize(q: u32, bits: u32, min: f64, max: f64, odd: bool, exact: bool)
 }
 
 /// A 19-bit direction code as a unit vector (engine x, y, z): a cube map,
-/// `face * 87381 + i * 294 + j`. Face 0-2 is +x, +y, +z, 3-5 the same axes
-/// negative; i and j index a 293-cell grid over -1 to 1 on the face's other
-/// two axes (in axis order), the middle cell exactly 0. 87,381 is
-/// `floor(2^19 / 6)`; the side, 294, is a run-time value, the one with which
-/// the velocity direction follows the movement heading and no code falls off
-/// the grid.
+/// `face * 87381 + i * 294 + j`.
+///
+/// Face 0-2 is +x, +y, +z, 3-5 the same axes negative; i and j index a 293-cell
+/// grid over -1 to 1 on the face's other two axes (in axis order), the middle
+/// cell exactly 0. 87,381 is `floor(2^19 / 6)`; the side, 294, is a run-time
+/// value, the one with which the velocity direction follows the movement
+/// heading and no code falls off the grid: `floor(sqrt(87381)) - 1`.
 pub fn direction(code: u32) -> [f64; 3] {
-    const PER_FACE: u32 = 87381;
-    const SIDE: u32 = 294;
-    let rem = code % PER_FACE;
-    let step = 2.0 / (SIDE - 1) as f64;
-    let grid = |k: u32| if 2 * k == SIDE - 2 { 0.0 } else { (k as f64 + 0.5) * step - 1.0 };
-    let (u, v) = (grid(rem / SIDE), grid(rem % SIDE));
-    let d = match code / PER_FACE {
+    cube_direction(code, 87381, 294)
+}
+
+/// A 30-bit direction code as a unit vector, on [`direction`]'s cube map.
+///
+/// A face has `floor(2^30 / 6)` codes and the side is
+/// `floor(sqrt(that)) - 1`, 13,376. Measured: a vehicle's up vector stays
+/// within 5 degrees across 108 of the 112 updates that switch it between the
+/// 19-bit and the 30-bit code (at most 41 with a side one either way), and
+/// no code falls off the grid.
+pub fn direction30(code: u32) -> [f64; 3] {
+    cube_direction(code, 178_956_970, 13_376)
+}
+
+fn cube_direction(code: u32, per_face: u32, side: u32) -> [f64; 3] {
+    let rem = code % per_face;
+    let step = 2.0 / (side - 1) as f64;
+    let grid = |k: u32| if 2 * k == side - 2 { 0.0 } else { (k as f64 + 0.5) * step - 1.0 };
+    let (u, v) = (grid(rem / side), grid(rem % side));
+    let d = match code / per_face {
         0 => [1.0, u, v],
         1 => [u, 1.0, v],
         2 => [u, v, 1.0],
@@ -688,6 +702,49 @@ pub fn speed(q: u32) -> f64 {
     ((q as f64 + 0.5) * (shift + MAX).ln() / 1024.0).exp() - shift
 }
 
+/// An object's orientation as the dynamic-precision orientation block sends
+/// it (`140c5f938`).
+///
+/// It is the forward and up vectors as floats, or the up vector as a
+/// direction code (None for the default, +z) and an angle about it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Orientation {
+    /// Forward, then up, three float32 each.
+    Raw([f64; 3], [f64; 3]),
+    /// A 19-bit up direction ([`direction`]) and an 8-bit angle.
+    Code19(Option<u32>, u32),
+    /// A 30-bit up direction ([`direction30`]) and a 30-bit angle.
+    Code30(Option<u32>, u32),
+    /// A change against the reader's baseline.
+    Delta,
+}
+
+impl Orientation {
+    /// The forward unit vector, engine axes, as the game builds it
+    /// (`1406d8678`): a reference perpendicular to up (`up x +x` when up is
+    /// nearer +y than +x, else `+y x up`) turned about up by the angle. An
+    /// n-bit angle is `-pi + (q + 0.5) * 2 pi / 2^n` (the quantizer
+    /// `1406d84b4`; the 8-bit one inline, `140c5f9c8`). None for a delta.
+    pub fn forward(&self) -> Option<[f64; 3]> {
+        let angle = |q: u32, bits: u32| -PI + (q as f64 + 0.5) * TAU / (1u64 << bits) as f64;
+        let (up, a) = match *self {
+            Orientation::Raw(forward, _) => return Some(forward),
+            Orientation::Code19(up, q) => (up.map_or([0.0, 0.0, 1.0], direction), angle(q, 8)),
+            Orientation::Code30(up, q) => (up.map_or([0.0, 0.0, 1.0], direction30), angle(q, 30)),
+            Orientation::Delta => return None,
+        };
+        let cross = |a: [f64; 3], b: [f64; 3]| [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+        let r = if up[0].abs() < up[1].abs() { cross(up, [1.0, 0.0, 0.0]) } else { cross([0.0, 1.0, 0.0], up) };
+        let l = (r[0] * r[0] + r[1] * r[1] + r[2] * r[2]).sqrt();
+        let r = if l > 1e-6 { [r[0] / l, r[1] / l, r[2] / l] } else { r };
+        // Rodrigues: r turned by `a` about up.
+        let (s, c) = a.sin_cos();
+        let along = (r[0] * up[0] + r[1] * up[1] + r[2] * up[2]) * (1.0 - c);
+        let u = cross(up, r);
+        Some([0, 1, 2].map(|k| r[k] * c + u[k] * s + up[k] * along))
+    }
+}
+
 /// A velocity block.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Velocity {
@@ -696,6 +753,27 @@ pub struct Velocity {
     /// The 19-bit direction code (a cube-map unit vector: `direction`)
     /// of the usual form; None for zero velocity and for the raw-float form.
     pub direction: Option<u32>,
+}
+
+/// A unit's damage report in its object-dead-state component, as the
+/// writer (`143203460`) sends it: the damage that killed it and who dealt it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DamageReport {
+    /// The damage effect's tag.
+    pub tag: Option<u32>,
+    /// The report's 8-bit flags.
+    pub flags: u32,
+    /// `absolute-participant-index`: the unit's own participant.
+    pub participant: Option<u32>,
+    /// `killer-absolute-participant-index`: the participant who killed it.
+    pub killer: Option<u32>,
+    /// The two fields after the participants: one of 10 values in 4 bits,
+    /// and 3 bits. What they mean isn't traced.
+    pub kind: (u32, u32),
+    /// The optional 32-bit id after them.
+    pub source: Option<u32>,
+    /// The last optional 32-bit id.
+    pub last: Option<u32>,
 }
 
 /// What the known components of one update carry. Raw codes are kept next
@@ -708,6 +786,8 @@ pub struct Fields {
     /// N-bit codes; absolute positions only.
     pub position: Option<(u32, [u32; 3])>,
     pub velocity: Option<Velocity>,
+    /// The dynamic-precision orientation block (vehicles').
+    pub orientation: Option<Orientation>,
     /// Body vitality, -1 to 1 (health fraction; 0 or less is dead).
     pub health: Option<f64>,
     /// Shield vitality, 0 to 4 (fraction of the base shield; above 1 an overshield),
@@ -753,15 +833,18 @@ pub struct Fields {
     /// compares, `1431aef58`), when parent state is listed: Some(Some(seat))
     /// seated, Some(None) not.
     pub seat: Option<Option<u32>>,
-    /// A unit's weapon slots' state, by slot as `weapons` (the `n`th row of
-    /// each of weapon-state-ammo, -rounds-inventory and -overheated): the
-    /// rounds loaded (0 when the reader gets none) and a 0 to 1 fraction the
-    /// reader takes for some weapons,
+    /// Object dead state: whether the object is dead, and a unit's damage
+    /// report.
+    pub dead: Option<(bool, Option<DamageReport>)>,
+    /// A unit's weapon slots' rounds loaded, by slot as `weapons` (the `n`th
+    /// row of weapon-state-ammo): the rounds (0 when the reader gets none)
+    /// and a 0 to 1 fraction the reader takes for some weapons.
     pub loaded: [Option<(u32, Option<f64>)>; 4],
-    /// the rounds in reserve,
+    /// The slots' rounds in reserve (weapon-state-rounds-inventory).
     pub reserve: [Option<u32>; 4],
-    /// and the heat, 0 to 1, with the two flags after it (bits 1 and 2 of
-    /// the slot's flags byte), the first in the high bit.
+    /// The slots' heat, 0 to 1 (weapon-state-overheated), with the two flags
+    /// after it (bits 1 and 2 of the slot's flags byte), the first in the
+    /// high bit.
     pub heat: [Option<(f64, u32)>; 4],
     /// unit-grenade-counts: the count of each grenade type, in the order of
     /// the throws' 3-bit types less one (frag, plasma, dynamo, spike).
@@ -820,7 +903,7 @@ pub struct ControlMessage {
     pub throttle: Option<[u32; 2]>,
     /// The unit block's first field: which of its parts follow.
     pub state: Option<u32>,
-    /// A kind-1 message's body.
+    /// Where a kind-1 message's body starts.
     pub command_at: Option<i64>,
     /// The control block's raw fields, for naming: `[a, value]` (2 bits),
     /// two optional floats, an optional 5-bit value.
@@ -2207,8 +2290,8 @@ impl Reader<'_> {
             MatchflowFocus => {
                 self.skip(6 + 4);
             }
-            // a count, a mask of its items and 32 bits; each
-            // item in the mask `[none:1]` else a player, and a flag.
+            // Radial visibility: a count, a mask of its items and 32 bits;
+            // each item in the mask `[none:1]` else a player, and a flag.
             RadialVisibility => {
                 let count = self.bits(32);
                 let mask = self.bits(32);
@@ -2230,8 +2313,8 @@ impl Reader<'_> {
                     self.skip(m.count_ones() * (32 + 3));
                 }
             }
-            // `[empty:1]`, else a 5-bit variant and, unless it is
-            // 0, a Bond CompactBinary v2 struct, which opens with its length.
+            // `[empty:1]`, else a 5-bit variant and, unless it is 0, a Bond
+            // Compact Binary v2 struct, which opens with its length.
             MultiplayerProperties => {
                 if !self.flag() && self.bits(5) != 0 {
                     // A varint of at most five bytes: 35 bits.
@@ -2277,18 +2360,22 @@ impl Reader<'_> {
                     self.skip(3);
                 }
             }
-            // `[dead:1]`, then for units a damage report: who and how (ids,
-            // enums, a 10-bit direction, the place, two 5-bit amounts).
+            // `[dead:1]`, then for units a damage report (`143203460`): the
+            // damage tag, flags, the unit's and its killer's participants,
+            // two small enums, an optional source, a 10-bit direction, the
+            // place, two 5-bit amounts and another id.
             DeadState => {
-                self.skip(1);
+                let dead = self.flag();
+                let mut report = None;
                 if self.object_type == 0x23 || self.object_type == 0x28 {
-                    self.opt(32);
+                    let tag = self.opt(32);
                     let flags = self.bits(8);
-                    self.unless(5);
-                    self.unless(5);
-                    self.skip(4 + 3);
+                    let participant = self.unless(5);
+                    let killer = self.unless(5);
+                    let kind = (self.bits(4), self.bits(3));
+                    let mut source = None;
                     if self.flag() {
-                        self.opt(32);
+                        source = self.opt(32);
                         self.skip(3);
                         self.unless(6);
                     }
@@ -2299,11 +2386,13 @@ impl Reader<'_> {
                         self.skip(2 + 3 * 14);
                     }
                     self.skip(5 + 5);
-                    self.opt(32);
+                    let last = self.opt(32);
+                    report = Some(DamageReport { tag, flags, participant, killer, kind, source, last });
                 }
                 if self.object_type == 0x23 {
                     self.skip(1);
                 }
+                f.dead = Some((dead, report));
             }
             // `[unit:1]`, else a 15-bit scale and `[animated:1]` (a 15-bit
             // target, a 12-bit time and a 5-bit curve).
@@ -2614,7 +2703,7 @@ impl Reader<'_> {
                 }
             },
             // A list of up to 15 actions over a 96-bit mask: each a 7-bit
-            // type and a 5-bit variant (0-5) with its body; then a 2-bit
+            // type and a 5-bit variant (0-25) with its body; then a 2-bit
             // sub-state for each of the mask's first 73 bits that is set;
             // then 96 bits.
             BipedAction => {
@@ -2630,8 +2719,8 @@ impl Reader<'_> {
                 }
                 self.skip(96);
             }
-            // a 3-bit mask, then 7 bits for each ability it names
-            // (the rest stay 0x7f).
+            // Ability energy: a 3-bit mask, then 7 bits for each ability it
+            // names (the rest stay 0x7f).
             AbilityEnergy => {
                 let mask = self.bits(3);
                 self.skip(7 * mask.count_ones());
@@ -2739,18 +2828,18 @@ impl Reader<'_> {
                 // Raw and high together read the high form (`140c5f7ec`).
                 if raw && !high {
                     // Forward and up, three float32 each.
-                    self.skip(192);
+                    let v: Vec<f64> = (0..6).map(|_| f32::from_le_bytes(self.bits(32).to_be_bytes()) as f64).collect();
+                    f.orientation = Some(Orientation::Raw([v[0], v[1], v[2]], [v[3], v[4], v[5]]));
                     return Some(());
                 }
                 if high {
                     // A 30-bit direction (unless default) and a 30-bit roll.
-                    if !self.flag() {
-                        self.skip(30);
-                    }
-                    self.skip(30);
+                    let dir = (!self.flag()).then(|| self.bits(30));
+                    f.orientation = Some(Orientation::Code30(dir, self.bits(30)));
                     return Some(());
                 }
                 if baseline {
+                    f.orientation = Some(Orientation::Delta);
                     if !self.flag() {
                         if self.flag() {
                             self.skip(8);
@@ -2764,10 +2853,8 @@ impl Reader<'_> {
                         self.skip(8);
                     }
                 } else {
-                    if !self.flag() {
-                        self.skip(19);
-                    }
-                    self.skip(8);
+                    let dir = (!self.flag()).then(|| self.bits(19));
+                    f.orientation = Some(Orientation::Code19(dir, self.bits(8)));
                 }
             }
             AngularVelocityDynamic => {
@@ -2813,10 +2900,11 @@ fn for_each_biped_update(film: &Film, mut f: impl FnMut(&Shifted<'_>, i64, i32, 
     });
 }
 
-/// Z's width when the level catalogue doesn't give it: the width at which
-/// the most biped updates parse to an end that the next update follows
-/// [`SEPARATOR`] bits later, over the first 3,000 updates that parse to the
-/// end. None unless one width wins at least half of them.
+/// Z's width when the level catalogue doesn't give it.
+///
+/// It is the width at which the most biped updates parse to an end that the
+/// next update follows [`SEPARATOR`] bits later, over the first 3,000 updates
+/// that parse to the end. None unless one width wins at least half of them.
 pub fn detect_z_width(film: &Film, c1: u32, c2: u32) -> Option<u32> {
     let table = Table::read(&film.chunks[0], "biped-")?;
     const CANDS: std::ops::RangeInclusive<u32> = 8..=24;

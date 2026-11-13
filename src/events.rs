@@ -7,11 +7,10 @@
 //! ```
 //!
 //! The handle widths depend on the handle's kind, which the event type fixes
-//! per slot ([`handle_kinds`]). The bodies of 47 types are known, read the
-//! way the game's readers read them; a type whose body isn't known ends the
-//! view's walk ([`Stop::EventBody`]). The decoded fields of two types are
-//! kept: weapon fire (36) and player killed (85). Every other known body is
-//! read past.
+//! per slot ([`handle_kinds`]). The bodies `body` knows are read the way the
+//! game's readers read them; a type whose body isn't known ends the view's
+//! walk ([`Stop::EventBody`]). The fields of the types [`Body`] names are
+//! kept; every other known body is read past.
 //!
 //! The widths here are the game's writers' constants: the melee kind is 3
 //! bits, a direction 19 (as in ai_jump), the object-impact floats 7.
@@ -71,11 +70,12 @@ impl From<&crate::components::Params> for Layout {
     }
 }
 
-/// An object handle: an entity index and its 2-bit generation. A unit
-/// handle (kind 1 with its unit bit set, kinds 4 and 6) indexes the unit
-/// range, entities 512-1023 (bipeds, then vehicles). A kind-0 handle keeps
-/// the entity itself (its index read from `OBJECT_BASE`); kinds 2, 3 and
-/// 5 keep their 8-bit index within bipeds, vehicles and class 4.
+/// An object handle: an entity index and its 2-bit generation.
+///
+/// A unit handle (kind 1 with its unit bit set, kinds 4 and 6) indexes the unit
+/// range, entities 512-1023 (bipeds, then vehicles). A kind-0 handle keeps the
+/// entity itself (its index read from `OBJECT_BASE`); kinds 2, 3 and 5 keep
+/// their 8-bit index within bipeds, vehicles and class 4.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Handle {
     pub index: u32,
@@ -126,9 +126,11 @@ pub struct Fire {
     pub variant: u32,
 }
 
-/// damage_aftermath fields as read: the damage tag, the attacker's player
-/// index, a 19-bit direction, an optional 31-bit value and three small fields
-/// (5, 5 and 6 bits), the first a scale that is 15 on a full direct hit.
+/// `damage_aftermath`'s fields as read.
+///
+/// The damage tag, the attacker's player index, a 19-bit direction, an optional
+/// 31-bit value and three small fields (5, 5 and 6 bits), the first a scale
+/// that is 15 on a full direct hit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Damage {
     pub tag: Option<u32>,
@@ -138,10 +140,11 @@ pub struct Damage {
     pub a: [u32; 3],
 }
 
-/// `PlayerKilledEvent`, in stream order: `a` the victim, `b` the killer, `x`
-/// the killer's percent of the damage, `flag` the death was the victim's own,
-/// `c` the assistant, `y` the assistant's percent (filler when there's no
-/// assistant).
+/// `PlayerKilledEvent`'s fields, in stream order.
+///
+/// `a` the victim, `b` the killer, `x` the killer's percent of the damage,
+/// `flag` the death was the victim's own, `c` the assistant, `y` the
+/// assistant's percent (filler when there's no assistant).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Killed {
     pub a: Option<u32>,
@@ -173,8 +176,9 @@ pub enum Param {
     Word(u32, u32),
 }
 
-/// PlayerGameEventSmall (82): a 32-bit id and 8 bits, up to 7 keyed values,
-/// an optional 32-bit id with up to 7 parameters, and a last 32 bits.
+/// PlayerGameEventSmall (82): a 32-bit id and an 8-bit sequence number, up
+/// to 7 keyed values, an optional 32-bit id with up to 7 parameters, and a
+/// last 32 bits.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GameEvent {
     pub id: u32,
@@ -182,6 +186,36 @@ pub struct GameEvent {
     pub values: [Option<(u32, Value)>; 7],
     pub extra: Option<(u32, [Option<Param>; 7])>,
     pub last: u32,
+}
+
+/// Game events the game sent again.
+///
+/// Each one carries an 8-bit sequence number, one more than the event before; a
+/// film can record an event a second time 10 to 25 ticks later, sequence number
+/// and all. A repeat of one of the last 128 events within `RESEND_FRAMES` is
+/// that.
+#[derive(Debug, Default)]
+pub struct Resends {
+    recent: std::collections::VecDeque<(usize, GameEvent)>,
+}
+
+impl Resends {
+    const RESEND_FRAMES: usize = 60;
+
+    /// Whether `g`, read in `frame`, is new rather than sent again.
+    pub fn fresh(&mut self, frame: usize, g: &GameEvent) -> bool {
+        while self.recent.front().is_some_and(|x| x.0 + Self::RESEND_FRAMES < frame) {
+            self.recent.pop_front();
+        }
+        if self.recent.iter().any(|x| x.1 == *g) {
+            return false;
+        }
+        if self.recent.len() == 128 {
+            self.recent.pop_front();
+        }
+        self.recent.push_back((frame, *g));
+        true
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -271,7 +305,7 @@ pub enum Body {
         tags: [Option<u32>; 2],
     },
     /// player_set_respawn_target_transform (64): the player's slot, the
-    /// place and three floats (their bits; 32::from_bits).
+    /// place and three floats (their bits; f32::from_bits).
     RespawnTarget {
         player: u32,
         at: Option<[u32; 3]>,
@@ -525,8 +559,9 @@ fn body(r: &mut Bits<'_>, t: u32, widths: Layout) -> Option<Body> {
             let n = r.bits(10);
             r.bits(n);
         }
-        // unit_zoom, controlToggleResponse
+        // unit_zoom
         21 => return Some(Body::Zoom { level: r.bits(2) }),
+        // controlToggleResponse
         27 => {
             r.bits(2);
         }

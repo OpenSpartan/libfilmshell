@@ -2,8 +2,9 @@
 
 use std::fmt;
 
-/// An id string that doesn't parse: [`TagId`](crate::TagId), [`Xuid`](crate::Xuid)
-/// or [`Guid`](crate::Guid) from text.
+/// An id string that doesn't parse: [`TagId`](crate::TagId),
+/// [`StringId`](crate::StringId), [`Xuid`](crate::Xuid) or
+/// [`Guid`](crate::Guid) from text.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParseIdError {
     pub(crate) kind: &'static str,

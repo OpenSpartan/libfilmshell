@@ -1,6 +1,6 @@
-//! Facts from chunk 0's header, after the component registry: the game build that
-//! recorded the film, the film's start on the wall clock and the map
-//! variant's ids.
+//! Facts from chunk 0's header, after the component registry: the game
+//! build that recorded the film, the film's start on the wall clock and the
+//! map variant's ids.
 //!
 //! ```text
 //! 0x0       [4] [4]  then the registry (0xcb200 bytes)

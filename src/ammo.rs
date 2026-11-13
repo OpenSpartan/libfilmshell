@@ -94,7 +94,7 @@ pub fn reader<'a>(paths: &'a [PlayerPath], out: &'a mut Vec<PlayerAmmo>) -> impl
         for op in &p.ops {
             let fields: Option<&Fields> = match &op.kind {
                 OpKind::Update { fields, .. } => Some(fields),
-                OpKind::Create { .. } => op.init.as_ref(),
+                OpKind::Create { .. } => op.init.as_deref(),
                 OpKind::Delete => {
                     equipment.remove(&op.index);
                     None
@@ -172,7 +172,7 @@ pub fn reader<'a>(paths: &'a [PlayerPath], out: &'a mut Vec<PlayerAmmo>) -> impl
                     if e.1 < 0 {
                         continue;
                     }
-                    // The recharge counts down a tick a tick: its start is
+                    // The recharge counts down a tick at a time: its start is
                     // kept, and the steps that follow it are left out.
                     let counting = last_equipment.get(&who).is_some_and(|&(f, energy, ticks): &(i64, i32, i32)| {
                         let (spent, frames) = (i64::from(ticks - e.2), frame - f);

@@ -1,38 +1,43 @@
 //! Reads Halo Infinite theater films.
 //!
 //! A film is a set of chunks: a header chunk, replay chunks that record the
-//! match tick by tick, and a HighlightEvents chunk with the theater
-//! timeline. [`Film::from_chunks`] reads them into a data model: who played,
-//! every life with its positions and vitals, vehicles and what stood on the
-//! map, one stream of events (kills, shots, hits, pickups, medals, voice
-//! lines, objectives), the scoreboard, and each player's inputs and
-//! ammunition.
+//! match tick by tick, and a highlights chunk (the game's `HighlightEvents`)
+//! with the theater timeline. [`Film::from_chunks`] reads them into a data
+//! model: who played, every life with its positions and vitals, vehicles and
+//! what stood on the map, one stream of events (kills, shots, hits, pickups,
+//! medals, voice lines, objectives), the scoreboard, and each player's inputs
+//! and ammunition.
 //!
-//! The library does no I/O. Hand it the chunks' bytes, compressed as
-//! downloaded or already inflated, from wherever they come from: with the
-//! manifest's chunk types ([`ChunkKind::from_manifest`]), or, for chunks
-//! saved as `filmChunk{N}` files, with [`Chunk::from_file`], which takes the
-//! index from the file name and the kind from the bytes.
+//! Hand the library the chunks' bytes, compressed as downloaded or already
+//! inflated, from wherever they come from: with the manifest's chunk types
+//! ([`Chunk::from_manifest`]), or, for chunks saved as `filmChunk{N}`
+//! files, with [`Chunk::from_file`], which takes the index from the file name
+//! and the kind from the bytes. [`Film::from_folder`] and
+//! [`Chunk::read_folder`] read a folder of such files; they are the library's
+//! only I/O.
 //!
 //! # Quick start
 //!
 //! ```no_run
-//! use filmshell::{Chunk, ChunkKind, Event, Film};
+//! use filmshell::{Chunk, Film};
 //!
 //! # struct Entry { index: u32, chunk_type: u32, bytes: Vec<u8> }
 //! # let manifest: Vec<Entry> = Vec::new();
 //! // One `Chunk` per manifest entry: its index, its type and its bytes.
-//! let chunks = manifest.iter().map(|e| {
-//!     let kind = ChunkKind::from_manifest(e.chunk_type).expect("a known chunk type");
-//!     Chunk::new(e.index, kind, e.bytes.as_slice())
-//! });
+//! let chunks = manifest
+//!     .iter()
+//!     .map(|e| Chunk::from_manifest(e.index, e.chunk_type, e.bytes.as_slice()))
+//!     .collect::<Result<Vec<_>, _>>()?;
 //! let film = Film::from_chunks(chunks)?;
 //!
-//! let name = |id| film.player(id).and_then(|p| p.name()).unwrap_or("someone");
-//! for e in film.events() {
-//!     if let Event::Kill(kill) = &e.event {
-//!         let killer = kill.killer.map_or("the environment", name);
-//!         println!("{} {killer} killed {}", e.tick, name(kill.victim));
+//! let name = |id| film.player_name(id).unwrap_or("someone");
+//! // Leaves out the deaths the scoreboard doesn't count: those after a round
+//! // is decided, among them the deaths the game deals everyone alive when
+//! // the match ends.
+//! for (tick, kill) in film.kills().filter(|(_, k)| k.is_scored()) {
+//!     match kill.credited_killer() {
+//!         Some(killer) => println!("{tick} {} killed {}", name(killer), name(kill.victim)),
+//!         None => println!("{tick} {} died", name(kill.victim)),
 //!     }
 //! }
 //! # Ok::<(), filmshell::Error>(())
@@ -41,12 +46,38 @@
 //! # Playback
 //!
 //! Everything is read up front, so playback can seek to any tick: at any
-//! [`Tick`], [`Film::samples_at`] gives every living player's sample (where
-//! they were, their aim, health and shield, the vehicle they rode),
-//! [`Film::weapon_at`] what they held, [`Film::vehicle_at`] the track of the
-//! vehicle a sample or an exit names, and [`Film::events_between`] what
-//! happened in a stretch of time.
-//! [`Clock`] maps the film's frames to ticks.
+//! [`Tick`], [`Film::players_at`] gives every living player with their
+//! position and aim at that tick (between samples), their last sample (health,
+//! shield, speed), the weapon in their hands, the objective they carry and the
+//! vehicle they ride, and [`Film::events_in`] what happened in a stretch of
+//! time. [`Film::life_at`], [`Film::weapon_at`] and [`Film::vehicle_at`] look
+//! up one thing. The rest of the map at a tick is [`Film::vehicles_at`] (with
+//! [`VehicleTrack::heading_at`] for which way each faces),
+//! [`Film::grenades_at`], [`Film::projectiles_at`],
+//! [`Film::ground_weapons_at`] and [`Film::world_objects_at`], with
+//! [`Zone::state_at`] for a zone mode. [`Clock`] maps the film's frames to
+//! ticks.
+//!
+//! A viewer's loop, one tick at a time:
+//!
+//! ```no_run
+//! # fn run(film: &filmshell::Film) {
+//! use filmshell::Tick;
+//!
+//! let mut from = Tick(0);
+//! let mut now = Tick(0);
+//! while now <= film.clock().end() {
+//!     for p in film.players_at(now) {
+//!         // Where the player was and aimed this tick, between samples.
+//!         let (_at, _aim) = (p.position, p.yaw);
+//!     }
+//!     // What happened since the last frame drawn, this tick included.
+//!     for _event in film.events_in(from..=now) {}
+//!     from = now + 1;
+//!     now += 1;
+//! }
+//! # }
+//! ```
 //!
 //! # Layout
 //!
@@ -54,40 +85,105 @@
 //!   [`Hints`]) and the model: [`Player`], [`Life`], [`Event`],
 //!   [`Scoreboard`] and the rest.
 //! - [`game`] is what the library knows about the game itself: weapons,
-//!   vehicles, medals, damage effects and levels, as Rust tables.
-//! - [`format`](mod@format) exposes the raw layers: chunks, packets, frames, the event
-//!   and entity views of a tick packet, the seek snapshots, a bit reader.
+//!   vehicles and other objects, damage effects, sandbox numbers, medals,
+//!   levels, mode options, the modes' event trees and the English text of
+//!   the game's text keys, as Rust tables.
+//! - `format`, with the `raw` feature, exposes the raw layers: chunks,
+//!   packets, frames, the event and entity views of a tick packet, the seek
+//!   snapshots, a bit reader. It follows the format as far as it is
+//!   understood, outside the crate's semantic versioning.
 //! - [`analysis`] derives estimates the film doesn't state directly:
 //!   accuracy, weapon numbers, spawn factors.
 //!
 //! # Time and space
 //!
-//! Times are [`Tick`]s, 1/60 s of game time from the film's first frame.
-//! Positions are world units ([`Position`]), ten to the game's engine unit.
-//! The model and [`analysis`] use world units; the [`game`] tables keep the
-//! engine units of the game's files. A film doesn't carry the box its
-//! positions are quantized over; the library knows it for the levels in its
-//! catalogue, and otherwise fits it to the spawn pads given in the
-//! [`Hints`], or leaves positions unconverted ([`Sample::raw`]).
+//! Times are [`Tick`]s, 1/60 s of game time from the film's first frame. The
+//! match starts later (16 s to 2 minutes on the test films), when its clock
+//! first runs ([`Film::match_start`]), and [`Scoreboard::clock_at`] is the
+//! clock the game shows. A ride or a vehicle's track gives its first and last
+//! tick, both inclusive; a life gives its first sample and, when it ends
+//! before the film, its last tick ([`Life::until`]); something that ends when
+//! it is gone (an object off the map, a weapon picked up) gives that tick, and
+//! says so.
+//!
+//! Positions are in world units ([`Position`]): a world unit is a foot, and
+//! the game's files use engine units of ten world units. The model and
+//! [`analysis`] use world units; the [`game`] tables keep engine units. A film
+//! doesn't carry the box its positions are quantized over: the library knows
+//! it for the levels in its catalogue or from [`Hints::level_bounds`];
+//! otherwise it fits one (to [`Hints::spawn_pads`] where given) or leaves
+//! positions unconverted ([`Sample::raw`]). Directions, a player's aim
+//! ([`Sample::yaw`]) and a vehicle's heading ([`VehicleTrack::heading_at`]),
+//! are radians in world axes, -π to π from +x toward +y.
+//!
+//! # Checked against the match stats
+//!
+//! A film doesn't carry the stats the Halo services keep for its match (the
+//! match stats), and the library doesn't read them; its tests do. On 95
+//! films (film version 41: Slayer, Juggernaut, Headhunter, CTF, Big Team
+//! Battle, King of the Hill, Strongholds, Land Grab, Oddball, Stockpile,
+//! Infection, Firefight, the minigames, Attrition and Elimination,
+//! Extraction, Escalation, Grifball) they check the level, every player's
+//! kills of enemy players (765 players) and deaths (786), and every team's
+//! score (136 teams) against the match stats, and all agree, bots included.
+//! The game sends no kill event or highlights record for a bot's death, so
+//! those deaths are inferred from the rest of the film ([`Kill::inferred`]).
+//! For one player the comparison stops partway:
+//! the game cleared their scoreboard row mid-match (a reconnect), and the
+//! match stats count only what came before; the film goes on to the end.
+//!
+//! They also check, per player:
+//!
+//! - Capture the Flag's grabs, steals, captures, returns, carriers killed
+//!   and capture assists ([`FlagEvent`]), and Big Team Stockpile's power
+//!   seeds ([`SeedEvent`]), all equal.
+//! - Hijacks ([`Hijack`]) and betrayals ([`Kill::betrayal`]) equal.
+//! - Time carrying the flag, the skull or a power seed
+//!   ([`PlayerAt::carrying`]), counted while a round is in play and each
+//!   carry truncated to tenths of a second, within 0.15 s for 146 of 155
+//!   players.
+//! - The personal score of the mode scripts' events
+//!   ([`Film::game_response`]) equal on every Capture the Flag, Oddball, King
+//!   of the Hill, Stockpile, Attrition and Extraction film, and for 93% of
+//!   arena Slayer players.
+//!
+//! Vehicle destroys ([`VehicleDestroyed`]) are the mode scripts' scored ones,
+//! which the match stats don't count the same way: the Halo services count
+//! theirs from data the film doesn't carry.
 //!
 //! # Features
 //!
-//! - `serde`: derives `Serialize` and `Deserialize` on the types at the
-//!   crate root and the `game` enums. An [`Event`] is an object with a
-//!   `type` (`{"type": "kill", "victim": 3, ...}`), enum variants are
-//!   snake_case, [`TagId`]s, [`Xuid`]s and [`Guid`]s are strings, and empty
-//!   `Option` and `Vec` fields are left out. With `serde_json`, turn on its
-//!   `float_roundtrip` feature for floats to read back exactly.
-//! - `research`: makes the internal readers public under a hidden
+//! - `serde`: derives `Serialize` and `Deserialize` on the model's data (the
+//!   players, lives, events, scoreboard and the rest of what the accessors
+//!   return, except [`PlayerAt`], [`Clock`], [`Hitch`] and the
+//!   `format` types; [`Rule`] only serializes), the
+//!   [`analysis`] results ([`analysis::AccuracyTicks`] only serializes), the
+//!   inputs [`ChunkKind`] and
+//!   [`Hints`] with its parts, and the `game` enums and value types such as
+//!   [`game::Bounds`]. [`Film`] only serializes: as its model, each part under
+//!   its accessor's name. [`Chunk`], [`Error`] and the `game` catalogues'
+//!   entries ([`game::Level`], [`game::DamageEffect`] and the like) have
+//!   neither. A [`TimedEvent`] is `{"tick": 4279, "event": {"type": "kill",
+//!   "victim": 3, ...}}`, enum variants are snake_case,
+//!   [`TagId`]s, [`StringId`]s, [`Xuid`]s and [`Guid`]s are strings, a
+//!   [`PlayerMask`] is a list of player ids, and empty `Option` and `Vec`
+//!   fields are left out. With `serde_json`, turn on its `float_roundtrip`
+//!   feature for floats to read back exactly.
+//! - `raw`: the raw layers, `filmshell::format` and `Film::raw`, outside the
+//!   crate's semantic versioning. Without it a film keeps no copy of its
+//!   chunks.
+//! - `research`: turns on `raw`, and makes the internal readers public under a hidden
 //!   `research` module, for studying the format; they are outside the API's
 //!   stability guarantees.
 
+#![doc(html_logo_url = "https://raw.githubusercontent.com/OpenSpartan/libfilmshell/main/assets/icon.png")]
 #![warn(clippy::print_stdout, clippy::print_stderr, clippy::dbg_macro)]
 
 pub mod analysis;
 mod chunk;
 mod error;
 mod film;
+#[cfg(feature = "raw")]
 pub mod format;
 pub mod game;
 mod hints;
@@ -97,10 +193,10 @@ mod text;
 
 pub use chunk::{Chunk, ChunkKind, MAX_CHUNK_BYTES, MAX_FILM_BYTES};
 pub use error::Error;
-pub use film::Film;
-pub use hints::{Hints, LevelBounds, SpawnPad};
+pub use film::{Film, PlayerAt};
+pub use hints::{Hints, LevelBounds, SpawnKind, SpawnPad};
 pub use model::*;
-pub use tag::TagId;
+pub use tag::{StringId, TagId};
 pub use text::ParseIdError;
 
 // The README's code compiles as a doc test.

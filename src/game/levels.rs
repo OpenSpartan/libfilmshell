@@ -3,7 +3,7 @@
 //! A film stores a position as an N-bit integer per axis over a box it never
 //! carries: the bounds of a structure BSP of the level. With the box a
 //! position converts exactly: `min + (q + 0.5) * (max - min) / 2^N` in
-//! engine units, and world units are ten engine units.
+//! engine units; one engine unit is ten world units.
 
 use super::levels_data::{BUILD, LEVELS};
 use crate::{Guid, TagId};
@@ -24,7 +24,12 @@ pub struct LevelBox {
 }
 
 impl LevelBox {
-    /// The engine-unit coordinate of field value `q` on `axis`.
+    /// The engine-unit coordinate of field value `q` on `axis`: 0 for x, 1
+    /// for y, 2 for z.
+    ///
+    /// # Panics
+    ///
+    /// When `axis` is over 2.
     pub fn engine(&self, axis: usize, q: u32) -> f64 {
         let (min, max) = (self.min[axis] as f64, self.max[axis] as f64);
         min + (q as f64 + 0.5) * (max - min) / 2f64.powi(self.widths[axis] as i32)
@@ -37,7 +42,7 @@ impl LevelBox {
 pub struct Level {
     /// The level's `levl` tag id, which the map variant names.
     pub id: TagId,
-    /// The level's file name ("ctf_aquarius", "fo11_blank").
+    /// The level's file name (`"ctf_aquarius"`, `"fo11_blank"`).
     pub name: &'static str,
     /// The level's English name, for the levels the game's map info names
     /// ("Aquarius", "Fragmentation"). Most multiplayer levels' map info gives
@@ -58,6 +63,12 @@ pub struct Level {
 }
 
 impl Level {
+    /// The name to show: the English name where the game gives one, else
+    /// the file name.
+    pub fn title(&self) -> &'static str {
+        self.display_name.unwrap_or(self.name)
+    }
+
     /// The box with index `index`.
     pub fn level_box(&self, index: u32) -> Option<&LevelBox> {
         if index == self.play.index {

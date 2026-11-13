@@ -1,49 +1,67 @@
 use crate::{Position, TagId, TeamId};
 
-/// A spawn point of the map variant, which the film doesn't carry. Spawn
-/// points let the library fit coordinates on a level it has no box for, and
-/// explain respawns ([`analysis::spawn_factors`](crate::analysis::spawn_factors)).
+/// A spawn point of the map variant, which the film doesn't carry.
+///
+/// Spawn points let the library fit coordinates on a level it has no box for,
+/// and explain respawns
+/// ([`analysis::spawn_factors`](crate::analysis::spawn_factors)).
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct SpawnPad {
     /// Where it stands, in world units.
     pub position: Position,
-    /// A respawn point; else an initial spawn point.
-    pub respawn: bool,
+    /// Which spawns it serves.
+    pub kind: SpawnKind,
     /// The team it is reserved for.
     pub team: Option<TeamId>,
 }
 
+/// Which spawns a [`SpawnPad`] serves.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+pub enum SpawnKind {
+    /// The match's first spawns.
+    Initial,
+    /// Spawns after a death.
+    Respawn,
+}
+
 impl SpawnPad {
-    /// A spawn point at `position`: a respawn point, else an initial one.
-    pub fn new(position: Position, respawn: bool) -> SpawnPad {
-        SpawnPad { position, respawn, team: None }
+    /// A spawn point of `kind` at `position`.
+    pub fn new(position: Position, kind: SpawnKind) -> SpawnPad {
+        SpawnPad { position, kind, team: None }
     }
 
     /// An initial spawn point at `position`.
     pub fn initial(position: Position) -> SpawnPad {
-        SpawnPad::new(position, false)
+        SpawnPad::new(position, SpawnKind::Initial)
     }
 
     /// A respawn point at `position`.
     pub fn respawn(position: Position) -> SpawnPad {
-        SpawnPad::new(position, true)
+        SpawnPad::new(position, SpawnKind::Respawn)
     }
 
     /// The same point reserved for `team`.
+    #[must_use]
     pub fn for_team(mut self, team: TeamId) -> SpawnPad {
         self.team = Some(team);
         self
     }
 }
 
-/// A level's play-space box for a level not in
-/// [`game::levels`](crate::game::levels), as the game's files hold it: in
-/// engine units, `[x, y, z]` with `z` up. World positions are ten times
-/// engine units with the horizontal axes turned: world x is `-10 * y`,
-/// world y is `10 * x`. The widths of the film's position fields follow
-/// from the box.
+/// A level's play-space box, for a level not in
+/// [`game::levels`](crate::game::levels).
+///
+/// The box is as the game's files hold it: in engine units, `[x, y, z]` with
+/// `z` up. World positions are ten times engine units with the horizontal axes
+/// turned: world x is `-10 * y`, world y is `10 * x`, world z is `10 * z`. The
+/// widths of the film's position fields follow from the box.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LevelBounds {
     /// The low corner.
     pub min: [f32; 3],
@@ -70,6 +88,7 @@ pub struct LevelBounds {
 /// # Ok::<(), filmshell::Error>(())
 /// ```
 #[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Hints {
     pub(crate) level: Option<TagId>,
     pub(crate) level_bounds: Option<LevelBounds>,
@@ -84,14 +103,20 @@ impl Hints {
 
     /// The `levl` tag the map variant is built on, in place of the one the
     /// film names.
+    #[must_use]
     pub fn level(mut self, level: TagId) -> Hints {
         self.level = Some(level);
         self
     }
 
     /// The level's play-space box, in place of the catalogue's. A box whose
-    /// corners aren't finite, or whose low corner isn't below its high one,
-    /// is ignored.
+    /// corners aren't finite, whose low corner isn't below its high one, or
+    /// that spans a million engine units or more is dropped, and clears any
+    /// box given before. A box whose field widths differ from the film's is
+    /// not used:
+    /// [`Film::coordinates`](crate::Film::coordinates) says which fit ran
+    /// instead.
+    #[must_use]
     pub fn level_bounds(mut self, bounds: LevelBounds) -> Hints {
         let ok = (0..3).all(|i| {
             let (lo, hi) = (bounds.min[i], bounds.max[i]);
@@ -101,10 +126,11 @@ impl Hints {
         self
     }
 
-    /// The map variant's spawn points, in an order of the caller's:
+    /// The map variant's spawn points, in any order:
     /// [`SpawnFactor::pad`](crate::analysis::SpawnFactor::pad) indexes them.
     /// Points whose coordinates aren't finite or lie more than a million
     /// world units out are kept in the order but never used.
+    #[must_use]
     pub fn spawn_pads(mut self, pads: impl IntoIterator<Item = SpawnPad>) -> Hints {
         self.spawn_pads = pads.into_iter().collect();
         self

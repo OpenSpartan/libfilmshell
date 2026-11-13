@@ -93,11 +93,12 @@ pub struct Found {
     off: i32,
 }
 
-/// Every object update in the frames of chunks 1.., dispatched as
-/// `f(g, gp, frame, kind, id, off)`. `off` is the bit shift of the data
-/// blocks against a 4-component list: position's c1 is at `read(7 + off)`
-/// (0 for stubs). Returning false stops. The scan runs once per film; later
-/// calls read what it found.
+/// Every object update in the frames of chunks 1.., dispatched as `f(g, gp,
+/// frame, kind, id, off)`.
+///
+/// `off` is the bit shift of the data blocks against a 4-component list:
+/// position's c1 is at `read(7 + off)` (0 for stubs). Returning false stops.
+/// The scan runs once per film; later calls read what it found.
 pub fn for_each_object_update<'a, F>(film: &'a Film, mut f: F)
 where
     F: FnMut(&Shifted<'a>, i64, i64, Kind, i32, i32) -> bool,
@@ -234,7 +235,9 @@ fn seam_scores(film: &Film, cands: &[i32]) -> Vec<Option<f64>> {
 }
 
 /// c2's start bit (7 plus c1's width) by smoothness: the candidate whose
-/// window scores lowest (`seam_scores`).
+/// window scores lowest (`seam_scores`). The library uses
+/// `detect_coord_widths`, which finds this and c2's width in one pass.
+#[cfg(feature = "research")]
 pub fn detect_coord_layout(film: &Film) -> i32 {
     const CANDS: [i32; 8] = [19, 20, 21, 22, 23, 24, 25, 26];
     let mut best = 22;
@@ -257,6 +260,7 @@ const ROUGH_SEAM: f64 = 1000.0;
 /// c2's width. Z follows c2, so c2 ends where a window first turns smooth
 /// again past c2's start; c2 is within a bit of c1's width. Falls back to
 /// c1's width.
+#[cfg(feature = "research")]
 pub fn detect_c2_width(film: &Film, c2_start: i32) -> u32 {
     let n1 = c2_start - 7;
     let cands: Vec<i32> = (n1 - 2..=n1 + 2).map(|w| c2_start + w).collect();
@@ -271,9 +275,40 @@ pub fn detect_c2_width(film: &Film, c2_start: i32) -> u32 {
     n1 as u32
 }
 
+/// `detect_coord_layout` and `detect_c2_width` in one pass over the updates:
+/// every c2 start and every bit c2 can end at, scored together.
+pub fn detect_coord_widths(film: &Film) -> (i32, u32) {
+    const STARTS: std::ops::RangeInclusive<i32> = 19..=26;
+    // c2 ends 2 bits either side of c1's width past its start: 2 s - 9 to 2 s - 5.
+    let ends = 2 * STARTS.start() - 9..=2 * STARTS.end() - 5;
+    let cands: Vec<i32> = STARTS.chain(ends).collect();
+    let scores = seam_scores(film, &cands);
+    let score = |bit: i32| cands.iter().position(|&c| c == bit).and_then(|k| scores[k]);
+    let mut c2_start = 22;
+    let mut best = f64::INFINITY;
+    for s in STARTS {
+        if let Some(v) = score(s).filter(|&v| v < best) {
+            best = v;
+            c2_start = s;
+        }
+    }
+    let n1 = c2_start - 7;
+    for w in n1 - 1..=n1 + 1 {
+        if let (Some(prev), Some(s)) = (score(c2_start + w - 1), score(c2_start + w)) {
+            if prev >= ROUGH_SEAM && s < ROUGH_SEAM {
+                return (c2_start, w as u32);
+            }
+        }
+    }
+    (c2_start, n1 as u32)
+}
+
 /// A coordinate field of `width` bits at payload bit `at`, in 15-bit window
-/// units (field value times 2^(15 - width)): a field wider than 15 bits keeps its
-/// low bits as a fraction, a narrower one reads no bits of the next field.
+/// units.
+///
+/// That is the field's value times 2^(15 - width): a field wider than 15 bits
+/// keeps its low bits as a fraction, a narrower one reads no bits of the next
+/// field.
 #[inline]
 pub fn read_coord(g: &Shifted<'_>, at: i32, width: u32) -> f64 {
     g.read(at, width) as f64 * (2.0f64).powi(15 - width as i32)
@@ -320,7 +355,7 @@ fn drop_chance_segments(v: &mut Vec<RawSample>) {
     v.retain(|_| k.next().unwrap());
 }
 
-/// `c2_start` from `detect_coord_layout`, `c2_width` from `detect_c2_width`;
+/// `c2_start` and `c2_width` from `detect_coord_widths`;
 /// `c1_at`: where c1 starts (`levels::c1_at`; 7 unless the level's box index
 /// is wider than a bit).
 pub fn extract_multiplayer_composite(film: &Film, c1_at: i32, c2_start: i32, c2_width: u32) -> CompositeExtraction {

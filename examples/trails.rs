@@ -1,7 +1,8 @@
-//! Draws every life's path and every kill as an SVG map, coloured by team.
+//! Draws every life's path and every scored kill as an SVG map, coloured by
+//! team.
 //!
 //! ```text
-//! cargo run --release --example trails -- path/to/film > trails.svg
+//! cargo run --release --example trails -- path/to/film > map.svg
 //! ```
 
 mod common;
@@ -12,14 +13,18 @@ use std::fmt::Write;
 const SIZE: f64 = 1000.0;
 const TEAMS: [&str; 4] = ["#3b82f6", "#ef4444", "#f59e0b", "#22c55e"];
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> std::process::ExitCode {
+    common::main(run)
+}
+
+fn run() -> Result<(), Box<dyn std::error::Error>> {
     let dir = std::env::args().nth(1).ok_or("usage: trails <film folder>")?;
-    let film = Film::from_chunks(common::load_folder(dir.as_ref())?)?;
+    let film = Film::from_folder(&dir)?;
     if film.coordinates().is_none() {
         return Err("the film's positions can't be placed on its map".into());
     }
 
-    // World x and y to the SVG's pixels, north up.
+    // World x and y to the SVG's pixels, +y up.
     let all: Vec<Position> = film.lives().iter().flat_map(|l| l.samples.iter().filter_map(|s| s.position)).collect();
     if all.is_empty() {
         return Err("the film has no positions".into());
@@ -55,7 +60,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )?;
         }
     }
-    for (_, kill) in film.kills() {
+    // Leaves out the deaths the scoreboard doesn't count: those after a round
+    // is decided, among them the deaths the game deals everyone alive when the
+    // match ends.
+    for (_, kill) in film.kills().filter(|(_, k)| k.is_scored()) {
         let Some(p) = kill.position else { continue };
         let (x, y) = px(p);
         let team = film.player(kill.victim).and_then(|p| p.team);

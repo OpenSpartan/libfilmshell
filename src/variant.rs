@@ -1,15 +1,14 @@
 //! The game variant as the film carries it: chunk 0 holds it as Bond Compact
-//! Binary at a bit offset. Its strings
-//! are one blob, NUL-separated, 18 languages per string with English first:
-//! the name, the description, score text, then the scoreboard's labels in
-//! statborg slot order.
+//! Binary at a bit offset. Its strings are one blob, NUL-separated, 18
+//! languages per string with English first: the name, the description,
+//! score text, then the scoreboard's labels in slot order.
 
 /// Where the variant's structures start in chunk 0.
 const START: usize = 0xce680;
 /// Entries per string: one per language.
 const LANGUAGES: usize = 18;
-/// The slot after the fixed labels, where a mode's own start. One entry of
-/// another kind ("Alpha") sits before them.
+/// The slot after the fixed labels, where a mode's own labels start. One
+/// entry of another kind ("Alpha") sits before them.
 const MODE_SLOT: usize = 41;
 const ANCHOR: &[u8] = b"Rounds Won\0";
 /// The path that closes the header struct; the settings follow it.
@@ -53,8 +52,6 @@ const RULES: &[(&[u32], &str)] = &[
     (&[1, 10, 1, 8, 12], "randomEquipment"),
     (&[1, 10, 2, 10, 10], "randomVehicles"),
 ];
-/// Flag sets, each element a bit index, named by the mask of the game's
-/// exported `ManagedGameVariant_Set*` setter for it. A flag not listed is off.
 /// The variant's option table: each entry the murmur3 of an option's lowercased
 /// name, and 8 bytes of value (`Variant::options`).
 const OPTION_HASH: &[u32] = &[3, 9, 0, 0, 0];
@@ -65,6 +62,8 @@ const ICON_INDEX: &[u32] = &[10];
 /// Byte 4 of an option's value: its type.
 const OPTION_FLOAT: u8 = 3;
 const OPTION_BOOL: u8 = 2;
+/// Flag sets, each element a bit index, named by the mask of the game's
+/// exported `ManagedGameVariant_Set*` setter for it. A flag not listed is off.
 const FLAGS: &[(&[u32], i64, &str)] = &[
     (&[1, 2, 0], 4, "earlyRespawn"),
     (&[1, 3, 0], 3, "friendlyFire"),
@@ -87,7 +86,7 @@ pub struct Variant {
     /// Seconds from death to respawn (min_respawn_time_seconds).
     pub respawn: Option<i64>,
     pub score_to_win: Option<i64>,
-    /// Seconds.
+    /// The round's time limit, seconds.
     pub time_limit: Option<i64>,
     /// The starting weapons' tag ids.
     pub loadout: Vec<u32>,

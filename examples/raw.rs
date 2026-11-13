@@ -1,6 +1,6 @@
-//! A look at a film's raw layers: its packets by kind, the event types of
-//! its tick packets, and how many entities each frame creates, updates and
-//! deletes.
+//! A look at a film's raw layers: its encoding, its packets by kind, the
+//! event types of its tick packets, how many creates, updates and deletes
+//! its entity views hold in all, and its seek snapshots.
 //!
 //! ```text
 //! cargo run --release --example raw -- path/to/film
@@ -12,9 +12,13 @@ use filmshell::Film;
 use filmshell::format::{self, EntityOp};
 use std::collections::BTreeMap;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> std::process::ExitCode {
+    common::main(run)
+}
+
+fn run() -> Result<(), Box<dyn std::error::Error>> {
     let dir = std::env::args().nth(1).ok_or("usage: raw <film folder>")?;
-    let film = Film::from_chunks(common::load_folder(dir.as_ref())?)?;
+    let film = Film::from_folder(&dir)?;
     let raw = film.raw();
     println!("encoding {:?}, header chunk {} bytes", raw.encoding(), raw.header_chunk().len());
 

@@ -13,19 +13,19 @@ use crate::fire::{self, FilmFire};
 use crate::game::{self, Grenade, Level};
 use crate::grenades;
 use crate::highlights::{extract_highlight_events, EventType, HighlightEvent};
-use crate::hints::Hints;
+use crate::hints::{Hints, SpawnKind};
 use crate::holders::Holders;
 use crate::inventory::{self};
 use crate::levels::{self, LevelBox};
 use crate::model::*;
-use crate::motion::{detect_layout, extract_all_player_positions, small_lobby_deaths, ExtractionResult};
+use crate::motion::{extract_all_player_positions, small_lobby_deaths, ExtractionResult};
 use crate::objectives;
 use crate::payload::{for_each_event_view, walk_shared, Reader};
 use crate::roster::{self, Roster};
 use crate::types::*;
 use crate::vitals::Vitals;
 use crate::zones;
-use crate::TagId;
+use crate::{StringId, TagId};
 use std::collections::{BTreeMap, HashMap};
 
 /// A player's latest sample may be this old and still place them at a deploy.
@@ -56,8 +56,13 @@ const EXIT_SLACK: i64 = 90;
 /// Two rides in the same seat at most this many ticks apart are one: the
 /// game renews an attachment within a tick or two.
 const RIDE_GAP_TICKS: i64 = 3;
-/// Statborg slots of deaths and spawns.
+/// Statborg slots of kills, deaths, suicides and spawns.
+/// How far a HighlightEvents death and the kill it records can be apart: on
+/// the test films within 6 ticks for all but five of 6,724, the latest 86.
+const RECORDED_DEATH_TICKS: u32 = 90;
+const KILLS_SLOT: u32 = 4;
 const DEATHS_SLOT: u32 = 5;
+const SUICIDES_SLOT: u32 = 8;
 const SPAWNS_SLOT: u32 = 21;
 /// Frames between a kill and the scoreboard counting the death.
 const DEATH_FRAMES: i64 = 6;
@@ -73,6 +78,7 @@ struct WorldPath {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct SampleState {
     yaw: Option<f64>,
+    pitch: Option<f64>,
     z: Option<f64>,
     speed: Option<f64>,
     health: Option<f64>,
@@ -92,7 +98,7 @@ fn place(bx: u32, q: [u32; 3], w: [u32; 3], c: &Calibration, level: Option<&Leve
     Some((-c.scale_x * raw2 + c.offset_x, c.scale_y * raw1 + c.offset_y))
 }
 
-/// A mask of engine player ids (bit 31 - id) as a mask of the player indices
+/// A mask of engine slots (bit 31 - id) as a mask of the player indices
 /// that held them at `frame`.
 fn players_mask(holders: &Holders, mask: u32, frame: i64) -> u32 {
     (0..32u32)
@@ -131,9 +137,11 @@ pub(crate) fn position_widths(
 }
 
 /// The box the film's positions are quantized over: the hints' bounds, else
-/// the catalogue's level the hints or the header name.
-fn level_box(header: &crate::header::Header, hints: &Hints) -> (Option<LevelBox>, Option<Level>) {
+/// the catalogue's level the hints or the header name; and that level, when
+/// the catalogue has it.
+fn level_box(header: &crate::header::Header, hints: &Hints) -> (Option<LevelBox>, Option<&'static Level>) {
     let id = hints.level.map(|t| t.0).or(header.level);
+    let catalogued = id.and_then(|i| game::level(TagId(i)));
     if let Some(b) = hints.level_bounds {
         let widths: [u32; 3] =
             std::array::from_fn(|k| (60.0 * (b.max[k] as f64 - b.min[k] as f64)).max(1.0).ceil().log2().ceil() as u32);
@@ -145,20 +153,10 @@ fn level_box(header: &crate::header::Header, hints: &Hints) -> (Option<LevelBox>
             box_bits: 1,
             others: Vec::new(),
         };
-        let level = Level {
-            id: TagId(id.unwrap_or(0)),
-            name: "",
-            display_name: None,
-            api_id: None,
-            structure: TagId(0),
-            play: game::LevelBox { index: 0, min: b.min, max: b.max, widths },
-            index_bits: 1,
-            others: &[],
-        };
-        return (Some(lb), Some(level));
+        return (Some(lb), catalogued);
     }
     let Some(id) = id else { return (None, None) };
-    (levels::level(id).cloned(), game::level(TagId(id)).copied())
+    (levels::level(id).cloned(), catalogued)
 }
 
 /// Each path's sample states and jumps, from the component data of the
@@ -205,10 +203,15 @@ fn sample_states(
                     });
                     SampleState {
                         // Engine (cos, sin) to world (-sx sin, sy cos).
-                        yaw: s.aim.map(|(y, _)| (calib.scale_y * y.cos()).atan2(-calib.scale_x * y.sin())),
+                        // A direction turns with the axes, not with the
+                        // quantization's scales: world x is engine -y.
+                        yaw: s.aim.map(|(y, _)| (calib.scale_y.signum() * y.cos()).atan2(-calib.scale_x.signum() * y.sin())),
+                        pitch: s.aim.map(|(_, p)| p),
                         speed: s.speed.filter(|_| !m.in_vehicle).map(|v| v * WORLD_PER_ENGINE),
+                        // Seated, the rider's biped sends no position: its
+                        // height would be the last one on foot.
                         z: level
-                            .filter(|_| calib.source == CalibSource::LevelTable)
+                            .filter(|_| calib.source == CalibSource::LevelTable && !m.in_vehicle)
                             .and_then(|b| s.position.and_then(|(bx, q)| b.world_z(bx, q[2]))),
                         health,
                         shield,
@@ -302,31 +305,11 @@ fn pair_grenades(
         let Some((j, _)) = best else { continue };
         used[j] = true;
         let p = &f.projectiles[j];
-        let mut full: Vec<(i64, f64, f64)> = p
-            .path
-            .iter()
-            .filter_map(|&(fr, bx, q)| {
-                let (x, y) = place(bx, q, w, c, level)?;
-                Some((fr, x, y))
-            })
-            .collect();
-        // A missed deletion lets a later object in the same entity slot
-        // continue the path: cut it at the first long gap or jump.
-        let cut = full.windows(2).position(|s| {
-            let gap = s[1].0 - s[0].0;
-            gap > GRENADE_GAP_FRAMES || (s[1].1 - s[0].1).hypot(s[1].2 - s[0].2) > GRENADE_STEP_WU * gap as f64
-        });
-        let whole = cut.is_none();
-        if let Some(i) = cut {
-            full.truncate(i + 1);
-        }
-        let last = full.last().map(|s| s.0).unwrap_or(p.from);
-        let deleted = whole && p.to.is_some_and(|to| to - last <= GRENADE_GAP_FRAMES);
-        let end = if deleted { p.to.unwrap_or(last) } else { last };
+        let (path, end, deleted) = flight_path(p, w, c, level);
         out.push(Flight {
             path_index: k,
             grenade: t.grenade,
-            path: thin(&full, GRENADE_TOLERANCE),
+            path,
             end,
             deleted,
             entity: (p.entity, p.generation),
@@ -336,61 +319,83 @@ fn pair_grenades(
     out
 }
 
+/// A projectile's path in world units, thinned, with the frame it ended and
+/// whether that is its deletion.
+fn flight_path(
+    p: &grenades::Projectile,
+    w: [u32; 3],
+    c: &Calibration,
+    level: Option<&LevelBox>,
+) -> (Vec<(i64, f64, f64)>, i64, bool) {
+    let mut full: Vec<(i64, f64, f64)> = p
+        .path
+        .iter()
+        .filter_map(|&(fr, bx, q)| {
+            let (x, y) = place(bx, q, w, c, level)?;
+            Some((fr, x, y))
+        })
+        .collect();
+    // A missed deletion lets a later object in the same entity slot continue
+    // the path: cut it at the first long gap or jump.
+    let cut = full.windows(2).position(|s| {
+        let gap = s[1].0 - s[0].0;
+        gap > GRENADE_GAP_FRAMES || (s[1].1 - s[0].1).hypot(s[1].2 - s[0].2) > GRENADE_STEP_WU * gap as f64
+    });
+    let whole = cut.is_none();
+    if let Some(i) = cut {
+        full.truncate(i + 1);
+    }
+    let last = full.last().map(|s| s.0).unwrap_or(p.from);
+    let deleted = whole && p.to.is_some_and(|to| to - last <= GRENADE_GAP_FRAMES);
+    let end = if deleted { p.to.unwrap_or(last) } else { last };
+    (thin(&full, GRENADE_TOLERANCE), end, deleted)
+}
+
 /// A bot's spawns when the scoreboard has no row of its: high enough that
 /// nothing caps its lives (one fewer deaths, so its last life can survive).
 const UNCOUNTED: f64 = 1e9;
 
-/// The frames a new round clears the scoreboard at, in order. A round
-/// clears every player's row in one frame, where a player who leaves has
-/// only their own cleared: a frame where the spawns of two rows or more
-/// drop to 0, half or more of the rows that had spawned. (Measured on the
-/// multi-round films, Oddball and the minigames: the clear comes with the
-/// round's start, up to 3 s before its clock restarts.)
-fn round_resets(log: &crate::statlog::Log) -> Vec<i64> {
-    let mut spawns: BTreeMap<u32, i32> = BTreeMap::new();
-    let mut out = Vec::new();
-    let changes: Vec<_> = log.changes.iter().filter(|c| c.kind == 0 && c.slot == SPAWNS_SLOT).collect();
-    for same in changes.chunk_by(|a, b| a.frame == b.frame) {
-        let had = spawns.values().filter(|&&v| v > 0).count();
-        let cleared = same.iter().filter(|c| c.value == 0 && spawns.get(&c.id).is_some_and(|&v| v > 0)).count();
-        if cleared >= 2 && 2 * cleared >= had {
-            out.push(same[0].frame);
-        }
-        for c in same {
-            spawns.insert(c.id, c.value);
-        }
-    }
-    out
-}
-
 /// What life assignment needs of each player, from the film: the roster, and
 /// each player's deaths and spawns on the scoreboard. A player who leaves
-/// has their row cleared, so a count is its highest value in each round,
-/// summed over the rounds. A bot that took a leaver's place can have no row
-/// at all; its lives are chained by time without a count.
+/// has their row cleared, so a count is its highest value in each round
+/// (the round the game sends with the row), summed over the rounds. A bot
+/// that took a leaver's place can have no row at all; its lives are chained
+/// by time without a count.
 fn roster_entries(roster: &Roster, log: &crate::statlog::Log, hl_ticks: &[u32]) -> Vec<RosterEntry> {
     let at = |f: i64| usize::try_from(f).ok().and_then(|f| hl_ticks.get(f)).map_or(0.0, |&t| t as f64);
-    let resets = round_resets(log);
     let most = |id: usize, slot: u32| {
-        let mut rounds: BTreeMap<usize, i32> = BTreeMap::new();
+        let mut rounds: BTreeMap<u32, i32> = BTreeMap::new();
         for c in log.changes.iter().filter(|c| c.kind == 0 && c.id as usize == id && c.slot == slot) {
-            let round = resets.partition_point(|&r| r <= c.frame);
-            let m = rounds.entry(round).or_insert(c.value);
+            let m = rounds.entry(c.round).or_insert(c.value);
             *m = (*m).max(c.value);
         }
         (!rounds.is_empty()).then(|| rounds.values().map(|&v| v as f64).sum())
     };
     let known = !log.changes.is_empty();
-    // A death is the row's count going up; a clear (a round, or a leaver)
-    // takes it down, and the next death counts up from there.
+    // A death is the row's count for its round going up; a leaver's clear
+    // takes it down, and the next death counts up from there. A rise by one
+    // is a death at that frame, the rest of a bigger rise deaths since the
+    // count's last change; the count can first be sent with deaths on it (a
+    // bot's with two), which happened any time before in its round. A round
+    // after the first begins with its first value on any row.
+    let mut round_starts: HashMap<u32, i64> = HashMap::new();
+    for c in log.changes.iter().filter(|c| c.round > 0) {
+        let f = round_starts.entry(c.round).or_insert(c.frame);
+        *f = (*f).min(c.frame);
+    }
     let death_frames = |id: usize| {
         let mut out = Vec::new();
-        let mut prev = 0;
+        // Per round, the count and the frame it changed at.
+        let mut had: HashMap<u32, (i32, i64)> = HashMap::new();
         for c in log.changes.iter().filter(|c| c.kind == 0 && c.id as usize == id && c.slot == DEATHS_SLOT) {
-            if c.value > prev {
-                out.extend(std::iter::repeat_n(c.frame, (c.value - prev) as usize));
-            }
-            prev = c.value;
+            let prev = had.insert(c.round, (c.value, c.frame));
+            let rise = (c.value - prev.map_or(0, |p| p.0)).max(0) as usize;
+            let (earliest, at_frame) = match prev {
+                Some((_, f)) => (f, usize::from(rise > 0)),
+                None => (round_starts.get(&c.round).copied().unwrap_or(i64::MIN), 0),
+            };
+            out.extend(std::iter::repeat_n((earliest, c.frame), rise - at_frame));
+            out.extend(std::iter::repeat_n((c.frame, c.frame), at_frame));
         }
         out
     };
@@ -410,6 +415,10 @@ fn roster_entries(roster: &Roster, log: &crate::statlog::Log, hl_ticks: &[u32]) 
                 deaths: if uncounted { Some(UNCOUNTED - 1.0) } else { most(i, DEATHS_SLOT).or(known.then_some(0.0)) },
                 spawns: if uncounted { Some(UNCOUNTED) } else { most(i, SPAWNS_SLOT).or(known.then_some(0.0)) },
                 listed: uncounted.then(|| (p.first.map_or(0.0, at), p.left.map_or(f64::INFINITY, at))),
+                in_match: Some((
+                    if p.present_at_start { f64::NEG_INFINITY } else { p.first.map_or(f64::NEG_INFINITY, at) },
+                    p.left.map_or(f64::INFINITY, at),
+                )),
                 death_frames: known.then(|| death_frames(i)),
             }
         })
@@ -439,7 +448,7 @@ fn game_events(film: &Container, p: &Params, c: Option<&Calibration>, holders: &
                         })),
                         Value::None => GameEventValue::Empty,
                     };
-                    (k, v)
+                    (StringId(k), v)
                 })
                 .collect();
             let players = players_mask(holders, g.last, frame as i64);
@@ -457,9 +466,9 @@ fn game_events(film: &Container, p: &Params, c: Option<&Calibration>, holders: &
                 .collect();
             let event = GameEvent {
                 id: g.id,
-                small: g.small,
+                sequence: g.small,
                 values,
-                text: g.extra.map(|x| x.0),
+                text: g.extra.map(|x| StringId(x.0)),
                 arguments,
                 players: PlayerMask(players),
             };
@@ -517,6 +526,23 @@ fn medal_clock(medals: &[(i32, f64)], events: &[(i64, u32)], hl_ticks: &[u32]) -
 /// Ticks between a kill and the headshot event sent with it.
 const HEADSHOT_TICKS: u32 = 2;
 
+/// The game ends a match by killing everyone still alive (cause World), and
+/// the film runs on for this many ticks after: 6 s, on every one of the 76
+/// test films that record those deaths (the scoreboard counts none of them).
+const MATCH_END_TICKS: i64 = 362;
+const MATCH_END_SLACK: i64 = 3;
+
+/// Frames after a death that its kill event, or the fatal hit, can come.
+const INFERRED_KILL_FRAMES: i64 = 60;
+
+/// How recent a hit must be to make its attacker the killer, as the game
+/// credits a kill: 6 s.
+const KILL_CREDIT_TICKS: u32 = 360;
+
+/// The share of a victim's shield and health a player must have taken to
+/// assist in the kill.
+const ASSIST_SHARE: f64 = 0.2;
+
 /// Marks each kill the game counted as a headshot: the headshot event for
 /// its killer nearest it within [`HEADSHOT_TICKS`], each event used once.
 /// `events` are in tick order.
@@ -524,7 +550,7 @@ fn mark_headshots(events: &mut [TimedEvent]) {
     let shots: Vec<(Tick, PlayerId)> = events
         .iter()
         .filter_map(|e| match e.event {
-            Event::Headshot { player } => Some((e.tick, player)),
+            Event::Headshot(h) => Some((e.tick, h.player)),
             _ => None,
         })
         .collect();
@@ -549,8 +575,13 @@ fn mark_headshots(events: &mut [TimedEvent]) {
 /// The vehicle tracks: each tagged vehicle's position records, split where
 /// its id stands for a new vehicle, by first frame then id. Records with no
 /// known tag are chance matches of the scanner and are left out.
-fn vehicle_tracks(ex: &ExtractionResult, c: &Calibration) -> Vec<(i32, u32, Vec<WorldPosition>)> {
+fn vehicle_tracks(ex: &ExtractionResult, c: &Calibration) -> Vec<(i32, u32, Vec<WorldPosition>, Option<i64>)> {
     let mut out = Vec::new();
+    // Each track with the frame its vehicle left the map.
+    let mut track = |id: i32, tag: u32, pts: &[MotionPoint]| {
+        let gone = pts.last().and_then(|p| ex.vehicle_ident.removed(id, p.frame));
+        out.push((id, tag, apply_calibration(pts, c), gone));
+    };
     for (&id, v) in &ex.vehicles {
         let mut v = v.clone();
         v.sort_by_key(|s| s.gp);
@@ -560,17 +591,59 @@ fn vehicle_tracks(ex: &ExtractionResult, c: &Calibration) -> Vec<(i32, u32, Vec<
             let k = starts.iter().rposition(|x| x.0 <= s.tick).unwrap_or(0);
             let Some(tag) = ex.vehicle_ident.tag(id, s.tick) else { continue };
             if let Some((_, t, pts)) = cur.take_if(|c| c.0 != k || c.1 != tag) {
-                out.push((id, t, apply_calibration(&pts, c)));
+                track(id, t, &pts);
             }
             let p = MotionPoint { frame: s.tick, raw1: s.c1, raw2: s.c2, gp: s.gp, in_vehicle: false, vehicle: id };
             cur.get_or_insert_with(|| (k, tag, Vec::new())).2.push(p);
         }
         if let Some((_, t, pts)) = cur {
-            out.push((id, t, apply_calibration(&pts, c)));
+            track(id, t, &pts);
         }
     }
     out.sort_by_key(|t| (t.2[0].frame, t.0));
     out
+}
+
+/// What the first walk's readers collect: the readers that need no paths.
+#[derive(Default)]
+struct FirstWalk {
+    stat_log: crate::statlog::Log,
+    vehicle_ident: crate::vehicles::Vehicles,
+    vitals_marks: crate::vitals::Marks,
+    inv: inventory::Inventory,
+    inputs: crate::control::Inputs,
+    splash_seen: crate::splash::Seen,
+    thrown: grenades::Flights,
+    deploys_seen: crate::deploys::Seen,
+    attach_seen: crate::attach::Seen,
+    controls: crate::owners::Controls,
+    designators: crate::teams::Designators,
+}
+
+impl FirstWalk {
+    fn read(film: &Container, p: Params, holders: &Holders, level: Option<&LevelBox>) -> FirstWalk {
+        let mut w = FirstWalk::default();
+        let actor_control = crate::registry::Schema::read(&film.chunks[0]).biped.actor_control;
+        w.vitals_marks = Vitals::start(film, &p, level);
+        walk_shared(
+            film,
+            p,
+            &mut [
+                &mut crate::statlog::reader(film, p, holders, &mut w.stat_log),
+                &mut w.vehicle_ident.reader(),
+                &mut Vitals::reader(&mut w.vitals_marks),
+                &mut inventory::reader(&mut w.inv),
+                &mut crate::control::reader(film, p, &mut w.inputs),
+                &mut crate::splash::reader(film, &mut w.splash_seen),
+                &mut grenades::reader(&mut w.thrown),
+                &mut crate::deploys::reader(&mut w.deploys_seen),
+                &mut crate::attach::reader(actor_control, &mut w.attach_seen),
+                &mut crate::owners::reader(&mut w.controls),
+                &mut crate::teams::reader(&mut w.designators),
+            ],
+        );
+        w
+    }
 }
 
 pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints) -> Result<crate::Film, crate::Error> {
@@ -591,15 +664,38 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let holders = Holders::new(&roster);
     let (level_owned, level_model) = level_box(&raw_header, hints);
     let level = level_owned.as_ref();
-    let layout = detect_layout(&film, Some(roster.players.len()));
-    let composite = layout.mode == EncodingMode::MultiplayerComposite;
-    let (c2_start, c2w) = layout.composite.map_or((0, None), |(s, w)| (s as i64, Some(w)));
-    let widths = position_widths(&film, composite, c2_start, c2w, level);
-    let params = widths.map(|w| {
+    let encoding_mode = crate::container::detect_encoding_mode(&film, Some(roster.players.len()));
+    let composite = encoding_mode == EncodingMode::MultiplayerComposite;
+    let with_level = |w: [u32; 3]| {
         let mut p = Params::new(w);
         p.set_level(level);
         p
+    };
+    // The position fields' layout comes from a scan of every update, which
+    // takes about as long as the first walk. With the level's box in the
+    // catalogue the walk needn't wait for it: the walk takes the box's
+    // widths while the scan runs on another thread, and runs again in the
+    // rare film whose fields don't fit the box. Without threads (wasm) the
+    // two run one after the other.
+    let guess = level.map(|b| b.widths).filter(|_| composite && packets);
+    let (coords, early) = std::thread::scope(|s| {
+        let scan = composite.then(|| {
+            std::thread::Builder::new().spawn_scoped(s, || crate::replication::detect_coord_widths(&film)).ok()
+        });
+        let early = match &scan {
+            Some(Some(_)) => guess.map(|w| (w, FirstWalk::read(&film, with_level(w), &holders, level))),
+            _ => None,
+        };
+        let coords = scan.map(|h| match h {
+            Some(h) => h.join().expect("the position layout scan panicked"),
+            None => crate::replication::detect_coord_widths(&film),
+        });
+        (coords, early)
     });
+    let layout = crate::motion::Layout { mode: encoding_mode, composite: coords };
+    let (c2_start, c2w) = layout.composite.map_or((0, None), |(s, w)| (s as i64, Some(w)));
+    let widths = position_widths(&film, composite, c2_start, c2w, level);
+    let params = widths.map(with_level);
     // The readers that walk the tick packets by their grammar.
     let walk = params.filter(|_| composite && packets);
     if let Some(p) = params.filter(|_| packets) {
@@ -608,50 +704,50 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
 
     // One walk for the readers that need no paths. The scoreboard gives
     // every player's deaths and spawns, which the paths need.
-    let mut stat_log = crate::statlog::Log::default();
-    let mut vehicle_ident = crate::vehicles::Vehicles::default();
-    let mut vitals_marks = crate::vitals::Marks::default();
-    let mut inv = inventory::Inventory::default();
-    let mut inputs = crate::control::Inputs::new();
-    let mut splash_seen = crate::splash::Seen::new();
-    let mut thrown = grenades::Flights::default();
-    let mut deploys_seen = crate::deploys::Seen::default();
-    let mut attach_seen = crate::attach::Seen::default();
-    let mut controls = crate::owners::Controls::new();
-    let mut designators = crate::teams::Designators::default();
+    let first = match (walk, early) {
+        (Some(_), Some((w, first))) if Some(w) == widths => first,
+        (Some(p), _) => FirstWalk::read(&film, p, &holders, level),
+        (None, _) => FirstWalk::default(),
+    };
+    let FirstWalk {
+        mut stat_log,
+        mut vehicle_ident,
+        vitals_marks,
+        inv,
+        inputs,
+        splash_seen,
+        thrown,
+        deploys_seen,
+        attach_seen,
+        controls,
+        designators,
+    } = first;
+    let mut team_history: Vec<Vec<(i64, u32)>> = Vec::new();
     if let Some(p) = walk {
-        let actor_control = crate::registry::Schema::read(&film.chunks[0]).biped.actor_control;
-        vitals_marks = Vitals::start(&film, &p, level);
-        walk_shared(
-            &film,
-            p,
-            &mut [
-                &mut crate::statlog::reader(&film, p, &holders, &mut stat_log),
-                &mut vehicle_ident.reader(),
-                &mut Vitals::reader(&mut vitals_marks),
-                &mut inventory::reader(&mut inv),
-                &mut crate::control::reader(&film, p, &mut inputs),
-                &mut crate::splash::reader(&film, &mut splash_seen),
-                &mut grenades::reader(&mut thrown),
-                &mut crate::deploys::reader(&mut deploys_seen),
-                &mut crate::attach::reader(actor_control, &mut attach_seen),
-                &mut crate::owners::reader(&mut controls),
-                &mut crate::teams::reader(&mut designators),
-            ],
-        );
         crate::statlog::finish(&mut stat_log);
         vehicle_ident.finish(&film, p);
         // Teams for the players HighlightEvents doesn't give one: bots, and
         // people without records.
-        crate::teams::assign(&mut roster, &crate::teams::finish(&film, designators));
+        let team_rows = stat_log.changes.iter().any(|c| c.kind == 1);
+        let series = crate::teams::finish(&film, designators);
+        crate::teams::assign(&mut roster, &series, team_rows);
+        team_history = crate::teams::history(&roster, &series);
     }
     let vitals = walk.map(|_| Vitals::finish(vitals_marks));
     let splashes = walk.map(|_| crate::splash::finish(splash_seen)).unwrap_or_default();
     let deploys = walk.map(|_| crate::deploys::finish(deploys_seen)).unwrap_or_default();
     let attachments = walk.map(|_| crate::attach::finish(attach_seen));
-    let entries = roster_entries(&roster, &stat_log, &film.highlight_ticks());
+    let mut entries = roster_entries(&roster, &stat_log, &film.highlight_ticks());
     let xuids: Vec<String> = roster.players.iter().map(|p| p.xuid.map(|x| x.to_string()).unwrap_or_default()).collect();
     let owners = crate::owners::owners(&controls, &holders);
+    // A player spawned at least as often as the film names lives of theirs,
+    // whatever the scoreboard counts (a joiner it never lists counts none).
+    for (i, e) in entries.iter_mut().enumerate() {
+        let named = owners.values().filter(|o| o.player as usize == i).count() as f64;
+        if named > 0.0 && e.spawns.is_some_and(|s| s < named) {
+            e.spawns = Some(named);
+        }
+    }
     let ex = extract_all_player_positions(
         &film,
         layout,
@@ -688,18 +784,9 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     );
     let exact = calib.as_ref().is_some_and(|c| c.source == CalibSource::LevelTable);
 
-    let (states, jumps) = match (&walk, &calib, &vitals) {
-        (Some(p), Some(c), Some(v)) => sample_states(&film, paths, p, level, c, v),
-        _ => (vec![Vec::new(); paths.len()], vec![Vec::new(); paths.len()]),
-    };
-    let world: Vec<WorldPath> = paths
-        .iter()
-        .zip(world_positions)
-        .zip(states)
-        .map(|((p, positions), states)| WorldPath { player: p.player_index, positions, states })
-        .collect();
     let extra: Vec<u32> = inv.pickups.iter().map(|p| p.tag).chain(inv.ground.iter().map(|g| g.tag)).collect();
-    let fired: Option<FilmFire> = params.map(|p| fire::read(&film, (&p).into(), paths, &extra));
+    let player_of = |id: u32, frame: i64| holders.api(id, frame);
+    let fired: Option<FilmFire> = params.map(|p| fire::read_mapped(&film, (&p).into(), paths, &extra, player_of));
     let scripts = crate::scripts::script_names(&film.chunks[0]);
     let mode = GameMode::from_scripts(&scripts);
 
@@ -707,7 +794,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let team_of = |pi: i32| roster.players.get(pi as usize).and_then(|p| p.team).map(|t| t as i32);
     let zone_input = match (zones::mode(&scripts), walk, &calib) {
         (Some(m), Some(p), Some(_)) => {
-            let evs = zones::read(&film, (&p).into(), m, team_of);
+            let evs = zones::read(&film, (&p).into(), m, |slot, frame| holders.api(slot as u32, frame) as i32, team_of);
             let places = zones::event_places(&evs);
             let crates = zones::crates(&film);
             let mut ids: Vec<u32> = places.keys().copied().collect();
@@ -728,22 +815,41 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let mut hill_seen = zones::HillScore::default();
     let mut objects_seen = zones::ObjectsSeen::default();
     let koth = zone_input.as_ref().is_some_and(|z| z.0 == zones::Mode::Koth) && exact;
-    if let Some(p) = walk {
-        let mut a = actions::reader(paths, mode.is_pvp(), &mut acts_out);
-        let mut b = crate::accuracy::reader(paths, &mut aim);
-        let mut c = crate::ammo::reader(paths, &mut ammo);
-        let mut d = koth.then(|| zones::hill_score_reader(team_of, &mut hill_seen));
-        let mut e = zone_input.as_ref().filter(|_| exact).map(|z| zones::objects_reader(&z.3, &mut objects_seen));
-        let mut readers: Vec<&mut Reader<'_>> = vec![&mut a, &mut b, &mut c];
-        if let Some(d) = d.as_mut() {
-            readers.push(d);
+    // Each sample's states, on another thread while the walk runs (in turn
+    // without threads).
+    let states_of = || match (&walk, &calib, &vitals) {
+        (Some(p), Some(c), Some(v)) => sample_states(&film, paths, p, level, c, v),
+        _ => (vec![Vec::new(); paths.len()], vec![Vec::new(); paths.len()]),
+    };
+    let (states, jumps) = std::thread::scope(|s| {
+        let job = std::thread::Builder::new().spawn_scoped(s, states_of).ok();
+        if let Some(p) = walk {
+            let mut a = actions::reader(paths, mode.is_pvp(), player_of, &mut acts_out);
+            let mut b = crate::accuracy::reader(paths, player_of, &mut aim);
+            let mut c = crate::ammo::reader(paths, &mut ammo);
+            let mut d = koth.then(|| zones::hill_score_reader(team_of, &mut hill_seen));
+            let mut e = zone_input.as_ref().filter(|_| exact).map(|z| zones::objects_reader(&z.3, &mut objects_seen));
+            let mut readers: Vec<&mut Reader<'_>> = vec![&mut a, &mut b, &mut c];
+            if let Some(d) = d.as_mut() {
+                readers.push(d);
+            }
+            if let Some(e) = e.as_mut() {
+                readers.push(e);
+            }
+            walk_shared(&film, p, &mut readers);
         }
-        if let Some(e) = e.as_mut() {
-            readers.push(e);
+        match job {
+            Some(h) => h.join().expect("the sample states panicked"),
+            None => states_of(),
         }
-        walk_shared(&film, p, &mut readers);
-    }
+    });
     let acts = walk.map(|_| acts_out);
+    let world: Vec<WorldPath> = paths
+        .iter()
+        .zip(world_positions)
+        .zip(states)
+        .map(|((p, positions), states)| WorldPath { player: p.player_index, positions, states })
+        .collect();
 
     // The highlight clock: the kill events fix it to the tick.
     let hl_ticks = film.highlight_ticks();
@@ -796,46 +902,94 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     let path_of = |player: i32| paths.iter().position(|p| p.player_index == player);
 
     let mut events: Vec<(i64, Event)> = Vec::new();
+    let hit_damage = fired.as_ref().zip(vitals.as_ref()).map(|(ff, v)| crate::hit_damage::read(ff, v)).unwrap_or_default();
 
     // A death the scoreboard counts moves the victim's deaths within a few
-    // frames of the kill.
-    let death_frames: Vec<(u32, i64)> =
-        stat_log.changes.iter().filter(|c| c.kind == 0 && c.slot == DEATHS_SLOT).map(|c| (c.id, c.frame)).collect();
-    let scored = |victim: PlayerId, frame: i64| {
+    // frames of the kill, or, where the mode stops updating a player's row
+    // (Elimination's bots after the first round), their team's.
+    let death_frames: Vec<(u32, u32, i64)> = stat_log
+        .changes
+        .iter()
+        .filter(|c| c.slot == DEATHS_SLOT)
+        .map(|c| (c.kind, c.id, c.frame))
+        .collect();
+    // Or the killer's kills: a row the mode stops updating can be the
+    // victim's.
+    let kill_frames: Vec<(u32, i64)> = {
+        let mut had: HashMap<(u32, u32), i32> = HashMap::new();
+        stat_log
+            .changes
+            .iter()
+            .filter(|c| c.kind == 0 && c.slot == KILLS_SLOT)
+            .filter(|c| had.insert((c.id, c.round), c.value).unwrap_or(0) < c.value)
+            .map(|c| (c.id, c.frame))
+            .collect()
+    };
+    // The deaths HighlightEvents records, by player and tick. On the test
+    // films every death the scoreboard counts has one, and the few a film's
+    // scoreboard leaves out that have one are all in the match stats: a
+    // record at a kill counts it.
+    let recorded_deaths: Vec<(i32, Tick)> = highlights
+        .iter()
+        .filter(|h| h.event_type == EventType::Death)
+        .filter_map(|h| Some((*pi_of.get(h.xuid.as_str())?, clock.highlight_tick(h.time_ms as u32)?)))
+        .collect();
+    let recorded = |victim: PlayerId, at: Tick| {
+        recorded_deaths.iter().any(|&(p, t)| p == i32::from(victim.0) && t.0.abs_diff(at.0) <= RECORDED_DEATH_TICKS)
+    };
+    let on_scoreboard = |victim: PlayerId, killer: Option<PlayerId>, frame: i64| {
+        let team = roster.players.get(victim.0 as usize).and_then(|p| p.team);
+        let row = |kind: u32, id: u32| {
+            death_frames.iter().any(|&(k, i, f)| k == kind && i == id && (f - frame).abs() <= DEATH_FRAMES)
+        };
+        let killed = killer.filter(|&k| k != victim).is_some_and(|k| {
+            kill_frames.iter().any(|&(i, f)| i == k.0 as u32 && (f - frame).abs() <= DEATH_FRAMES)
+        });
+        row(0, victim.0 as u32) || team.is_some_and(|t| row(1, t)) || killed
+    };
+    let scored = |victim: PlayerId, killer: Option<PlayerId>, frame: i64| {
         (!stat_log.changes.is_empty())
-            .then(|| death_frames.iter().any(|&(id, f)| id == victim.0 as u32 && (f - frame).abs() <= DEATH_FRAMES))
+            .then(|| on_scoreboard(victim, killer, frame) || recorded(victim, tick(frame)))
+    };
+    // What dealt a death at `frame` to the victim's path `vk`: the last hit's
+    // cause, and its weapon, else the killer's (path `kk`) last shot.
+    let cause_and_weapon = |ff: &fire::FilmFire, vk: Option<usize>, kk: Option<usize>, frame: i64| {
+        let tag = vk.and_then(|k| fire::kill_cause(ff, k, &ex.frame_ticks, frame));
+        let (cause, owner) = match tag {
+            Some(t)
+                if damage::grenade_blast(t) && kk.is_some_and(|c| fire::threw_before(ff, c, &ex.frame_ticks, frame)) =>
+            {
+                (Some(Cause::Grenade), None)
+            }
+            Some(t) => {
+                let (c, o) = damage::cause(t);
+                (Some(c), o)
+            }
+            None => (None, None),
+        };
+        let named = owner.and_then(|o| ff.named(o));
+        let weapon = match cause {
+            Some(Cause::Weapon | Cause::Unknown) | None if named.is_none() => {
+                kk.and_then(|k| fire::shot_before(ff, k, &ex.frame_ticks, frame))
+            }
+            _ => named,
+        };
+        (cause, weapon.map(|w| TagId(ff.weapons[w].id)).or(owner.map(TagId)))
     };
     if let Some(ff) = &fired {
         // Kills, with the fatal hit's cause and weapon.
         for (&(frame, victim, killer), d) in ff.kills.iter().zip(&ff.kill_details) {
-            // The event names engine player ids; a joiner may hold another's.
+            // The event names engine slots; a joiner may hold another's.
             let held = |id: Option<u32>| id.map(|i| holders.api(i, frame));
             let (victim, killer, assistant) = (held(victim), held(killer), held(d.assistant));
             let Some(victim) = victim.and_then(|v| pid(v as i32)) else { continue };
             let vk = path_of(victim.0 as i32);
             let kk = killer.and_then(|c| path_of(c as i32));
-            let tag = vk.and_then(|k| fire::kill_cause(ff, k, &ex.frame_ticks, frame));
-            let (cause, owner) = match tag {
-                Some(t)
-                    if damage::grenade_blast(t)
-                        && kk.is_some_and(|c| fire::threw_before(ff, c, &ex.frame_ticks, frame)) =>
-                {
-                    (Some(Cause::Grenade), None)
-                }
-                Some(t) => {
-                    let (c, o) = damage::cause(t);
-                    (Some(c), o)
-                }
-                None => (None, None),
-            };
-            let named = owner.and_then(|o| ff.named(o));
-            let weapon = match cause {
-                Some(Cause::Weapon | Cause::Unknown) | None if named.is_none() => {
-                    kk.and_then(|k| fire::shot_before(ff, k, &ex.frame_ticks, frame))
-                }
-                _ => named,
-            };
+            let (cause, weapon) = cause_and_weapon(ff, vk, kk, frame);
             let (killer, assistant) = (killer.and_then(|k| pid(k as i32)), assistant.and_then(|a| pid(a as i32)));
+            // Without a scoreboard, the match's end is told by its deaths.
+            let at_end = cause == Some(Cause::World)
+                && (clock.end().0 as i64 - tick(frame).0 as i64 - MATCH_END_TICKS).abs() <= MATCH_END_SLACK;
             let kill = Kill {
                 victim,
                 killer,
@@ -844,10 +998,12 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 assistant_damage_percent: assistant.map(|_| d.assistant_percent),
                 suicide: d.suicide,
                 headshot: None,
-                scored: scored(victim, frame),
+                scored: scored(victim, killer, frame).or(at_end.then_some(false)),
                 cause,
-                weapon: weapon.map(|w| TagId(ff.weapons[w].id)).or(owner.map(TagId)),
+                weapon,
                 position: vk.and_then(|k| at_frame(k, frame)),
+                inferred: false,
+                betrayal: false,
             };
             events.push((frame, Event::Kill(kill)));
         }
@@ -857,7 +1013,6 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 events.push((frame, Event::Shot(Shot { player, weapon: TagId(ff.weapons[w].id) })));
             }
         }
-        let hit_damage = vitals.as_ref().map(|v| crate::hit_damage::read(ff, v)).unwrap_or_default();
         let hit_weapons = crate::weapon_stats::hit_weapons(ff, &ex.frame_ticks);
         for (i, &(frame, attacker, victim)) in ff.hits.iter().enumerate() {
             let Some(victim) = pid(paths[victim].player_index) else { continue };
@@ -921,9 +1076,10 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 events.push((frame, Event::Action(Action { player, kind })));
             }
         }
-        for &(frame, pi) in &a.headshots {
-            if let Some(p) = pid(pi) {
-                events.push((frame, Event::Headshot { player: p }));
+        for &(frame, slot) in &a.headshots {
+            let pi = holders.api(slot as u32, frame) as i32;
+            if let Some(p) = pid(pi).filter(|_| paths.iter().any(|q| q.player_index == pi)) {
+                events.push((frame, Event::Headshot(Headshot { player: p })));
             }
         }
     }
@@ -936,6 +1092,8 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
 
     // What needs world units.
     let mut grenade_flights = Vec::new();
+    let mut projectile_flights = Vec::new();
+    let mut vehicle_shots: Vec<(usize, i32, i64)> = Vec::new();
     let mut ground = Vec::new();
     let mut zones_out = Vec::new();
     let mut hill_score = None;
@@ -972,8 +1130,35 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 tag: TagId(g.tag),
                 position: Position::new(x, y),
                 from: tick(g.from),
-                to,
+                removed: to,
                 taken: g.taken,
+            });
+        }
+        // Every other projectile that flew: the shooter its creation names,
+        // by their life, else their engine slot; a vehicle's are its rider's,
+        // found once the rides are.
+        let paired: std::collections::HashSet<((u32, u32), i64)> = flights.iter().map(|g| (g.entity, g.from)).collect();
+        let owner: HashMap<i32, usize> =
+            paths.iter().enumerate().flat_map(|(k, p)| p.life_slots.iter().flatten().map(move |&s| (s, k))).collect();
+        for p in thrown.projectiles.iter().filter(|p| p.path.len() >= 2) {
+            if paired.contains(&((p.entity, p.generation), p.from)) {
+                continue;
+            }
+            let (path, end, deleted) = flight_path(p, w, c, level);
+            if path.len() < 2 {
+                continue;
+            }
+            let by_life = p.shooter.1.and_then(|h| h.biped_slot()).and_then(|s| owner.get(&s)).map(|&k| paths[k].player_index);
+            let by_slot = p.shooter.0.map(|i| holders.api(i, p.from) as i32).filter(|&i| paths.iter().any(|q| q.player_index == i));
+            if let Some(v) = p.shooter.1.and_then(|h| h.vehicle_slot()).filter(|_| by_life.is_none()) {
+                vehicle_shots.push((projectile_flights.len(), v, p.from));
+            }
+            projectile_flights.push(ProjectileFlight {
+                player: by_life.or(by_slot).and_then(pid),
+                projectile: TagId(p.tag),
+                path: path.iter().map(|&(fr, x, y)| PathPoint::new(tick(fr), Position::new(x, y))).collect(),
+                end: tick(end),
+                deleted,
             });
         }
         for f in flights {
@@ -981,15 +1166,17 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             grenade_flights.push(GrenadeFlight {
                 player,
                 grenade: f.grenade.and_then(Grenade::from_type),
-                path: f.path.iter().map(|&(fr, x, y)| (tick(fr), Position::new(x, y))).collect(),
+                path: f.path.iter().map(|&(fr, x, y)| PathPoint::new(tick(fr), Position::new(x, y))).collect(),
                 end: tick(f.end),
                 deleted: f.deleted,
             });
         }
         // Flags, placed where the event says, else at the player's latest
-        // sample in the two seconds before.
+        // sample in the two seconds before. The events name players by their
+        // engine slots, as game events do.
         if let Some(p) = &walk {
-            for o in objectives::read(&film, p.into(), mode == GameMode::CaptureTheFlag) {
+            for mut o in objectives::read(&film, p.into(), mode == GameMode::CaptureTheFlag) {
+                o.player = holders.api(o.player as u32, o.frame) as i32;
                 let position = match o.at {
                     Some(q) => {
                         let (x, y) = window_to_world(q, w, c);
@@ -1007,6 +1194,27 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 };
                 if let Some(player) = pid(o.player) {
                     events.push((o.frame, Event::Flag(FlagEvent { kind, player, position })));
+                }
+            }
+        }
+        // Power seeds, placed as flags are.
+        if let Some(p) = walk.filter(|_| scripts.contains("btbstockpileevents.lua")) {
+            for mut o in objectives::read_seeds(&film, (&p).into()) {
+                o.player = holders.api(o.player as u32, o.frame) as i32;
+                let position = match o.at {
+                    Some(q) => {
+                        let (x, y) = window_to_world(q, w, c);
+                        Some(Position::new(x, y))
+                    }
+                    None => path_of(o.player).and_then(|k| at_frame(k, o.frame)),
+                };
+                let kind = match o.kind {
+                    objectives::SEED_STEAL => SeedEventKind::Steal,
+                    objectives::SEED_DEPOSIT => SeedEventKind::Deposit,
+                    _ => SeedEventKind::CarrierKilled,
+                };
+                if let Some(player) = pid(o.player) {
+                    events.push((o.frame, Event::Seed(SeedEvent { kind, player, position })));
                 }
             }
         }
@@ -1047,7 +1255,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                     points: h
                         .runs
                         .iter()
-                        .filter_map(|&(f, t, n)| Some((tick(f), TeamId(u8::try_from(t).ok()?), n)))
+                        .filter_map(|&(f, t, n)| Some(HillPoints { tick: tick(f), team: TeamId(u8::try_from(t).ok()?), points: n }))
                         .collect(),
                 });
             }
@@ -1114,7 +1322,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 };
                 let zone = e.zone.and_then(|z| zones_out.iter().position(|q| q.entity == z));
                 events
-                    .push((e.frame, Event::Zone(ZoneEvent { kind, player: pid(e.player), team: team(e.team), zone })));
+                    .push((e.frame, Event::Zone(ZoneEvent { kind, player: pid(e.player), team: team(e.team), zone: zone.map(ZoneIndex) })));
             }
         }
         // Vehicles and the rides in them: the runs of a path's samples
@@ -1172,7 +1380,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                     .filter(|&direct| direct >= 0 && direct != v)
                     .and_then(|direct| ex.vehicle_ident.tag(direct, from))
                     .map(TagId);
-                let ride = Ride { player, vehicle: track, seat, part, from: tick(from), to: tick(to) };
+                let ride = Ride { player, vehicle: track.map(VehicleIndex), seat, part, from: tick(from), to: tick(to) };
                 // An attachment the game renews a tick or two later is the
                 // same ride.
                 match rides.last_mut() {
@@ -1190,10 +1398,33 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         rides.sort_by_key(|r| (r.from, r.player));
         vehicles = tracks
             .into_iter()
-            .map(|(id, tag, pts)| Vehicle {
-                entity: EntityId(id as u16),
-                tag: TagId(tag),
-                track: pts.iter().map(|p| (tick(p.frame), Position::new(p.x, p.y))).collect(),
+            .map(|(id, tag, pts, gone)| {
+                // Engine axes to world axes, as a player's aim yaw turns:
+                // world x is engine -y, world y engine x.
+                let headings = ex
+                    .vehicle_ident
+                    .forwards(id, pts[0].frame, gone)
+                    .iter()
+                    .filter(|(_, f)| f[0] != 0.0 || f[1] != 0.0)
+                    .map(|&(frame, f)| Heading {
+                        tick: tick(frame),
+                        yaw: (c.scale_y.signum() * f[0]).atan2(-c.scale_x.signum() * f[1]),
+                    })
+                    .collect();
+                let health = ex
+                    .vehicle_ident
+                    .health(id, pts[0].frame, gone)
+                    .iter()
+                    .map(|&(frame, health)| VehicleHealth { tick: tick(frame), health })
+                    .collect();
+                VehicleTrack {
+                    entity: EntityId(id as u16),
+                    tag: TagId(tag),
+                    track: pts.iter().map(|p| PathPoint::new(tick(p.frame), Position::new(p.x, p.y))).collect(),
+                    removed: gone.map(tick),
+                    headings,
+                    health,
+                }
             })
             .collect();
     }
@@ -1206,11 +1437,11 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             .map(|(&p, v)| match (u32::try_from(p), v) {
                 (Ok(p), _) => pid(holders.api(p, s.frame) as i32).map(HudArgument::Player),
                 (Err(_), Some(crate::splash::Arg::Number(n))) => Some(HudArgument::Number(*n)),
-                (Err(_), Some(crate::splash::Arg::Key(k))) => Some(HudArgument::Text(*k)),
+                (Err(_), Some(crate::splash::Arg::Key(k))) => Some(HudArgument::Text(StringId(*k))),
                 (Err(_), None) => None,
             })
             .collect();
-        events.push((s.frame, Event::HudMessage(HudMessage { key: s.key, arguments, viewers: s.seen_by })));
+        events.push((s.frame, Event::HudMessage(HudMessage { key: StringId(s.key), arguments, viewers: s.seen_by })));
     }
     for (frame, g) in script_events {
         events.push((frame, Event::GameEvent(g)));
@@ -1247,6 +1478,170 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         });
     }
 
+    let deaths = match &ex.deaths {
+        Some(d) => d.clone(),
+        None => small_lobby_deaths(&film, roster.players.len(), Some(&entries), level),
+    };
+    // The game sends no kill event for a bot's death: it sends one only for
+    // a victim with a player, and a bot has none. Such a death is still a
+    // kill, at the frame its player let go of the life (else its last
+    // sample).
+    //
+    // Who killed is the game's decision, and the scoreboard records it: a kill
+    // counted then for the killer (once per count, the rows being per round; a
+    // kill event spends its own), else a suicide counted for the victim.
+    // Without either (the match over, no scoreboard) the game's own rule
+    // decides from the film's hits: the fatal hit's attacker when an enemy,
+    // else the most recent enemy to hit the victim in the 6 s before, else the
+    // most recent player to (a teammate's hit is a betrayal, as the match
+    // stats count it). The film can miss the fatal hit, so the scoreboard
+    // comes first. The assists are the other enemies whose
+    // hits on the life in the 6 s before add up to a fifth of its shield and
+    // health; the largest is the assistant. (The game's test has no time limit,
+    // but its damage records go: counting older hits names assists the
+    // scoreboard never counts.)
+    let rises = |slot: u32| {
+        let mut out: Vec<(u32, i64)> = Vec::new();
+        let mut had: HashMap<(u32, u32), i32> = HashMap::new();
+        for c in stat_log.changes.iter().filter(|c| c.kind == 0 && c.slot == slot) {
+            let prev = had.insert((c.id, c.round), c.value).unwrap_or(0);
+            if c.value > prev {
+                out.extend(std::iter::repeat_n((c.id, c.frame), (c.value - prev) as usize));
+            }
+        }
+        out
+    };
+    let (kill_counts, suicide_counts) = (rises(KILLS_SLOT), rises(SUICIDES_SLOT));
+    let near = |frame: i64, f: i64| (f - frame).abs() <= DEATH_FRAMES;
+    let mut spent = vec![false; kill_counts.len()];
+    for (frame, e) in &events {
+        let Event::Kill(k) = e else { continue };
+        let Some(killer) = k.killer.filter(|&c| c != k.victim) else { continue };
+        let at = (0..kill_counts.len())
+            .filter(|&i| !spent[i] && kill_counts[i].0 == killer.0 as u32 && near(*frame, kill_counts[i].1))
+            .min_by_key(|&i| (kill_counts[i].1 - frame).abs());
+        if let Some(i) = at {
+            spent[i] = true;
+        }
+    }
+    let has_teams = roster.players.iter().any(|p| p.team.is_some());
+    // Teams just before the death: Infection moves its victim at the kill.
+    let team_then = |p: PlayerId, frame: i64| {
+        team_history
+            .get(p.0 as usize)
+            .and_then(|h| crate::teams::at(h, frame - 1))
+            .or(roster.players.get(p.0 as usize).and_then(|r| r.team))
+    };
+    // A player without a team (a free for all's bot) is everyone's enemy.
+    let enemies = |a: PlayerId, b: PlayerId, frame: i64| {
+        a != b && (!has_teams || team_then(a, frame).is_none_or(|t| team_then(b, frame) != Some(t)))
+    };
+    let (body_max, shield_max) = crate::damage::spartan();
+    let vitality = body_max + if vitals.as_ref().is_some_and(|v| v.shieldless()) { 0.0 } else { shield_max };
+    if let Some(ff) = &fired {
+        let recorded: Vec<(i64, PlayerId)> = events
+            .iter()
+            .filter_map(|(f, e)| match e {
+                Event::Kill(k) => Some((*f, k.victim)),
+                _ => None,
+            })
+            .collect();
+        // (victim, its path, frame, the game's rule's killer, each enemy's
+        // share of the life's shield and health)
+        let mut unrecorded: Vec<(PlayerId, usize, i64, Option<PlayerId>, Vec<(PlayerId, f64)>)> = Vec::new();
+        for (vk, p) in paths.iter().enumerate() {
+            let Some(victim) = pid(p.player_index) else { continue };
+            let starts = p.life_starts.clone().unwrap_or_else(|| vec![0]);
+            for (j, &a) in starts.iter().enumerate() {
+                let b = starts.get(j + 1).copied().unwrap_or(p.positions.len()).min(p.positions.len());
+                let Some(slot) = p.life_slots.as_ref().and_then(|s| s.get(j)).copied() else { continue };
+                if a >= b || !deaths.iter().any(|d| d.slot_id == slot) {
+                    continue;
+                }
+                let (first, last) = (p.positions[a].frame, p.positions[b - 1].frame);
+                let frame = owners.get(&slot).filter(|o| o.released).and_then(|o| o.end).unwrap_or(last);
+                if recorded.iter().any(|&(f, v)| v == victim && f >= first && f <= frame + INFERRED_KILL_FRAMES) {
+                    continue;
+                }
+                let by = |i: usize| ff.hits[i].1.and_then(|k| pid(paths[k].player_index));
+                let on_life = |i: usize| ff.hits[i].2 == vk && ff.hits[i].0 <= frame + INFERRED_KILL_FRAMES;
+                let recent: Vec<usize> = (0..ff.hits.len())
+                    .rev()
+                    .filter(|&i| on_life(i))
+                    .take_while(|&i| {
+                        fire::within_ticks(&ex.frame_ticks, ff.hits[i].0, frame.max(ff.hits[i].0), KILL_CREDIT_TICKS)
+                    })
+                    .collect();
+                let killer = match recent.first().and_then(|&i| by(i)) {
+                    Some(a) if enemies(a, victim, frame) => Some(a),
+                    _ => recent
+                        .iter()
+                        .filter_map(|&i| by(i))
+                        .find(|&a| enemies(a, victim, frame))
+                        .or_else(|| recent.iter().find_map(|&i| by(i))),
+                };
+                let mut dealt: Vec<(PlayerId, f64)> = Vec::new();
+                for i in recent.iter().copied().filter(|&i| ff.hit_details[i].0 == slot) {
+                    let Some(a) = by(i).filter(|&a| enemies(a, victim, frame)) else { continue };
+                    let d = hit_damage.get(i).map_or(0.0, |h| h.shield + h.body) / vitality;
+                    match dealt.iter_mut().find(|x| x.0 == a) {
+                        Some(x) => x.1 += d,
+                        None => dealt.push((a, d)),
+                    }
+                }
+                unrecorded.push((victim, vk, frame, killer, dealt));
+            }
+        }
+        // Deaths and counted kills pair up nearest first over all of them, so
+        // a chain of kills frames apart (Infection's) pairs each death with
+        // its own; at equal distance the rule's killer goes first.
+        let mut pairs: Vec<(i64, bool, usize, usize)> = Vec::new();
+        for (d, &(victim, _, frame, rule, _)) in unrecorded.iter().enumerate() {
+            for (i, &(id, f)) in kill_counts.iter().enumerate() {
+                // A counted kill is of an enemy: betrayals count apart.
+                let enemy = pid(id as i32).is_some_and(|k| enemies(k, victim, frame));
+                if !spent[i] && enemy && near(frame, f) {
+                    pairs.push(((f - frame).abs(), pid(id as i32) != rule, d, i));
+                }
+            }
+        }
+        pairs.sort_unstable();
+        let mut credited: Vec<Option<PlayerId>> = vec![None; unrecorded.len()];
+        for (_, _, d, i) in pairs {
+            if credited[d].is_none() && !spent[i] {
+                spent[i] = true;
+                credited[d] = pid(kill_counts[i].0 as i32);
+            }
+        }
+        for (&(victim, vk, frame, rule, ref dealt), credited) in unrecorded.iter().zip(credited) {
+            let suicide = suicide_counts.iter().any(|&(id, f)| id == victim.0 as u32 && near(frame, f));
+            let killer = credited.or(suicide.then_some(victim)).or(rule);
+            let assist = dealt
+                .iter()
+                .copied()
+                .filter(|&(a, share)| Some(a) != killer && share >= ASSIST_SHARE)
+                .max_by(|a, b| a.1.total_cmp(&b.1));
+            let kk = killer.and_then(|k| path_of(k.0 as i32));
+            let (cause, weapon) = cause_and_weapon(ff, Some(vk), kk, frame);
+            let kill = Kill {
+                victim,
+                killer,
+                killer_damage_percent: None,
+                assistant: assist.map(|a| a.0),
+                assistant_damage_percent: assist.map(|a| (a.1 * 100.0) as u32),
+                suicide: killer == Some(victim),
+                headshot: None,
+                scored: scored(victim, killer, frame),
+                cause,
+                weapon,
+                position: at_frame(vk, frame),
+                inferred: true,
+                betrayal: false,
+            };
+            events.push((frame, Event::Kill(kill)));
+        }
+    }
+
     events.sort_by_key(|e| e.0);
     let mut events: Vec<TimedEvent> =
         events.into_iter().map(|(f, event)| TimedEvent { tick: tick(f), event }).collect();
@@ -1267,22 +1662,19 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         scale_y: c.scale_y,
         offset_x: c.offset_x,
         offset_y: c.offset_y,
-        spawn_fit: c.spawn_samples.zip(c.spawn_inliers),
+        spawn_fit: c.spawn_samples.zip(c.spawn_inliers).map(|(checked, on_pads)| SpawnFit { checked, on_pads }),
     });
     let sample = |p: &MotionPoint, wpos: Option<&WorldPosition>, st: Option<&SampleState>| Sample {
         tick: tick(p.frame),
         raw: [p.raw1, p.raw2],
         position: wpos.map(|w| Position { x: w.x, y: w.y, z: st.and_then(|s| s.z) }),
         yaw: st.and_then(|s| s.yaw),
+        pitch: st.and_then(|s| s.pitch),
         speed: st.and_then(|s| s.speed),
         health: st.and_then(|s| s.health),
         shield: st.and_then(|s| s.shield),
         in_vehicle: p.in_vehicle,
         vehicle: u16::try_from(p.vehicle).ok().map(EntityId),
-    };
-    let deaths = match &ex.deaths {
-        Some(d) => d.clone(),
-        None => small_lobby_deaths(&film, roster.players.len(), Some(&entries)),
     };
     let mut lives = Vec::new();
     for (p, wp) in paths.iter().zip(&world) {
@@ -1298,14 +1690,14 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             let slot = p.life_slots.as_ref().and_then(|s| s.get(k)).copied();
             let entity = slot.and_then(|s| u16::try_from(s).ok()).map(EntityId);
             let died = slot.is_some_and(|s| deaths.iter().any(|d| d.slot_id == s));
-            lives.push(Life { player: pid(p.player_index), entity, died, death: None, samples });
+            lives.push(Life { player: pid(p.player_index), entity, died, death: None, until: None, samples });
         }
     }
     if let Some(c) = &calib {
         for p in &ex.unassigned {
             let w = apply_calibration(&p.positions, c);
             let samples = p.positions.iter().zip(&w).map(|(m, w)| sample(m, Some(w), None)).collect();
-            lives.push(Life { player: None, entity: None, died: false, death: None, samples });
+            lives.push(Life { player: None, entity: None, died: false, death: None, until: None, samples });
         }
     }
     lives.sort_by_key(|l| l.start());
@@ -1316,6 +1708,10 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             lives.iter_mut().filter(|l| l.player == Some(k.victim) && l.start().is_some_and(|s| s <= e.tick)).last();
         if let Some(l) = life.filter(|l| l.death.is_none()) {
             l.death = Some(e.tick);
+            // A death the game recorded where the film's scoreboard missed
+            // it: the scoreboard is what the lives' deaths come from.
+            let frame = clock.frame_at(e.tick).map_or(0, |f| f as i64);
+            l.died |= k.scored == Some(true) && !on_scoreboard(k.victim, k.killer, frame);
         }
     }
 
@@ -1329,16 +1725,207 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 (None, Some(xuid)) => PlayerKind::Human { xuid: Xuid(xuid), gamertag: p.gamertag.clone() },
                 (None, None) => return None,
             };
+            let team = p.team.and_then(|t| u8::try_from(t).ok()).map(TeamId);
+            // A team game's players only: in free for all every designator
+            // names team 0.
+            let mut teams: Vec<TeamChange> = Vec::new();
+            for &(frame, t) in team_history.get(i).into_iter().flatten().filter(|_| has_teams) {
+                let Ok(t) = u8::try_from(t) else { continue };
+                if teams.last().is_none_or(|c| c.team.0 != t) {
+                    teams.push(TeamChange { tick: tick(frame), team: TeamId(t) });
+                }
+            }
             Some(Player {
                 id: PlayerId(u8::try_from(i).ok()?),
                 kind,
-                team: p.team.and_then(|t| u8::try_from(t).ok()).map(TeamId),
+                team,
+                teams,
                 present_at_start: p.present_at_start,
                 joined: p.first.filter(|_| !p.present_at_start).map(tick),
                 left: p.left.map(tick),
             })
         })
         .collect();
+
+    // When each life is over: at its death; a death without a kill, or a
+    // life another of the player's follows, at its last sample; the last
+    // life of a player who left, when they left.
+    for p in &players {
+        let mine: Vec<usize> = (0..lives.len()).filter(|&i| lives[i].player == Some(p.id)).collect();
+        for (k, &i) in mine.iter().enumerate() {
+            let l = &lives[i];
+            let followed = k + 1 < mine.len();
+            let end = match l.death {
+                Some(d) => Some(d),
+                None if l.died || followed => l.end(),
+                None => None,
+            };
+            let left = p.left.filter(|_| !followed);
+            lives[i].until = match (end, left) {
+                (Some(e), Some(l)) => Some(e.min(l)),
+                (e, l) => e.or(l),
+            };
+        }
+    }
+    for l in lives.iter_mut().filter(|l| l.player.is_none() && l.died) {
+        l.until = l.end();
+    }
+    // A ride is part of a life: a body left seated in a vehicle rides on
+    // after the death, the life doesn't.
+    for r in &mut rides {
+        let life = lives
+            .iter()
+            .filter(|l| l.player == Some(r.player))
+            .find(|l| l.start().is_some_and(|s| s <= r.from) && !l.is_over_at(r.from));
+        if let Some(until) = life.and_then(|l| l.until) {
+            r.to = r.to.min(until);
+        }
+    }
+    // A vehicle's projectile is its driver's; a part's (a turret's) is the
+    // rider in that part.
+    for &(i, v, frame) in &vehicle_shots {
+        let at = tick(frame);
+        let id = ex.vehicle_ident.resolve(v);
+        let part = (id != v).then(|| ex.vehicle_ident.tag(v, frame).map(TagId)).flatten();
+        let track = vehicles
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.entity == EntityId(id as u16) && t.on_map_at(at))
+            .max_by_key(|(_, t)| t.span().map(|s| s.0))
+            .map(|(k, _)| k);
+        let rider = track.and_then(|k| {
+            rides.iter().find(|r| {
+                r.vehicle == Some(VehicleIndex(k))
+                    && r.from <= at
+                    && at <= r.to
+                    && if part.is_some() { r.part == part } else { r.part.is_none() && r.seat == Some(0) }
+            })
+        });
+        if let Some(r) = rider {
+            projectile_flights[i].player = Some(r.player);
+        }
+    }
+    // Vehicle destroys and hijacks: the mode scripts' personal scores.
+    if let Some(group) = crate::game::events::group(&scripts) {
+        let hits: Vec<(Tick, Option<usize>, Option<PlayerId>, Option<u32>)> = fired
+            .as_ref()
+            .map_or(&[][..], |f| &f.vehicle_hits[..])
+            .iter()
+            .map(|&(frame, v, attacker, tag)| {
+                let at = tick(frame);
+                let id = EntityId(ex.vehicle_ident.resolve(v) as u16);
+                let track = vehicles
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, t)| t.entity == id && t.on_map_at(at))
+                    .max_by_key(|(_, t)| t.span().map(|s| s.0))
+                    .map(|(i, _)| i);
+                (at, track, attacker.and_then(|k| pid(paths[k].player_index)), tag)
+            })
+            .collect();
+        // Each kill's tick, victim, killer, cause and weapon.
+        type KillAt = (Tick, PlayerId, Option<PlayerId>, Option<Cause>, Option<TagId>);
+        let kills: Vec<KillAt> = events
+            .iter()
+            .filter_map(|e| match &e.event {
+                Event::Kill(k) => Some((e.tick, k.victim, k.killer, k.cause, k.weapon)),
+                _ => None,
+            })
+            .collect();
+        // A damage effect's owner as the film's weapon list names it.
+        let named = |owner: u32| {
+            fired.as_ref().and_then(|ff| ff.named(owner).map(|w| TagId(ff.weapons[w].id))).unwrap_or(TagId(owner))
+        };
+        let ride_at = |p: PlayerId, t: Tick| rides.iter().rfind(|r| r.player == p && r.from <= t && t <= r.to);
+        let mut scored = Vec::new();
+        for e in &events {
+            let Event::GameEvent(g) = &e.event else { continue };
+            let t = e.tick;
+            if let Some(&(_, vehicle)) = group.destroys.iter().find(|d| d.0 == g.id) {
+                for player in g.players.iter() {
+                    // The last hit on a vehicle of that type in the 2 s
+                    // before, the player's own first.
+                    let recent: Vec<_> = hits
+                        .iter()
+                        .filter(|h| h.0 <= t + 3 && h.0.0 + 120 >= t.0)
+                        .filter(|h| h.1.is_some_and(|i| vehicles[i].vehicle() == Some(vehicle)))
+                        .collect();
+                    let hit = recent.iter().rfind(|h| h.2 == Some(player)).or(recent.last());
+                    let track = hit.and_then(|h| h.1);
+                    let riders: Vec<&KillAt> = kills
+                        .iter()
+                        .filter(|(kt, victim, ..)| {
+                            kt.0.abs_diff(t.0) <= 3
+                                && track.is_some()
+                                && ride_at(*victim, kt.saturating_sub(2)).is_some_and(|r| r.vehicle == track.map(VehicleIndex))
+                        })
+                        .collect();
+                    let killed: PlayerMask = riders.iter().map(|k| k.1).collect();
+                    let damage = hit.and_then(|h| h.3).map(TagId);
+                    // What destroyed it: the player's last hit on it whose
+                    // effect names its weapon (the wreck's own blast names
+                    // none), else the weapon a rider they killed with it
+                    // died to, else their last shot in the 2 s before.
+                    let mine = || recent.iter().rev().filter(|h| h.2 == Some(player) && h.1 == track);
+                    let by_hit = mine().find_map(|h| {
+                        let (cause, owner) = damage::cause(h.3?);
+                        Some((cause, named(owner?)))
+                    });
+                    let by_rider = riders.iter().filter(|k| k.2 == Some(player)).find_map(|k| Some((k.3?, k.4?)));
+                    let by_shot = || {
+                        let ff = fired.as_ref()?;
+                        let frame = ex.frame_ticks.partition_point(|&x| x < t.0) as i64;
+                        let w = fire::shot_before(ff, path_of(player.0 as i32)?, &ex.frame_ticks, frame)?;
+                        Some((Cause::Weapon, TagId(ff.weapons[w].id)))
+                    };
+                    let (cause, weapon) = match by_hit.or(by_rider).or_else(by_shot) {
+                        Some((c, w)) => (Some(c), Some(w)),
+                        None => (mine().find_map(|h| h.3).map(|t| damage::cause(t).0), None),
+                    };
+                    let d = VehicleDestroyed { player, vehicle, track: track.map(VehicleIndex), damage, cause, weapon, killed };
+                    scored.push(TimedEvent { tick: t, event: Event::VehicleDestroyed(d) });
+                }
+            }
+            if let Some(&(_, vehicle)) = group.hijacks.iter().find(|h| h.0 == g.id) {
+                for player in g.players.iter() {
+                    let ride = rides
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, r)| r.player == player && r.from.0.abs_diff(t.0) <= 120)
+                        .filter(|(_, r)| r.vehicle.is_some_and(|i| vehicles[i.0].vehicle() == Some(vehicle)))
+                        .min_by_key(|(_, r)| r.from.0.abs_diff(t.0))
+                        .map(|(i, _)| i);
+                    // The hijacker boards through a hijack seat while the
+                    // rider stays seated until thrown out, a second or two
+                    // after the event.
+                    let from = ride.and_then(|i| {
+                        let mine = rides[i];
+                        rides
+                            .iter()
+                            .filter(|r| r.player != player && r.vehicle == mine.vehicle && r.from <= mine.from)
+                            .filter(|r| t <= r.to && r.to.0 <= t.0 + 180)
+                            .min_by_key(|r| r.to)
+                            .map(|r| r.player)
+                    });
+                    scored.push(TimedEvent { tick: t, event: Event::Hijack(Hijack { player, vehicle, ride: ride.map(RideIndex), from }) });
+                }
+            }
+        }
+        events.extend(scored);
+        events.sort_by_key(|e| e.tick);
+    }
+
+    // A kill between players on one team the tick before is a betrayal.
+    let team_before = |p: PlayerId, t: Tick| {
+        players.iter().find(|x| x.id == p).and_then(|x| x.team_at(t.saturating_sub(1)))
+    };
+    for e in &mut events {
+        if let Event::Kill(k) = &mut e.event {
+            k.betrayal = k.killer.is_some_and(|killer| {
+                killer != k.victim && team_before(killer, e.tick).is_some_and(|t| team_before(k.victim, e.tick) == Some(t))
+            });
+        }
+    }
 
     // What each player pressed and carried.
     let mut states: BTreeMap<PlayerId, PlayerState> = BTreeMap::new();
@@ -1358,7 +1945,15 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         let Some(p) = pid(paths[k].player_index) else { continue };
         let s = states.entry(p).or_default();
         s.ammo =
-            a.ammo.iter().map(|&(f, slot, loaded, reserve)| Ammo { tick: tick(f), slot, loaded, reserve }).collect();
+            a.ammo
+                .iter()
+                .map(|&(f, slot, loaded, reserve)| Ammo {
+                    tick: tick(f),
+                    slot,
+                    loaded: u32::try_from(loaded).ok(),
+                    reserve: u32::try_from(reserve).ok(),
+                })
+                .collect();
         s.energy = a.energy.iter().map(|&(f, slot, percent)| Energy { tick: tick(f), slot, percent }).collect();
         s.heat = a.heat.iter().map(|&(f, slot, percent, flags)| Heat { tick: tick(f), slot, percent, flags }).collect();
         s.grenades = a.grenades.iter().map(|&(f, counts)| GrenadeCount { tick: tick(f), counts }).collect();
@@ -1384,10 +1979,10 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                     0 => StatOwner::Player(pid(c.id as i32)?),
                     _ => StatOwner::Team(TeamId(u8::try_from(c.id).ok()?)),
                 };
-                Some(StatChange { tick: tick(c.frame), owner, slot: c.slot, value: c.value })
+                Some(StatChange { tick: tick(c.frame), owner, slot: c.slot, value: c.value, round: c.round })
             })
             .collect(),
-        clock: stat_log
+        match_clock: stat_log
             .clock
             .iter()
             .map(|c| MatchClock { tick: tick(c.frame), limit: c.limit, left: c.left, state: c.state })
@@ -1404,7 +1999,10 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                         lives_left: g
                             .lives
                             .iter()
-                            .filter_map(|(&p, series)| Some((pid(p as i32)?, series.get(k).copied().flatten()?)))
+                            .filter_map(|(&p, series)| {
+                                let left = series.get(k).copied().flatten()?;
+                                Some((pid(p as i32)?, u32::try_from(left).ok()))
+                            })
                             .collect(),
                         rows: g
                             .players
@@ -1429,7 +2027,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 entity_type: o.entity_type,
                 position: Position::new(o.x, o.y),
                 from: tick(o.from),
-                to: o.to.map(tick),
+                removed: o.to.map(tick),
             })
             .collect(),
         _ => Vec::new(),
@@ -1456,7 +2054,10 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         options: v
             .options
             .iter()
-            .map(|&(hash, value)| VariantOption { hash, name: game::option_name(hash).map(str::to_string), value })
+            .map(|&(hash, value)| {
+                let hash = StringId(hash);
+                VariantOption { hash, name: game::option_name(hash).map(str::to_string), value }
+            })
             .collect(),
         scripts: scripts.iter().cloned().collect(),
         icon: v.icon,
@@ -1466,7 +2067,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 .into_iter()
                 .map(|s| StatDefinition {
                     name: s.name,
-                    id: s.id,
+                    id: StringId(s.id),
                     base: s.base,
                     aggregation: s.aggregation,
                     lower_is_better: s.sort == -1,
@@ -1527,7 +2128,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                 x: p.position.x,
                 y: p.position.y,
                 z: p.position.z,
-                respawn: p.respawn,
+                respawn: p.kind == SpawnKind::Respawn,
                 team: p.team.map(|t| t.0 as i64),
             })
             .collect();
@@ -1555,28 +2156,32 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
     };
 
     let header = Header {
-        build: raw_header.build.clone(),
+        build: raw_header.build.clone().unwrap_or_default(),
         branch: raw_header.branch.clone(),
-        started_at: raw_header.start,
+        started_at: raw_header.start.map(u64::from),
         map_asset_id: raw_header.map_asset_id.map(Guid),
         map_version_id: raw_header.map_version_id.map(Guid),
-        level: hints.level.or(raw_header.level.map(TagId)),
+        level_id: hints.level.or(raw_header.level.map(TagId)),
     };
 
     Ok(crate::Film {
+        #[cfg(feature = "raw")]
         raw: film,
+        #[cfg(feature = "raw")]
         params,
+        #[cfg(feature = "raw")]
         has_highlights,
         encoding: match layout.mode {
-            EncodingMode::PerEntity => crate::format::Encoding::PerEntity,
-            EncodingMode::BotComposite => crate::format::Encoding::BotComposite,
-            EncodingMode::MultiplayerComposite => crate::format::Encoding::Composite,
+            EncodingMode::PerEntity => Encoding::PerEntity,
+            EncodingMode::BotComposite => Encoding::BotComposite,
+            EncodingMode::MultiplayerComposite => Encoding::Composite,
         },
         header,
         clock,
         players,
         variant,
         level: level_model,
+        level_id: hints.level.or(raw_header.level.map(TagId)),
         coordinates,
         lives,
         vehicles,
@@ -1584,6 +2189,8 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         world: world_objects,
         ground,
         grenades: grenade_flights,
+        projectiles: projectile_flights,
+        event_group: crate::game::events::group(&scripts),
         zones: zones_out,
         hill_score,
         events,
@@ -1601,8 +2208,8 @@ mod tests {
     #[test]
     fn medals_fix_the_highlight_clock() {
         let hl_ticks: Vec<u32> = (0..2000).collect();
-        // Medals at 1, 10 and 20 s for players 0 and 2; each recipient gets an
-        // event 13 ticks after the medal's time, among others.
+        // Medals at 1, 10, 20 and 25 s for players 0 and 2; each recipient
+        // gets an event 13 ticks after the medal's time, among others.
         let medals = [(0, 1000.0), (2, 10_000.0), (0, 20_000.0), (2, 25_000.0)];
         let at = |ms: f64| (ms * crate::lives::TICKS_PER_MS).round() as i64 + 13;
         let mut events: Vec<(i64, u32)> = medals.iter().map(|&(p, ms)| (at(ms), 0x8000_0000u32 >> p)).collect();
@@ -1628,16 +2235,18 @@ mod tests {
                 cause: None,
                 weapon: None,
                 position: None,
+                inferred: false,
+                betrayal: false,
             })
         };
         let at = |t: u32, event: Event| TimedEvent { tick: Tick(t), event };
         let mut events = vec![
             at(100, kill(1)),
-            at(101, Event::Headshot { player: PlayerId(1) }),
-            at(200, Event::Headshot { player: PlayerId(2) }),
+            at(101, Event::Headshot(Headshot { player: PlayerId(1) })),
+            at(200, Event::Headshot(Headshot { player: PlayerId(2) })),
             at(200, kill(1)),
             at(300, kill(3)),
-            at(400, Event::Headshot { player: PlayerId(4) }),
+            at(400, Event::Headshot(Headshot { player: PlayerId(4) })),
         ];
         mark_headshots(&mut events);
         let marks: Vec<Option<bool>> = events

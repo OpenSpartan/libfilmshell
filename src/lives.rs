@@ -19,7 +19,7 @@ pub const TICKS_PER_MS: f64 = 0.05994;
 /// hitch: HighlightEvents time doesn't advance across it.
 const HITCH_TICKS: u32 = 6;
 
-/// The film's hitches, (the tick on the highlight clock, ticks it skipped),
+/// The film's hitches (the tick on the highlight clock, ticks it skipped),
 /// oldest first.
 pub fn hitches(game_ticks: &[u32]) -> Vec<(u32, u32)> {
     let mut counts = std::collections::BTreeMap::new();
@@ -41,14 +41,14 @@ pub fn hitches(game_ticks: &[u32]) -> Vec<(u32, u32)> {
     out
 }
 
-/// The clock HighlightEvents time runs on, in ticks for each frame. Its
-/// times are the server's milliseconds, which the packets' timestamps keep
+/// The clock HighlightEvents time runs on, in ticks for each frame.
+///
+/// Its times are the server's milliseconds, which the packets' timestamps keep
 /// (a death's record falls within a tick of its kill's packet on every
-/// reference film), so with `times_us`, each frame's timestamp, it is the
-/// first frame's tick plus the time since, in ticks. A server that falls
-/// behind runs fewer ticks than time: a 34-minute minigame ran 29 minutes of
-/// ticks. Without timestamps it is `game_ticks` without the ticks recorder
-/// hitches skipped.
+/// reference film), so with `times_us`, each frame's timestamp, it is the first
+/// frame's tick plus the time since, in ticks. A server that falls behind runs
+/// fewer ticks than time: a 34-minute minigame ran 29 minutes of ticks. Without
+/// timestamps it is `game_ticks` without the ticks recorder hitches skipped.
 pub fn highlight_ticks(game_ticks: &[u32], times_us: Option<&[u64]>) -> Vec<u32> {
     match times_us {
         Some(us) if us.len() == game_ticks.len() && !us.is_empty() => {
@@ -94,11 +94,17 @@ pub struct LifeSlot {
     pub end: f64,
     pub x: Option<f64>,
     pub y: Option<f64>,
+    /// The tick the player controlling the life let go of it, which a death
+    /// does (not the release of every life at the film's end); None when the
+    /// film doesn't say.
+    pub released: Option<f64>,
 }
 
-/// Ticks before an uncounted bot's first listing that its first life may
-/// start.
+/// Ticks before a player's first listing that their first life may start.
+/// A human is listed when they join and spawns later; a bot can be listed
+/// after it spawns, by up to 463 ticks on the test films.
 const LISTED_EARLY_TICKS: f64 = 120.0;
+const BOT_LISTED_EARLY_TICKS: f64 = 600.0;
 
 #[derive(Clone, Debug)]
 pub struct LifePlayer {
@@ -112,7 +118,36 @@ pub struct LifePlayer {
     pub death_ms: Option<Vec<f64>>,
     /// An uncounted bot's listing span (`RosterEntry::listed`).
     pub listed: Option<(f64, f64)>,
+    /// When the player's lives can start (`RosterEntry::in_match`).
+    pub in_match: Option<(f64, f64)>,
+    /// The deaths the scoreboard counts, each as the earliest tick it can be
+    /// at and the tick it is counted at (`RosterEntry::death_frames`); None
+    /// without a scoreboard.
+    pub death_ticks: Option<Vec<(f64, f64)>>,
 }
+
+impl LifePlayer {
+    /// Whether a life starting at `start` can be the player's: not before
+    /// they joined, nor after they left.
+    fn can_start(&self, start: f64) -> bool {
+        let early = if self.is_bot { BOT_LISTED_EARLY_TICKS } else { LISTED_EARLY_TICKS };
+        self.in_match.is_none_or(|(a, b)| start >= a - early && start <= b)
+    }
+
+    /// Whether letting go of a life at `released` was a death: the
+    /// scoreboard counts one then, when there is a scoreboard. A bot removed
+    /// to make room for a joiner lets go of its life with no death counted,
+    /// as does everyone the end of the match kills.
+    fn died_at(&self, released: Option<f64>) -> bool {
+        released.is_some_and(|r| {
+            let m = COUNTED_DEATH_TICKS;
+            self.death_ticks.as_ref().is_none_or(|d| d.iter().any(|&(a, b)| r >= a - m && r <= b + m))
+        })
+    }
+}
+
+/// How far apart a release and the death the scoreboard counts for it can be.
+const COUNTED_DEATH_TICKS: f64 = 30.0;
 
 #[derive(Clone, Copy, Debug)]
 pub struct LifeClock {
@@ -422,6 +457,9 @@ pub fn assign_lives(slots: &[LifeSlot], players: &[LifePlayer]) -> Option<LifeAs
         if s.player.is_some_and(|p| p != q.player) {
             return FORBIDDEN;
         }
+        if by_index.get(&q.player).is_some_and(|p| !p.can_start(s.start)) {
+            return FORBIDDEN;
+        }
         // A slot whose player the film names needs no prior on who it is:
         // only which of their lives.
         let named = s.player.is_some();
@@ -473,14 +511,23 @@ pub fn assign_lives(slots: &[LifeSlot], players: &[LifePlayer]) -> Option<LifeAs
             }
         }
         if let Some(ee) = q.e_exp {
-            let e = s.end - ee;
+            // Where the player let go of the life, when the film says: a body
+            // in a vehicle can send records after its death.
+            let e = s.released.unwrap_or(s.end) - ee;
             if e > t.end_late_max {
-                return FORBIDDEN;
-            }
-            c += f64::min(
+                // A slot the film names its player for can outlast the death:
+                // a body left seated in a moving vehicle sends the vehicle's
+                // records until it is deleted.
+                if !named || s.start > ee {
+                    return FORBIDDEN;
+                }
+                c += f64::min(t.early_cap, 0.5 * t.end_late_max);
+            } else {
+                c += f64::min(
                 t.early_cap,
-                if e >= -t.end_soft { 0.5 * e.abs() } else { 0.5 * t.end_soft + 0.25 * (-e - t.end_soft) },
-            );
+                    if e >= -t.end_soft { 0.5 * e.abs() } else { 0.5 * t.end_soft + 0.25 * (-e - t.end_soft) },
+                );
+            }
         } else if !q.left {
             c += f64::min(t.early_cap, 0.25 * f64::max(0.0, match_end - t.survivor_window - s.end));
         }
@@ -595,7 +642,7 @@ pub fn assign_lives(slots: &[LifeSlot], players: &[LifePlayer]) -> Option<LifeAs
                 continue;
             }
             // An uncounted bot's lives start while it is listed.
-            if p.listed.is_some_and(|(a, b)| s.start < a - LISTED_EARLY_TICKS || s.start > b) {
+            if p.listed.is_some_and(|(a, b)| s.start < a - BOT_LISTED_EARLY_TICKS || s.start > b) || !p.can_start(s.start) {
                 continue;
             }
             let mut c;
@@ -625,19 +672,78 @@ pub fn assign_lives(slots: &[LifeSlot], players: &[LifePlayer]) -> Option<LifeAs
             chains.get_mut(&b).unwrap().push(s);
         }
     }
+    // Where the film says when a player let go of a life, that is a death
+    // when the scoreboard counts one then; else every life but the last
+    // died, as many as the scoreboard counts.
+    let said = slots.iter().any(|s| s.released.is_some());
     for p in &untimed {
         let chain = &chains[&p.index];
         for (k, s) in chain.iter().enumerate() {
             owner.insert(s.slot_id, (p.index, k));
             let last = k == chain.len() - 1;
-            let died = !last
-                || p.deaths >= p.spawns
-                || ((chain.len() as f64) < p.spawns && !p.left && s.end < match_end - t.survivor_window);
-            if died && (k as f64) < p.deaths {
+            let died = if said {
+                p.died_at(s.released)
+            } else {
+                (!last
+                    || p.deaths >= p.spawns
+                    || ((chain.len() as f64) < p.spawns && !p.left && s.end < match_end - t.survivor_window))
+                    && (k as f64) < p.deaths
+            };
+            if died {
                 deaths.insert(s.slot_id, None);
             }
         }
     }
 
+    // A life the film names that the matching left out is its owner's: a
+    // mode whose rounds respawn everyone (Infection) gives a player more
+    // lives than their deaths and spawns predict. It ends in one of the
+    // owner's deaths when one falls at its end.
+    for s in slots {
+        if owner.contains_key(&s.slot_id) {
+            continue;
+        }
+        let Some(p) = s.player.and_then(|p| by_index.get(&p)) else { continue };
+        if p.is_bot != s.is_bot || !p.can_start(s.start) {
+            continue;
+        }
+        owner.insert(s.slot_id, (p.index, usize::MAX));
+        let Some(times) = &p.death_ms else {
+            if p.died_at(s.released) {
+                deaths.insert(s.slot_id, None);
+            }
+            continue;
+        };
+        let taken: Vec<f64> = owner
+            .iter()
+            .filter(|(_, o)| o.0 == p.index)
+            .filter_map(|(slot, _)| deaths.get(slot).copied().flatten())
+            .collect();
+        let at_end = times.iter().copied().filter(|ms| !taken.contains(ms)).find(|&ms| {
+            let d = tick_of(ms);
+            let end = s.released.unwrap_or(s.end);
+            end <= d + t.end_late_max && end >= d - NAMED_DEATH_EARLY_TICKS
+        });
+        if let Some(ms) = at_end {
+            deaths.insert(s.slot_id, Some(ms));
+        }
+    }
+    // Each player's lives numbered in the order they start.
+    let start_of: HashMap<i32, f64> = slots.iter().map(|s| (s.slot_id, s.start)).collect();
+    let mut by_player: HashMap<usize, Vec<i32>> = HashMap::new();
+    for (&slot, &(p, _)) in &owner {
+        by_player.entry(p).or_default().push(slot);
+    }
+    for (p, mut mine) in by_player {
+        mine.sort_by(|a, b| f64::total_cmp(&start_of[a], &start_of[b]).then(a.cmp(b)));
+        for (k, slot) in mine.into_iter().enumerate() {
+            owner.insert(slot, (p, k));
+        }
+    }
+
     Some(LifeAssignment { clock, owner, deaths })
 }
+
+/// How long before a death a named life's last record can be and still end
+/// in it: a player standing still sends none.
+const NAMED_DEATH_EARLY_TICKS: f64 = 600.0;

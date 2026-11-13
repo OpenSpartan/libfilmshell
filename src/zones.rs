@@ -168,9 +168,18 @@ pub struct ZoneEvent {
     pub at: Option<[u32; 3]>,
 }
 
-/// The film's events in frame order. `layout` is how the level lays out a
-/// position, `team_of` gives a player's team.
-pub fn read(film: &Film, layout: Layout, mode: Mode, team_of: impl Fn(i32) -> Option<i32>) -> Vec<ZoneEvent> {
+/// The film's events in frame order.
+///
+/// `layout` is how the level lays out a position, `player_of` maps an engine
+/// slot at a frame to the player's index (the events' masks name engine slots),
+/// and `team_of` gives a player's team.
+pub fn read(
+    film: &Film,
+    layout: Layout,
+    mode: Mode,
+    player_of: impl Fn(i32, i64) -> i32,
+    team_of: impl Fn(i32) -> Option<i32>,
+) -> Vec<ZoneEvent> {
     let ids = table(mode);
     let mut out = Vec::new();
     for_each_event_view(film, layout, |frame, evs| {
@@ -182,7 +191,7 @@ pub fn read(film: &Film, layout: Layout, mode: Mode, team_of: impl Fn(i32) -> Op
                 continue;
             }
             let s = seen.entry(g.id).or_default();
-            s.0.extend((0..32).filter(|p| g.last & (0x8000_0000u32 >> p) != 0));
+            s.0.extend((0..32).filter(|p| g.last & (0x8000_0000u32 >> p) != 0).map(|p| player_of(p, frame as i64)));
             for (k, v) in g.values.iter().flatten() {
                 match *v {
                     Value::Word(6, w) if *k == ZONE_KEY && w & ZONE_BIT != 0 => s.1 = Some(w & !ZONE_BIT),
@@ -380,10 +389,12 @@ fn team_of_clauses(clauses: &[(u32, bool, u32)]) -> Option<i32> {
     clauses.iter().find(|c| c.0 == 3 && !c.1).and_then(|c| (c.2 > 0).then(|| c.2 as i32 - 1))
 }
 
-/// A zone's shape in world units: a box (`a` its full extent along its
-/// forward axis, `b` along its right) or a cylinder (`a` its radius),
-/// `angle` the world direction of its forward axis (radians from +X), the
-/// extents above and below its centre, and the team the map gives it.
+/// A zone's shape in world units.
+///
+/// A box (`a` its full extent along its forward axis, `b` along its right) or a
+/// cylinder (`a` its radius), `angle` the world direction of its forward axis
+/// (radians from +X), the extents above and below its centre, and the team the
+/// map gives it.
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct ZoneShape {
     pub cylinder: bool,
@@ -395,7 +406,7 @@ pub struct ZoneShape {
     pub team: Option<i32>,
 }
 
-/// Bond CompactBinary v2, as much as the multiplayer properties need.
+/// Bond Compact Binary v2, as much as the multiplayer properties need.
 mod bond {
     #[derive(Debug, Clone)]
     pub enum V {

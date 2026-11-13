@@ -12,23 +12,29 @@ fn films() -> Vec<(String, Film)> {
     read_all(&common::film_dirs(), |d| Film::from_chunks(common::load(d)))
 }
 
-/// `read` over the films in `dirs` in parallel: a film takes a second or
-/// more.
+/// `read` over the films in `dirs`, in their order, at most eight at a time
+/// (one per core on a smaller machine): a film takes a second or more, and up
+/// to four times its inflated size in memory while it is read.
 fn read_all(dirs: &[PathBuf], read: impl Fn(&Path) -> Result<Film, Error> + Sync) -> Vec<(String, Film)> {
-    let read = &read;
-    std::thread::scope(|s| {
-        let jobs: Vec<_> = dirs
-            .iter()
-            .map(|d| {
-                s.spawn(move || {
-                    let name = d.file_name().unwrap().to_string_lossy()[..8].to_string();
-                    let film = read(d).unwrap_or_else(|e| panic!("{name}: {e}"));
-                    (name, film)
-                })
-            })
-            .collect();
-        jobs.into_iter().map(|j| j.join().unwrap()).collect()
-    })
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let next = AtomicUsize::new(0);
+    let workers = std::thread::available_parallelism().map_or(4, |n| n.get()).min(8).min(dirs.len());
+    let work = || {
+        let mut read_here = Vec::new();
+        loop {
+            let i = next.fetch_add(1, Ordering::Relaxed);
+            let Some(d) = dirs.get(i) else { break read_here };
+            let name = d.file_name().unwrap().to_string_lossy()[..8].to_string();
+            let film = read(d).unwrap_or_else(|e| panic!("{name}: {e}"));
+            read_here.push((i, name, film));
+        }
+    };
+    let mut films: Vec<(usize, String, Film)> = std::thread::scope(|s| {
+        let jobs: Vec<_> = (0..workers).map(|_| s.spawn(work)).collect();
+        jobs.into_iter().flat_map(|j| j.join().unwrap()).collect()
+    });
+    films.sort_by_key(|f| f.0);
+    films.into_iter().map(|(_, name, film)| (name, film)).collect()
 }
 
 fn corpus() -> &'static [(String, Film)] {
@@ -40,8 +46,8 @@ fn corpus() -> &'static [(String, Film)] {
 fn every_film_has_a_header_and_players() {
     for (name, f) in corpus() {
         let h = f.header();
-        assert!(h.build.as_deref().is_some_and(|b| b.starts_with("6.")), "{name}: {:?}", h.build);
-        assert!(h.started_at.is_some() && h.map_asset_id.is_some() && h.level.is_some(), "{name}");
+        assert!(h.build.starts_with("6."), "{name}: {:?}", h.build);
+        assert!(h.started_at.is_some() && h.map_asset_id.is_some() && h.level_id.is_some(), "{name}");
         assert!(!f.players().is_empty(), "{name}");
         let mut ids: Vec<PlayerId> = f.players().iter().map(|p| p.id).collect();
         ids.dedup();
@@ -59,16 +65,17 @@ fn every_variant_has_its_mode_icon() {
         let v = f.variant().unwrap();
         let icon = v.icon.unwrap_or_else(|| panic!("{name}: no icon"));
         assert!(icon < 20, "{name}: {icon}");
-        let want = match v.mode() {
-            GameMode::CaptureTheFlag => Some(1),
-            GameMode::Oddball => Some(2),
-            GameMode::Extraction => Some(7),
-            GameMode::Strongholds => Some(8),
-            GameMode::KingOfTheHill => Some(12),
-            GameMode::Firefight | GameMode::FirefightKingOfTheHill => Some(19),
-            _ => None,
+        let want: &[u8] = match v.mode() {
+            GameMode::CaptureTheFlag => &[1],
+            GameMode::Oddball => &[2],
+            GameMode::Extraction => &[7],
+            // Land Grab runs Strongholds' scripts with an icon of its own.
+            GameMode::Strongholds => &[8, 14],
+            GameMode::KingOfTheHill => &[12],
+            GameMode::Firefight | GameMode::FirefightKingOfTheHill => &[19],
+            _ => &[],
         };
-        assert!(want.is_none_or(|w| w == icon), "{name}: {:?} has {icon}", v.mode());
+        assert!(want.is_empty() || want.contains(&icon), "{name}: {:?} has {icon}", v.mode());
     }
 }
 
@@ -167,7 +174,7 @@ fn the_scoreboard_counts_the_kill_events() {
         for p in f.players().iter().filter(|p| !p.is_bot()) {
             let scored = f.kills().filter(|(_, k)| k.victim == p.id && k.scored == Some(true)).count() as i32;
             players += 1;
-            agree += usize::from(s.total_stat(StatOwner::Player(p.id), Stat::Deaths) == scored);
+            agree += usize::from(s.total(StatOwner::Player(p.id), Stat::Deaths) == scored);
         }
     }
     assert!(agree * 100 >= players * 95, "{agree} of {players} players");
@@ -186,6 +193,7 @@ fn the_highlight_clock_places_deaths_at_kills() {
     }
 }
 
+#[cfg(feature = "raw")]
 #[test]
 fn snapshots_list_entities_in_index_order() {
     let Some((_, f)) = corpus().iter().find(|(n, _)| n == "f0eca791") else { return };
@@ -284,7 +292,7 @@ fn every_medal_is_kept() {
 fn headshots_mark_their_kills() {
     let (mut events, mut marked) = (0usize, 0usize);
     for (name, f) in corpus() {
-        let n = f.events().iter().filter(|e| matches!(e.event, Event::Headshot { .. })).count();
+        let n = f.events().iter().filter(|e| matches!(e.event, Event::Headshot(_))).count();
         let m = f.kills().filter(|(_, k)| k.headshot == Some(true)).count();
         assert!(m <= n, "{name}");
         if n == 0 {
@@ -316,6 +324,43 @@ fn garbage_replay_chunks_are_refused() {
     for replay in [noise, vec![0u8; 4096], vec![0u8; 2 << 20]] {
         let chunks = vec![header.clone(), Chunk::new(1, ChunkKind::Replay, replay)];
         assert_eq!(Film::from_chunks(chunks).unwrap_err(), Error::NoTicks);
+    }
+}
+
+/// Damaged chunks never make the reader panic: a film reads or is refused.
+/// Each run damages one inflated chunk of a real film, the header every
+/// fourth run, in one of four ways: a few flipped bits, thousands, the chunk
+/// cut short, or a stretch of it overwritten with noise.
+#[test]
+fn damaged_chunks_never_panic() {
+    let mut x = 0x9e37_79b9_7f4a_7c15u64;
+    let mut next = |n: usize| {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        (x % n as u64) as usize
+    };
+    for prefix in ["dc2ce439", "c3790060"] {
+        let Some(dir) = common::film(prefix) else { return };
+        let base = common::load_folder(&dir).unwrap();
+        for run in 0..8 {
+            let mut chunks = base.clone();
+            let c = if run % 4 == 0 { 0 } else { 1 + next(chunks.len() - 1) };
+            let data = chunks[c].data.to_mut();
+            let len = data.len();
+            match run % 4 {
+                0 => (0..1 + next(64)).for_each(|_| data[next(len)] ^= 1 << next(8)),
+                1 => (0..1000 + next(8000)).for_each(|_| data[next(len)] ^= 1 << next(8)),
+                2 => data.truncate(next(len)),
+                _ => {
+                    let at = next(len);
+                    let n = (1 + next(4096)).min(len - at);
+                    data[at..at + n].iter_mut().for_each(|b| *b = next(256) as u8);
+                }
+            }
+            let read = std::panic::catch_unwind(|| Film::from_chunks(chunks).map(|f| f.events().len()));
+            assert!(read.is_ok(), "{prefix} run {run}, chunk {c}: the reader panicked");
+        }
     }
 }
 
@@ -354,6 +399,7 @@ fn rides_come_from_the_parent_state() {
             assert!(r.from <= r.to, "{name}: {r:?}");
             let lives: Vec<&Life> = f.lives_of(r.player).filter(|l| f.life_rides(l).any(|x| x == r)).collect();
             assert_eq!(lives.len(), 1, "{name}: {r:?} is in one life");
+            assert!(!lives[0].is_over_at(r.to), "{name}: {r:?} outlasts its life");
         }
         for e in f.events() {
             let Event::VehicleExit(x) = &e.event else { continue };
@@ -361,8 +407,8 @@ fn rides_come_from_the_parent_state() {
             // a mounted turret sends no positions).
             let tracked = f.vehicles().iter().any(|v| {
                 v.entity == x.vehicle
-                    && v.track.first().is_some_and(|p| p.0 <= e.tick)
-                    && v.track.last().is_some_and(|p| e.tick <= p.0)
+                    && v.track.first().is_some_and(|p| p.tick <= e.tick)
+                    && v.track.last().is_some_and(|p| e.tick <= p.tick)
             });
             if !tracked {
                 continue;
@@ -375,6 +421,27 @@ fn rides_come_from_the_parent_state() {
         }
     }
     assert!(exits > 0 && inside == exits, "{inside} of {exits} exits end a ride");
+}
+
+/// A vehicle stays on the map from its first record until it is removed,
+/// which is never before that record, and a ride in it ends while it is
+/// there. Most vehicles are removed before the film ends.
+#[test]
+fn ridden_vehicles_are_on_the_map() {
+    let (mut removed, mut tracks) = (0, 0);
+    for (name, f) in corpus() {
+        for v in f.vehicles() {
+            let (_, last) = v.span().unwrap();
+            assert!(v.removed.is_none_or(|r| r >= last), "{name}: vehicle {} removed before its last record", v.entity);
+            tracks += 1;
+            removed += usize::from(v.removed.is_some());
+        }
+        for r in f.rides() {
+            let Some(v) = f.ride_vehicle(r) else { continue };
+            assert!(v.on_map_at(r.to), "{name}: {r:?} outlasts vehicle {}", v.entity);
+        }
+    }
+    assert!(removed * 100 >= tracks * 75, "{removed} of {tracks} vehicles removed");
 }
 
 /// Every death a player's HighlightEvents records is a life of theirs that
@@ -477,7 +544,7 @@ fn scoreboard_totals_agree_with_the_match_stats() {
             for (stat, key) in [(Stat::Kills, "Kills"), (Stat::Deaths, "Deaths")] {
                 let Some(want) = core[key].as_i64() else { continue };
                 rows += 1;
-                let got = f.scoreboard().total_stat(row, stat) as i64;
+                let got = f.scoreboard().total(row, stat) as i64;
                 agree += usize::from(got == want);
                 if got != want {
                     println!("{name}: {} {key} {got}, the stats say {want}", p.id);
@@ -489,31 +556,750 @@ fn scoreboard_totals_agree_with_the_match_stats() {
     assert!(agree * 100 >= rows * 95, "{agree} of {rows}");
 }
 
-/// Matches of one human against bots, where no death of the human times the
-/// lives: each life's player and death come from the film, so every
-/// player's deaths, the bots' included, are the ones the match stats count
-/// (in the roster's order, the film's).
+/// The last tick the match stats count for `p`. The game can clear a player's
+/// scoreboard row while they stay in the match (a reconnect: every slot back
+/// to 0, their spawns counting again from 1), and the match stats keep only
+/// what came before.
+fn stats_until(f: &Film, p: PlayerId) -> Tick {
+    let mut spawns: HashMap<u32, i32> = HashMap::new();
+    for c in f.scoreboard().changes.iter().filter(|c| c.owner == StatOwner::Player(p) && c.slot == Stat::Spawns.slot())
+    {
+        if spawns.insert(c.round, c.value).is_some_and(|had| c.value == 0 && had > 0) {
+            return c.tick;
+        }
+    }
+    Tick(u32::MAX)
+}
+
+/// Every player's deaths, the bots' included, are the match stats' Deaths
+/// (each player's own row, by XUID or bot id), up to [`stats_until`].
 #[test]
 fn lives_die_as_the_match_stats_count() {
-    for prefix in ["813ff0a6", "f2b9163d"] {
-        let Some(dir) = common::film(prefix) else { continue };
-        let f = &corpus().iter().find(|(n, _)| n == prefix).unwrap().1;
-        let stats: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(dir.join("match-metadata.json")).unwrap()).unwrap();
-        for (i, s) in stats["Players"].as_array().unwrap().iter().enumerate() {
-            let want = s["PlayerTeamStats"][0]["Stats"]["CoreStats"]["Deaths"].as_u64().unwrap() as usize;
-            let got = f.lives_of(PlayerId(i as u8)).filter(|l| l.died).count();
-            assert_eq!(got, want, "{prefix}: player {i}");
+    let (mut players, mut agree) = (0usize, 0usize);
+    let mut wrong = Vec::new();
+    for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
+        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
+        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        for p in f.players() {
+            let Some(s) = stats_row(&stats, p) else { continue };
+            let Some(want) = s["PlayerTeamStats"][0]["Stats"]["CoreStats"]["Deaths"].as_u64() else { continue };
+            let until = stats_until(f, p.id);
+            let got = f.lives_of(p.id).filter(|l| l.died && l.end().is_some_and(|e| e <= until)).count() as u64;
+            players += 1;
+            agree += usize::from(got == want);
+            if got != want {
+                wrong.push(format!("{name}: player {} died {got} times, the stats say {want}", p.id));
+            }
+        }
+    }
+    println!("{agree} of {players} players");
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// Each player's power seed events in Stockpile are the match stats'
+/// StockpileStats: seeds deposited, seeds stolen, carriers killed.
+#[test]
+fn power_seeds_count_as_the_match_stats_do() {
+    let mut seen = 0;
+    for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
+        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
+        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        for p in f.players() {
+            let Some(row) = stats_row(&stats, p) else { continue };
+            let st = &row["PlayerTeamStats"][0]["Stats"]["StockpileStats"];
+            if st.is_null() {
+                continue;
+            }
+            for (kind, key) in [
+                (SeedEventKind::Deposit, "PowerSeedsDeposited"),
+                (SeedEventKind::Steal, "PowerSeedsStolen"),
+                (SeedEventKind::CarrierKilled, "PowerSeedCarriersKilled"),
+            ] {
+                let want = st[key].as_u64().unwrap_or(0) as usize;
+                let got = f
+                    .events()
+                    .iter()
+                    .filter(|e| matches!(&e.event, Event::Seed(s) if s.kind == kind && s.player == p.id))
+                    .count();
+                assert_eq!(got, want, "{name}: player {} {key}", p.id);
+                seen += got;
+            }
+        }
+    }
+    assert!(corpus().is_empty() || seen > 0);
+}
+
+/// A player's match stats row: by XUID, or a bot's by its bot id.
+fn stats_row<'a>(stats: &'a serde_json::Value, p: &Player) -> Option<&'a serde_json::Value> {
+    let key = match &p.kind {
+        PlayerKind::Human { xuid, .. } => format!("xuid({xuid})"),
+        PlayerKind::Bot { bot_id, .. } => format!("bid({bot_id}.0)"),
+        _ => return None,
+    };
+    stats["Players"].as_array()?.iter().find(|r| r["PlayerId"] == key)
+}
+
+/// Each player's hijacks are the match stats' Hijacks, and each one starts
+/// the hijacker's ride in a vehicle of its type, taken from a player of
+/// another team thrown out of it.
+#[test]
+fn hijacks_count_as_the_match_stats_do() {
+    let (mut hijacks, mut rides, mut from) = (0, 0, 0);
+    for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
+        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
+        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        for p in f.players() {
+            let Some(row) = stats_row(&stats, p) else { continue };
+            let want = row["PlayerTeamStats"][0]["Stats"]["CoreStats"]["Hijacks"].as_u64().unwrap_or(0) as usize;
+            let got = f.events().iter().filter(|e| matches!(&e.event, Event::Hijack(h) if h.player == p.id)).count();
+            assert_eq!(got, want, "{name}: player {} hijacks", p.id);
+        }
+        for e in f.events() {
+            let Event::Hijack(h) = &e.event else { continue };
+            hijacks += 1;
+            if let Some(r) = h.ride.map(|i| f.rides()[i]) {
+                rides += 1;
+                assert_eq!(f.ride_vehicle(&r).and_then(|v| v.vehicle()), Some(h.vehicle), "{name} {}", e.tick);
+            }
+            if let Some(out) = h.from {
+                from += 1;
+                let team = |p: PlayerId| f.player(p).and_then(|p| p.team_at(e.tick));
+                assert_ne!(team(out), team(h.player), "{name} {}: {} hijacked a teammate", e.tick, h.player);
+            }
+        }
+    }
+    assert!(corpus().is_empty() || (hijacks > 0 && rides == hijacks), "{rides} of {hijacks} hijacks start a ride");
+    assert_eq!(from, hijacks, "hijacks naming the player thrown out");
+}
+
+/// Each player's flag events are the match stats' CaptureTheFlagStats, and
+/// a grab or steal gives its player the flag on that tick.
+#[test]
+fn flag_events_count_as_the_match_stats_do() {
+    let (mut checked, mut grabs, mut carried) = (0, 0, 0);
+    for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
+        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
+        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        for p in f.players() {
+            let Some(row) = stats_row(&stats, p) else { continue };
+            let st = &row["PlayerTeamStats"][0]["Stats"]["CaptureTheFlagStats"];
+            if st.is_null() {
+                continue;
+            }
+            for (kind, key) in [
+                (FlagEventKind::Grab, "FlagGrabs"),
+                (FlagEventKind::Steal, "FlagSteals"),
+                (FlagEventKind::Capture, "FlagCaptures"),
+                (FlagEventKind::Return, "FlagReturns"),
+                (FlagEventKind::CarrierKilled, "FlagCarriersKilled"),
+                (FlagEventKind::CaptureAssist, "FlagCaptureAssists"),
+            ] {
+                let want = st[key].as_u64().unwrap_or(0) as usize;
+                let got = f
+                    .events()
+                    .iter()
+                    .filter(|e| matches!(&e.event, Event::Flag(x) if x.kind == kind && x.player == p.id))
+                    .count();
+                assert_eq!(got, want, "{name}: player {} {key}", p.id);
+                checked += got;
+            }
+        }
+        for e in f.events() {
+            let Event::Flag(x) = &e.event else { continue };
+            if matches!(x.kind, FlagEventKind::Grab | FlagEventKind::Steal) {
+                grabs += 1;
+                let state = f.player_state(x.player);
+                carried += usize::from(
+                    state.is_some_and(|s| (0..=2).any(|d| s.carrying(Tick(e.tick.0 + d)) == Some(Carried::Flag))),
+                );
+            }
+        }
+    }
+    assert!(corpus().is_empty() || checked > 0);
+    assert!(carried * 100 >= grabs * 99, "{carried} of {grabs} grabs give the player the flag");
+}
+
+/// The carries cover exactly the ticks a player is alive with an objective's
+/// item in their slots, tick by tick.
+#[test]
+fn carries_are_the_ticks_carried() {
+    let mut checked = 0;
+    for (name, f) in corpus() {
+        let carries = f.carries();
+        if carries.is_empty() {
+            continue;
+        }
+        checked += 1;
+        for p in f.players() {
+            let Some(state) = f.player_state(p.id) else { continue };
+            let mine: Vec<&Carry> = carries.iter().filter(|c| c.player == p.id).collect();
+            for t in (0..=f.clock().end().0).map(Tick) {
+                let scanned = state.carrying(t).filter(|_| f.alive_at(p.id, t));
+                let spans = mine.iter().find(|c| c.from <= t && t <= c.to).map(|c| c.item);
+                assert_eq!(spans, scanned, "{name}: player {} at {t}", p.id);
+            }
+        }
+    }
+    assert!(corpus().is_empty() || checked > 0);
+}
+
+/// How long each player carried the flag, the skull or a power seed, alive
+/// with its item in their slots while a round was in play (the match stats
+/// stop counting when the mode scripts announce a round won), is the match
+/// stats' time as its carrier: within a quarter of a second for nearly all.
+#[test]
+fn carriers_carry_as_long_as_the_match_stats_say() {
+    fn seconds(v: &serde_json::Value) -> Option<f64> {
+        let (mut total, mut digits) = (0.0, String::new());
+        for c in v.as_str()?.strip_prefix("PT")?.chars() {
+            let unit = match c {
+                'H' => 3600.0,
+                'M' => 60.0,
+                'S' => 1.0,
+                _ => {
+                    digits.push(c);
+                    continue;
+                }
+            };
+            total += digits.parse::<f64>().ok()? * unit;
+            digits.clear();
+        }
+        Some(total)
+    }
+    let (mut players, mut close) = (0, 0);
+    for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
+        let (item, group, key) = match f.mode() {
+            GameMode::CaptureTheFlag => (Carried::Flag, "CaptureTheFlagStats", "TimeAsFlagCarrier"),
+            GameMode::Oddball => (Carried::Skull, "OddballStats", "TimeAsSkullCarrier"),
+            GameMode::Stockpile => (Carried::PowerSeed, "StockpileStats", "TimeAsPowerSeedCarrier"),
+            _ => continue,
+        };
+        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
+        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        // The match stats stop counting when a round is won, as the mode
+        // scripts announce it, until the next round starts.
+        let won: Vec<Tick> = f
+            .events()
+            .iter()
+            .filter(|e| match &e.event {
+                Event::GameEvent(g) => f
+                    .game_response(g)
+                    .is_some_and(|r| r.name.starts_with("roundWon") || r.name.starts_with("gameplayComplete")),
+                _ => false,
+            })
+            .map(|e| e.tick)
+            .collect();
+        let starts = f.scoreboard().round_starts();
+        let in_play = |t: Tick| won.iter().rfind(|&&w| w <= t).is_none_or(|&w| starts.iter().any(|&s| s > w && s <= t));
+        for p in f.players() {
+            let Some(want) = stats_row(&stats, p).and_then(|r| seconds(&r["PlayerTeamStats"][0]["Stats"][group][key]))
+            else {
+                continue;
+            };
+            let Some(state) = f.player_state(p.id) else { continue };
+            // Each carry's ticks, which the match stats add up truncated to
+            // tenths of a second (measured: 146 of the 155 carriers land
+            // within 0.15 s that way, 96 without).
+            let mut carries = Vec::new();
+            let mut run = 0u32;
+            for t in (0..=f.clock().end().0 + 1).map(Tick) {
+                if t <= f.clock().end() && state.carrying(t) == Some(item) && f.alive_at(p.id, t) && in_play(t) {
+                    run += 1;
+                } else if run > 0 {
+                    carries.push(run);
+                    run = 0;
+                }
+            }
+            let got: f64 = carries.iter().map(|&n| f64::from(n * 10 / Tick::PER_SECOND) / 10.0).sum();
+            if want == 0.0 && got == 0.0 {
+                continue;
+            }
+            players += 1;
+            close += usize::from((got - want).abs() <= 0.25);
+            if (got - want).abs() > 0.25 {
+                println!("{name}: player {} carried {got:.1} s, stats {want:.1} s", p.id);
+            }
+            assert!((got - want).abs() < 5.0, "{name}: player {} carried {got:.1} s, stats {want:.1} s", p.id);
+        }
+    }
+    assert!(close * 100 >= players * 95, "{close} of {players} carriers within 0.25 s");
+}
+
+/// Aim pitch is up positive: a player hitting someone well above or below
+/// them aims that way.
+#[test]
+fn players_aim_up_at_higher_targets() {
+    let (mut hits, mut toward) = (0, 0);
+    for (_, f) in corpus() {
+        for e in f.events() {
+            let Event::Hit(h) = &e.event else { continue };
+            let Some(a) = h.attacker else { continue };
+            let (Some(at), Some(to)) = (f.sample_at(a, e.tick), f.sample_at(h.victim, e.tick)) else { continue };
+            let (Some(p), Some(q), Some(pitch)) = (at.position, to.position, at.pitch) else { continue };
+            let (Some(za), Some(zv)) = (p.z, q.z) else { continue };
+            let elevation = (zv - za).atan2(p.distance(&q));
+            if p.distance(&q) >= 5.0 && elevation.abs() >= 0.15 {
+                hits += 1;
+                toward += usize::from(elevation.signum() == pitch.signum());
+            }
+        }
+    }
+    assert!(corpus().is_empty() || toward * 100 >= hits * 75, "{toward} of {hits} hits aimed toward the victim");
+}
+
+/// A projectile starts at its shooter: within 50 world units (a fast one
+/// travels a few ticks before its first position) for nearly all.
+#[test]
+fn projectiles_start_at_their_shooters() {
+    let (mut placed, mut near) = (0, 0);
+    for (_, f) in corpus() {
+        for p in f.projectiles() {
+            let (Some(player), Some(first)) = (p.player, p.path.first()) else { continue };
+            let Some(at) = f.life_at(player, first.tick).and_then(|l| l.position_at(first.tick)) else { continue };
+            placed += 1;
+            near += usize::from(at.distance(&first.position) <= 50.0);
+        }
+    }
+    assert!(corpus().is_empty() || near * 100 >= placed * 90, "{near} of {placed} projectiles start at their shooter");
+}
+
+/// The personal score a player's game events give, by their responses in
+/// the mode's event tree, is the match stats' PersonalScore: for every
+/// player of the modes whose event views read whole, and for nearly every
+/// player of arena Slayer, whose minigames score their own way.
+#[test]
+fn game_responses_score_as_the_match_stats_do() {
+    let (mut slayer, mut slayer_equal, mut exact) = (0, 0, 0);
+    for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
+        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
+        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        let big_team = f.variant().is_some_and(|v| v.scripts.iter().any(|s| s == "bigteambattle.lua"));
+        let must_equal = matches!(
+            f.mode(),
+            GameMode::CaptureTheFlag
+                | GameMode::Oddball
+                | GameMode::KingOfTheHill
+                | GameMode::Stockpile
+                | GameMode::Attrition
+                | GameMode::Extraction
+        );
+        let arena_slayer = f.mode() == GameMode::Slayer && !big_team;
+        if !must_equal && !arena_slayer {
+            continue;
+        }
+        let mut points: HashMap<PlayerId, i64> = HashMap::new();
+        for e in f.events() {
+            let Event::GameEvent(g) = &e.event else { continue };
+            let Some((n, _)) = f.game_response(g).and_then(|r| r.score) else { continue };
+            for p in g.players.iter() {
+                *points.entry(p).or_default() += i64::from(n);
+            }
+        }
+        for p in f.players() {
+            let Some(row) = stats_row(&stats, p) else { continue };
+            let want = row["PlayerTeamStats"][0]["Stats"]["CoreStats"]["PersonalScore"].as_i64().unwrap_or(0);
+            let got = points.get(&p.id).copied().unwrap_or(0);
+            if must_equal {
+                assert_eq!(got, want, "{name}: player {} personal score", p.id);
+                exact += 1;
+            } else {
+                slayer += 1;
+                slayer_equal += usize::from(got == want);
+            }
+        }
+    }
+    assert!(corpus().is_empty() || exact > 0);
+    assert!(slayer_equal * 100 >= slayer * 90, "{slayer_equal} of {slayer} Slayer players");
+}
+
+/// The text keys films carry, game events' and HUD messages', have their
+/// English text in the library's table.
+#[test]
+fn text_keys_have_their_text() {
+    let (mut keys, mut known) = (0, 0);
+    for (_, f) in corpus() {
+        for e in f.events() {
+            let key = match &e.event {
+                Event::GameEvent(g) => g.text,
+                Event::HudMessage(h) => Some(h.key),
+                _ => None,
+            };
+            let Some(key) = key else { continue };
+            keys += 1;
+            known += usize::from(game::text(key).is_some());
+        }
+    }
+    eprintln!("{known} of {keys} keys");
+    assert!(corpus().is_empty() || known * 100 >= keys * 99, "{known} of {keys} keys have text");
+}
+
+/// A vehicle's heading is the way it drives: moving at 15 world units a
+/// second or more, a ground vehicle that can't strafe faces within 30
+/// degrees of its travel most of the time (it reverses and slides the rest),
+/// and a dropship nearly always. Ghosts, Wasps, Falcons and Banshees fly or
+/// slide sideways, so they are left out.
+#[test]
+fn vehicles_face_the_way_they_drive() {
+    use filmshell::game::Vehicle;
+    let (mut tracks, mut headed) = (0, 0);
+    let (mut ground, mut ground_ahead, mut ships, mut ships_ahead) = (0usize, 0usize, 0usize, 0usize);
+    for (_, f) in corpus() {
+        for v in f.vehicles() {
+            tracks += 1;
+            headed += usize::from(!v.headings.is_empty());
+            let kind = match v.vehicle() {
+                Some(Vehicle::Warthog | Vehicle::Mongoose | Vehicle::BruteChopper | Vehicle::Scorpion) => 0,
+                Some(Vehicle::Phantom | Vehicle::Pelican) => 1,
+                _ => continue,
+            };
+            for w in v.track.windows(2) {
+                let (a, b) = (w[0], w[1]);
+                let dt = b.tick - a.tick;
+                let (dx, dy) = (b.position.x - a.position.x, b.position.y - a.position.y);
+                if !(1..=6).contains(&dt) || (dx * dx + dy * dy).sqrt() / dt as f64 * 60.0 < 15.0 {
+                    continue;
+                }
+                let Some(h) = v.heading_at(b.tick) else { continue };
+                let off = (h - dy.atan2(dx)).rem_euclid(std::f64::consts::TAU);
+                let ahead = off.min(std::f64::consts::TAU - off) < 30f64.to_radians();
+                match kind {
+                    0 => (ground, ground_ahead) = (ground + 1, ground_ahead + usize::from(ahead)),
+                    _ => (ships, ships_ahead) = (ships + 1, ships_ahead + usize::from(ahead)),
+                }
+            }
+        }
+    }
+    eprintln!(
+        "{headed} of {tracks} tracks headed; ground {ground_ahead} of {ground}, dropships {ships_ahead} of {ships}"
+    );
+    assert!(headed * 100 >= tracks * 90, "{headed} of {tracks} tracks have headings");
+    assert!(ground_ahead * 100 >= ground * 70, "{ground_ahead} of {ground}");
+    assert!(ships_ahead * 100 >= ships * 90, "{ships_ahead} of {ships}");
+}
+
+/// Every vehicle destroy the scripts score is tied to a vehicle of its type,
+/// and the riders killed with it rode it. Nearly every one names the weapon
+/// that destroyed it, and a rider the destroyer killed with it died to the
+/// same weapon, where their kill names one.
+#[test]
+fn destroyed_vehicles_are_found() {
+    let (mut destroyed, mut tracked, mut killed, mut armed) = (0, 0, 0, 0);
+    for (name, f) in corpus() {
+        for e in f.events() {
+            let Event::VehicleDestroyed(d) = &e.event else { continue };
+            destroyed += 1;
+            armed += usize::from(d.weapon.is_some());
+            let Some(v) = d.track.map(|i| &f.vehicles()[i]) else { continue };
+            tracked += 1;
+            assert_eq!(v.vehicle(), Some(d.vehicle), "{name} {}", e.tick);
+            for p in d.killed.iter() {
+                killed += 1;
+                let kill = f.kills().find(|(t, k)| k.victim == p && t.0.abs_diff(e.tick.0) <= 3);
+                let Some((_, kill)) = kill else { panic!("{name} {}: {p}", e.tick) };
+                if kill.killer == Some(d.player) && kill.weapon.is_some() {
+                    assert_eq!(kill.weapon, d.weapon, "{name} {}: {p}", e.tick);
+                }
+            }
+        }
+    }
+    assert!(corpus().is_empty() || (destroyed > 0 && tracked == destroyed), "{tracked} of {destroyed} destroys found");
+    assert!(armed * 100 >= destroyed * 95, "{armed} of {destroyed} destroys name a weapon");
+    // The wreck's health reaches 0 when it blows up, seconds later.
+    let wrecked = corpus()
+        .iter()
+        .flat_map(|(_, f)| {
+            f.events().iter().filter_map(move |e| match &e.event {
+                Event::VehicleDestroyed(d) => d.track.map(|i| (&f.vehicles()[i], e.tick)),
+                _ => None,
+            })
+        })
+        .filter(|(v, t)| (0..=600).any(|k| v.health_at(*t + k).is_some_and(|h| h <= 0.0)))
+        .count();
+    assert!(wrecked * 100 >= destroyed * 85, "{wrecked} of {destroyed} destroyed vehicles reach 0 health");
+    eprintln!("{destroyed} vehicles destroyed, {armed} with a weapon, {killed} riders killed with them");
+}
+
+/// Infection moves a survivor to the infected when killed: the victim's team
+/// changes at the kill, and every counted kill is between enemies the tick
+/// before.
+#[test]
+fn infection_moves_its_victims_to_the_infected() {
+    let Some((_, f)) = corpus().iter().find(|(n, _)| n == "d970bde6") else { return };
+    let mut moved = 0;
+    for (t, k) in f.kills().filter(|(_, k)| k.is_scored()) {
+        let Some(killer) = k.credited_killer() else { continue };
+        let (Some(victim), Some(killer)) = (f.player(k.victim), f.player(killer)) else { continue };
+        let before = Tick(t.0 - 1);
+        assert_ne!(victim.team_at(before), killer.team_at(before), "{t}");
+        moved += usize::from(victim.team_at(t) != victim.team_at(before));
+    }
+    assert!(moved > 0);
+}
+
+/// Every player's kills of players on the other team that the scoreboard
+/// counts are the match stats' Kills, up to [`stats_until`]: the kills of
+/// bots, which have no kill event, included.
+#[test]
+fn kills_count_as_the_match_stats_do() {
+    let (mut players, mut agree) = (0usize, 0usize);
+    let mut wrong = Vec::new();
+    for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
+        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
+        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        // Teams just before the kill: Infection and some minigames move
+        // players between teams, Infection at the kill itself.
+        let team = |id: PlayerId, t: Tick| f.player(id).and_then(|p| p.team_at(Tick(t.0.saturating_sub(1))));
+        for player in f.players() {
+            let Some(s) = stats_row(&stats, player) else { continue };
+            // CoreStats counts AI kills too (PveStats); PvpStats are players'.
+            // Firefight has no PvpStats: its kills are all of AI.
+            let stats = &s["PlayerTeamStats"][0]["Stats"];
+            if stats["PvpStats"].is_null() && !stats["PveStats"].is_null() {
+                continue;
+            }
+            let Some(want) = stats["PvpStats"]["Kills"].as_u64().or(stats["CoreStats"]["Kills"].as_u64()) else {
+                continue;
+            };
+            let p = player.id;
+            let until = stats_until(f, p);
+            let got = f
+                .kills()
+                .filter(|&(t, k)| k.killer == Some(p) && k.victim != p && k.scored != Some(false) && t <= until)
+                .filter(|&(t, k)| team(k.victim, t) != team(p, t) || team(p, t).is_none())
+                .count() as u64;
+            players += 1;
+            agree += usize::from(got == want);
+            if got != want {
+                wrong.push(format!("{name}: player {p} has {got} kills, the stats say {want}"));
+            }
+        }
+    }
+    println!("{agree} of {players} players");
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// Every player's betrayals the scoreboard counts are the match stats'
+/// Betrayals, up to [`stats_until`].
+#[test]
+fn betrayals_count_as_the_match_stats_do() {
+    let (mut players, mut betrayals) = (0usize, 0u64);
+    let mut wrong = Vec::new();
+    for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
+        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
+        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        for player in f.players() {
+            let Some(s) = stats_row(&stats, player) else { continue };
+            let Some(want) = s["PlayerTeamStats"][0]["Stats"]["CoreStats"]["Betrayals"].as_u64() else { continue };
+            let p = player.id;
+            let until = stats_until(f, p);
+            let got =
+                f.kills().filter(|&(t, k)| k.killer == Some(p) && k.betrayal && k.is_scored() && t <= until).count()
+                    as u64;
+            // The scoreboard counts them too, where the film's scoreboard is
+            // read and the player's row ran to the end.
+            if !f.scoreboard().changes.is_empty() && until == Tick(u32::MAX) {
+                let row = f.scoreboard().total(StatOwner::Player(p), Stat::Betrayals) as u64;
+                assert_eq!(row, want, "{name}: player {p}'s scoreboard row");
+            }
+            players += 1;
+            betrayals += want;
+            if got != want {
+                wrong.push(format!("{name}: player {p} has {got} betrayals, the stats say {want}"));
+            }
+        }
+    }
+    println!("{betrayals} betrayals among {players} players");
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// Between two readings of the match clock with the same limit, the time
+/// left moves by the timer's rate: on 93% of them at least (95% on the
+/// test films; the mode's scripts can also set the time outright).
+#[test]
+fn the_match_clock_runs_at_its_rate() {
+    let (mut intervals, mut agree) = (0usize, 0usize);
+    for (_, f) in corpus() {
+        for w in f.scoreboard().match_clock.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            let seconds = (b.tick.0 as f64 - a.tick.0 as f64) / 60.0;
+            if a.limit != b.limit || seconds < 1.0 {
+                continue;
+            }
+            intervals += 1;
+            let run = f.scoreboard().clock_at(b.tick - 1).unwrap();
+            agree += usize::from((b.left - run).abs() <= 1.0 + 0.02 * seconds);
+        }
+    }
+    assert!(corpus().is_empty() || agree * 100 >= intervals * 93, "{agree} of {intervals}");
+}
+
+/// The scoreboard's rows at a tick hold what each value read alone at that
+/// tick gives.
+#[test]
+fn scoreboard_rows_agree_with_single_values() {
+    for (name, f) in corpus() {
+        let b = f.scoreboard();
+        let end = f.clock().end();
+        for t in [end.0 / 4, end.0 / 2, end.0].map(Tick) {
+            for (owner, row) in b.rows_at(t) {
+                for slot in 0..Scoreboard::SLOTS as u32 {
+                    assert_eq!(row[slot as usize], b.value_at(owner, slot, t), "{name} {t} {owner:?} slot {slot}");
+                }
+            }
         }
     }
 }
 
-/// Every player on a team in the match from its start to its end has a life.
-/// (A player the roster lists with no team never played.)
+/// A respawn countdown counts down to the next life: a second into it the
+/// player respawns in its length less a second (a countdown alone in its
+/// second, as nearly all are).
 #[test]
-fn players_present_throughout_have_lives() {
+fn respawns_count_down() {
+    let (mut counted, mut agree) = (0, 0);
+    for (_, f) in corpus() {
+        for e in f.events() {
+            let Event::RespawnCountdown(r) = &e.event else { continue };
+            let t = e.tick + Tick::PER_SECOND;
+            // A one-second countdown is over by then. A countdown the film
+            // records twice, or one the game replaces within the second,
+            // counts from the other.
+            let alone = !f.events().iter().any(|x| {
+                x.tick != e.tick
+                    && x.tick.0.abs_diff(e.tick.0) <= 60
+                    && matches!(&x.event, Event::RespawnCountdown(q) if q.player == r.player)
+            });
+            if r.seconds <= 1 || !alone || f.alive_at(r.player, t) {
+                continue;
+            }
+            counted += 1;
+            let left = f.respawn_in(r.player, t);
+            agree += usize::from(left.is_some_and(|s| (s - (f64::from(r.seconds) - 1.0)).abs() < 0.01));
+        }
+    }
+    assert!(corpus().is_empty() || (counted > 0 && agree == counted), "{agree} of {counted}");
+}
+
+/// The match starts when its clock first runs: no scored kill comes before
+/// it, and a life starts within 3 s after it.
+#[test]
+fn the_match_starts_when_its_clock_first_runs() {
+    let mut started = 0;
     for (name, f) in corpus() {
-        for p in f.players().iter().filter(|p| p.present_at_start && p.left.is_none() && p.team.is_some()) {
+        let Some(start) = f.match_start() else {
+            assert!(f.scoreboard().match_clock.iter().all(|c| c.rate() == 0.0), "{name}");
+            continue;
+        };
+        started += 1;
+        assert_eq!(f.match_tick(0.0), Some(start), "{name}");
+        let ninety = f.match_tick(90.0).unwrap();
+        assert!((f.match_seconds(ninety).unwrap() - 90.0).abs() < 1.0 / 60.0, "{name}");
+        if let Some((t, _)) = f.kills().find(|(_, k)| k.is_scored()) {
+            assert!(t >= start, "{name}: a scored kill at {t}, the match starts at {start}");
+        }
+        assert!(
+            f.lives().iter().filter_map(|l| l.start()).any(|t| t >= start && t - start <= 180),
+            "{name}: no life starts within 3 s of {start}"
+        );
+    }
+    assert!(corpus().is_empty() || started > 0);
+}
+
+/// The assistant a kill names, by its event or by the game's rule where the
+/// game sent none, earns one of the assists the scoreboard counts: no player
+/// is named more often than their Assists, which also count the assisters a
+/// kill doesn't name.
+#[test]
+fn named_assists_are_counted_assists() {
+    for (name, f) in corpus() {
+        if f.scoreboard().changes.is_empty() {
+            continue;
+        }
+        for p in f.players() {
+            let named = f.kills().filter(|(_, k)| k.assistant == Some(p.id) && k.is_scored()).count() as i32;
+            let counted = f.scoreboard().total(StatOwner::Player(p.id), Stat::Assists);
+            assert!(named <= counted, "{name}: {} named {named} times, {counted} assists", p.id);
+        }
+    }
+}
+
+/// The deaths the game deals everyone alive at a match's end are never
+/// counted, even in films whose scoreboard isn't read.
+#[test]
+fn deaths_at_the_match_end_are_not_scored() {
+    let mut seen = 0;
+    for (name, f) in corpus() {
+        let end = f.clock().end().0 as i64;
+        for (t, k) in f.kills().filter(|(t, _)| (end - t.0 as i64 - 362).abs() <= 3) {
+            if k.cause == Some(game::DamageCause::World) {
+                seen += 1;
+                assert_eq!(k.scored, Some(false), "{name}: {t}");
+            }
+        }
+    }
+    assert!(corpus().is_empty() || seen > 0);
+}
+
+/// A team's score over the match, every round's added up, is the one the
+/// match stats give: rounds won in Attrition, Elimination and Grifball,
+/// points in Oddball.
+#[test]
+fn team_scores_agree_with_the_match_stats() {
+    let (mut teams, mut agree) = (0usize, 0usize);
+    for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
+        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
+        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        if f.scoreboard().changes.is_empty() {
+            continue;
+        }
+        for t in stats["Teams"].as_array().into_iter().flatten() {
+            let (Some(id), Some(want)) = (t["TeamId"].as_u64(), t["Stats"]["CoreStats"]["Score"].as_i64()) else {
+                continue;
+            };
+            let got = f.scoreboard().total(StatOwner::Team(TeamId(id as u8)), Stat::Score) as i64;
+            teams += 1;
+            agree += usize::from(got == want);
+            if got != want {
+                println!("{name}: team {id} scored {got}, the stats say {want}");
+            }
+        }
+    }
+    println!("{agree} of {teams} teams");
+    assert!(corpus().is_empty() || teams > 0);
+    assert_eq!(agree, teams, "teams whose score agrees");
+}
+
+/// No life starts before its player joined or after they left (a joiner
+/// takes the engine slot of someone who left, and their lives aren't the
+/// joiner's).
+#[test]
+fn lives_start_while_their_player_is_in_the_match() {
+    const MARGIN: u32 = 600;
+    for (name, f) in corpus() {
+        for l in f.lives() {
+            let (Some(id), Some(start)) = (l.player, l.start()) else { continue };
+            let p = f.player(id).unwrap();
+            let early = p.joined.is_some_and(|j| start.0 + MARGIN < j.0);
+            let late = p.left.is_some_and(|left| start.0 > left.0 + MARGIN);
+            assert!(!early && !late, "{name}: {id}'s life at {start} is outside {:?} to {:?}", p.joined, p.left);
+        }
+    }
+}
+
+/// Every player the scoreboard counts a spawn for has a life; on a film
+/// without a scoreboard, every player on a team who was in the match when
+/// play began. (A player the roster lists with no team never played; one who
+/// left during the loadout, before anyone spawned, has none; nor has a joiner
+/// the scoreboard never lists.)
+#[test]
+fn players_who_spawned_have_lives() {
+    for (name, f) in corpus() {
+        let Some(play) = f.lives().iter().filter_map(|l| l.start()).min() else { continue };
+        let board = f.scoreboard();
+        let spawned = |p: &&Player| match board.changes.is_empty() {
+            false => board.total(StatOwner::Player(p.id), Stat::Spawns) > 0,
+            true => p.team.is_some() && p.present_at_start && p.left.is_none_or(|left| left > play),
+        };
+        for p in f.players().iter().filter(spawned) {
             assert!(f.lives_of(p.id).next().is_some(), "{name}: {} has no life", p.id);
         }
     }

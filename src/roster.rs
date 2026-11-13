@@ -4,7 +4,7 @@
 //!
 //! Players get indices in the order they first appear: everyone present at
 //! the start by roster position, then joiners and bots as they are listed.
-//! The events and the scoreboard name players by their engine player id,
+//! The events and the scoreboard name players by their engine slot,
 //! which isn't the index: both listings give each player's id (`Assignment`),
 //! and a joiner can take the id of someone who left.
 
@@ -25,13 +25,15 @@ const PLAYER_ID_BITS: i64 = 6;
 /// A bot record (reader `1429875e4`): `[bot index:32][participant:32]
 /// [profile:32]`, then the player struct, with the bot's name in UTF-16
 /// big-endian at this byte offset. The bot index is the bot's slot in the
-/// game's bot table, the participant its engine player id, and the profile
+/// game's bot table, the participant its engine slot, and the profile
 /// the seed that picks its appearance (the services' bot id).
 const BOT_NAME_BYTE: i64 = 120;
 const BOT_NAME_UNITS: i64 = 16;
 /// The bits a bot record takes at least, and at most: the next record is
 /// searched for in between.
 const BOT_RECORD_BITS: (i64, i64) = (8 * 1900, 8 * 2300);
+/// Records read from a bot listing at most, and the bot indices below it.
+const MAX_BOTS: u32 = 64;
 
 /// One player as the film lists them.
 #[derive(Clone, Debug, Default)]
@@ -52,7 +54,7 @@ pub struct RosterPlayer {
     pub first_chunk: usize,
 }
 
-/// A player listed with engine player id `id` from `frame` on.
+/// A player listed with engine slot `id` from `frame` on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Assignment {
     pub id: u32,
@@ -63,13 +65,13 @@ pub struct Assignment {
 #[derive(Clone, Debug, Default)]
 pub struct Roster {
     pub players: Vec<RosterPlayer>,
-    /// Each player's engine player id, from the listing that first gives it
+    /// Each player's engine slot, from the listing that first gives it
     /// and from each one that changes it, in frame order.
     pub ids: Vec<Assignment>,
 }
 
 impl Roster {
-    /// Marks the bots whose engine id the first snapshot lists as present
+    /// Marks the bots whose engine slot the first snapshot lists as present
     /// from the start: the first chunk lists no bot records, so theirs come
     /// from the second chunk on. A bot whose id someone held before it isn't.
     pub fn mark_present(&mut self, ids: &[u32]) {
@@ -98,13 +100,13 @@ fn shifts(p: &[u8]) -> [Vec<u8>; 8] {
     })
 }
 
-/// The players in a type-8 payload, (engine player id, XUID, gamertag), in
+/// The players in a type-8 payload, (engine slot, XUID, gamertag), in
 /// record order. The payload is `[count:32]`, then per player its participant
 /// handle `[none:1][index:5]` and the player struct, which opens with the
 /// XUID little-endian and holds it again inside, where fields of 10, 14, 6,
 /// 8 and 7 bits follow it that read 183 and zeros (reader `142987bd4`; the
 /// handle's reader `1407f2058` is the one the kill events' players use, so
-/// the index is the engine player id the events and the scoreboard name). A
+/// the index is the engine slot the events and the scoreboard name). A
 /// XUID counts when its inner copy is there; its handle is the 6 bits before
 /// its first copy. A record whose handle is none is left out. The gamertag
 /// sits before the inner copy as it does in chunk 0's roster: UTF-16LE, then
@@ -148,9 +150,16 @@ fn bot_name(p: &[u8], at: i64) -> String {
     String::from_utf16_lossy(&units)
 }
 
-fn plausible_bot(p: &[u8], at: i64, k: u32) -> bool {
+/// Whether a bot record starts at `at`: its bot index comes after `after`
+/// (the previous record's; a bot keeps its slot in the bot table when others
+/// leave, so the indices rise but needn't run 0, 1, 2), its participant is a
+/// player id, its profile fits 16 bits and its name starts with a printable
+/// character.
+fn plausible_bot(p: &[u8], at: i64, after: Option<u32>) -> bool {
     let printable = |u: u32| (0x20..0x7f).contains(&u);
-    bits_at(p, at, 32) == k
+    let index = bits_at(p, at, 32);
+    index < MAX_BOTS
+        && after.is_none_or(|a| index > a)
         && bits_at(p, at + 32, 32) < 32
         && bits_at(p, at + 64, 32) < 1 << 16
         && printable(bits_at(p, at + 8 * BOT_NAME_BYTE, 16))
@@ -167,16 +176,18 @@ fn bot_records(p: &[u8]) -> Vec<(u32, u32, String)> {
     let bits = p.len() as i64 * 8;
     let mut out = Vec::new();
     let mut at = 32;
-    for k in 0..n.min(64) {
+    let mut index = None;
+    for k in 0..n.min(MAX_BOTS) {
         if k > 0 {
             let (lo, hi) = (at + BOT_RECORD_BITS.0, (at + BOT_RECORD_BITS.1).min(bits - 96));
-            match (lo..hi).find(|&b| plausible_bot(p, b, k)) {
+            match (lo..hi).find(|&b| plausible_bot(p, b, index)) {
                 Some(b) => at = b,
                 None => break,
             }
-        } else if !plausible_bot(p, at, 0) {
+        } else if !plausible_bot(p, at, None) {
             break;
         }
+        index = Some(bits_at(p, at, 32));
         out.push((bits_at(p, at + 32, 32), bits_at(p, at + 64, 32), bot_name(p, at + 8 * BOT_NAME_BYTE)));
     }
     out
@@ -198,7 +209,7 @@ pub fn read(film: &Film, highlights: &[HighlightEvent]) -> Roster {
     // Each bot id's player.
     let mut bots: HashMap<u32, usize> = HashMap::new();
     let mut first_listing = true;
-    // Each player's engine id as last listed.
+    // Each player's engine slot as last listed.
     let mut held: HashMap<usize, u32> = HashMap::new();
     let mut ids = Vec::new();
     let mut assign = |player: usize, id: u32, frame: i64| {

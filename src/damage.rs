@@ -6,10 +6,6 @@ use crate::TagId;
 pub use crate::game::DamageAmount as Amount;
 pub use crate::game::DamageCause as Cause;
 
-pub const CAN_HEADSHOT: u32 = Amount::CAN_HEADSHOT;
-pub const SKIPS_SHIELDS: u32 = Amount::SKIPS_SHIELDS;
-pub const NO_SPILL: u32 = Amount::NO_SPILL;
-
 /// The damage numbers of a damage tag; None for an effect that deals none or
 /// that isn't known.
 pub fn amount(tag: u32) -> Option<Amount> {
@@ -28,7 +24,8 @@ pub fn projectiles(tag: u32) -> Vec<u32> {
 
 /// The multiplayer Spartan's body and shield vitality.
 pub fn spartan() -> (f64, f64) {
-    game::spartan_vitality()
+    let v = game::spartan_vitality();
+    (v.body, v.shield)
 }
 
 /// Whether a damage tag is a blast that grenades spawn among other

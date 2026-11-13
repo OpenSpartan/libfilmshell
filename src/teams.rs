@@ -37,7 +37,7 @@ pub fn reader(d: &mut Designators) -> impl FnMut(usize, &[u8], &Payload) + '_ {
                     if let Some(id) = op.participant {
                         d.participant.insert(key, id);
                     }
-                    op.init.as_ref()
+                    op.init.as_deref()
                 }
                 OpKind::Update { fields, .. } => Some(fields),
                 OpKind::Delete => None,
@@ -85,13 +85,17 @@ pub fn finish(film: &Film, mut d: Designators) -> HashMap<u32, Vec<(i64, u32)>> 
 }
 
 /// Gives each player without a team the team their participant's designator
-/// names while they hold it: the last value up to the end of their tenure,
-/// else the first after it began. Nothing on a film whose designators name
-/// fewer than two teams.
-pub fn assign(roster: &mut Roster, designators: &HashMap<u32, Vec<(i64, u32)>>) {
+/// names while they hold it.
+///
+/// That is the last value up to the end of their tenure, else the first after
+/// it began. Nothing on a film whose designators name fewer than two teams,
+/// unless `team_rows` (the scoreboard keeps team rows, as a team game does): in
+/// free for all every designator names team 0 too, and so does a team game with
+/// everyone on one team (both Land Grab matches among the test films).
+pub fn assign(roster: &mut Roster, designators: &HashMap<u32, Vec<(i64, u32)>>, team_rows: bool) {
     let teams: std::collections::BTreeSet<u32> =
         designators.values().flatten().map(|&(_, v)| v).filter(|&v| v > 0).collect();
-    if teams.len() < 2 {
+    if teams.len() < 2 && !(teams.len() == 1 && team_rows) {
         return;
     }
     for i in 0..roster.players.len() {
@@ -122,4 +126,39 @@ pub fn assign(roster: &mut Roster, designators: &HashMap<u32, Vec<(i64, u32)>>) 
         }
         roster.players[i].team = team;
     }
+}
+
+/// Each roster player's team over the match, `(frame, team)` in frame order:
+/// their participant's designator while they hold its id.
+///
+/// Infection moves a player to the infected when killed, so the team at a frame
+/// can differ from the last.
+pub fn history(roster: &Roster, designators: &HashMap<u32, Vec<(i64, u32)>>) -> Vec<Vec<(i64, u32)>> {
+    let mut out = vec![Vec::new(); roster.players.len()];
+    for a in &roster.ids {
+        let Some(series) = designators.get(&a.id) else { continue };
+        let Some(teams) = out.get_mut(a.player as usize) else { continue };
+        let until = roster
+            .ids
+            .iter()
+            .filter(|b| b.id == a.id && b.frame > a.frame && b.player != a.player)
+            .map(|b| b.frame)
+            .min()
+            .unwrap_or(i64::MAX);
+        let tenure = series.iter().filter(|&&(f, _)| f < until);
+        // The value held when the tenure began, then each change in it.
+        let held = tenure.clone().rfind(|&&(f, _)| f <= a.frame).copied();
+        let changes = tenure.filter(|&&(f, _)| f > a.frame).copied();
+        teams.extend(held.into_iter().chain(changes).filter_map(|(f, v)| Some((f.max(a.frame), v.checked_sub(1)?))));
+    }
+    for teams in &mut out {
+        teams.sort_unstable();
+    }
+    out
+}
+
+/// The team in `history` at `frame`: the last one given by then, else the
+/// first.
+pub fn at(history: &[(i64, u32)], frame: i64) -> Option<u32> {
+    history.iter().rfind(|&&(f, _)| f <= frame).or(history.first()).map(|&(_, t)| t)
 }

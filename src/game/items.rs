@@ -81,13 +81,13 @@ impl Grenade {
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum Item {
-    /// A weapon.
+    /// A weapon the catalogue names.
     Weapon(Weapon),
-    /// A vehicle.
+    /// A vehicle the catalogue names.
     Vehicle(Vehicle),
-    /// A grenade.
+    /// One of the four grenades.
     Grenade(Grenade),
-    /// Equipment or a power-up.
+    /// Equipment or a power-up the catalogue names.
     Equipment(Equipment),
 }
 
@@ -103,13 +103,16 @@ impl Item {
     }
 }
 
-/// What the game's files say about one tag.
+/// What the game's files say about one tag. With serde it serializes, so a
+/// viewer in another language can name the tag ids a film's JSON holds:
+/// write out [`tags`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub struct TagInfo {
-    /// The tag.
+    /// The tag's id.
     pub tag: TagId,
-    /// Its kind.
+    /// What kind of object the tag defines.
     pub kind: ObjectKind,
     /// Its English name, or its nearest ancestor's when it has none of its
     /// own.
@@ -202,8 +205,8 @@ impl Grenade {
 
 /// The internal name of a weapon variant ("default", "plasma", ...), by the
 /// string id weapon events carry.
-pub fn weapon_variant_name(id: u32) -> Option<&'static str> {
-    VARIANTS.binary_search_by_key(&id, |v| v.0).ok().map(|i| VARIANTS[i].1)
+pub fn weapon_variant_name(id: crate::StringId) -> Option<&'static str> {
+    VARIANTS.binary_search_by_key(&id.0, |v| v.0).ok().map(|i| VARIANTS[i].1)
 }
 
 #[cfg(test)]
@@ -217,7 +220,7 @@ mod tests {
         assert_eq!(Weapon::Br75BattleRifle.name(), "BR75 Battle Rifle");
         assert_eq!(Vehicle::from_tag(TagId(0x0000254b)), Some(Vehicle::Falcon));
         assert_eq!(tag_info(TagId(1)), None);
-        assert_eq!(weapon_variant_name(0x42c9679f), Some("default"));
+        assert_eq!(weapon_variant_name(crate::StringId(0x42c9679f)), Some("default"));
         assert_eq!(Grenade::from_type(3).map(Grenade::type_index), Some(3));
     }
 }

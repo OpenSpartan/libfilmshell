@@ -21,6 +21,22 @@ fn no_chunks() {
     assert_eq!(Film::from_chunks(Vec::new()).unwrap_err(), Error::NoChunks);
 }
 
+/// A folder that can't be read names itself; one without chunk files
+/// (other files are skipped) holds no chunks.
+#[test]
+fn folders() {
+    let missing = Film::from_folder("no/such/folder").unwrap_err();
+    assert!(
+        matches!(&missing, Error::Io { path, kind, .. } if path.ends_with("such/folder") && *kind == std::io::ErrorKind::NotFound),
+        "{missing}"
+    );
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("no-chunks");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("notes.txt"), "not a chunk").unwrap();
+    assert_eq!(Chunk::read_folder(&dir).unwrap().len(), 0);
+    assert_eq!(Film::from_folder(&dir).unwrap_err(), Error::NoChunks);
+}
+
 #[test]
 fn gaps_and_repeats_are_named() {
     let gap = vec![chunk(0, ChunkKind::Header), chunk(3, ChunkKind::Replay), chunk(1, ChunkKind::Replay)];
@@ -69,6 +85,11 @@ fn manifest_types() {
     assert_eq!(ChunkKind::from_manifest(1), Some(ChunkKind::Header));
     assert_eq!(ChunkKind::from_manifest(3).map(ChunkKind::manifest_type), Some(3));
     assert_eq!(ChunkKind::from_manifest(7), None);
+    assert_eq!(Chunk::from_manifest(0, 1, Vec::new()).unwrap().kind, ChunkKind::Header);
+    assert_eq!(
+        Chunk::from_manifest(4, 7, Vec::new()).unwrap_err(),
+        Error::UnknownChunkType { index: 4, chunk_type: 7 }
+    );
 }
 
 /// Packets of the given types, each with a 4-byte payload.
@@ -104,10 +125,13 @@ fn chunks_from_file_names() {
     // As downloaded: inflated on the way in.
     let c = Chunk::from_file("filmChunk5", common::zlib_stored(&packets(&[9, 7]))).unwrap();
     assert_eq!((c.index, c.kind, c.is_compressed()), (5, ChunkKind::Highlights, false));
-    assert!(Chunk::from_file("filmChunk", &replay[..]).is_none());
-    assert!(Chunk::from_file("filmChunk+3", &replay[..]).is_none());
-    assert!(Chunk::from_file("meta.json", &replay[..]).is_none());
-    assert!(Chunk::from_file("filmChunk2", &[0u8; 20][..]).is_none());
+    for name in ["filmChunk", "filmChunk+3", "meta.json"] {
+        let e = Chunk::from_file(name, &replay[..]).unwrap_err();
+        assert_eq!(e, Error::NotAChunkFile { name: name.to_string() });
+    }
+    assert_eq!(Chunk::from_file("filmChunk2", &[0u8; 20][..]).unwrap_err(), Error::UnknownChunk { index: 2 });
+    let broken = [0x78, 0x9c, 0xff, 0xff];
+    assert_eq!(Chunk::from_file("filmChunk3", &broken[..]).unwrap_err(), Error::Inflate { index: 3 });
 }
 
 /// A deflate stream (fixed codes) of a zero byte and then `copies` copies of
@@ -139,4 +163,38 @@ fn a_chunk_that_inflates_without_bound_is_refused() {
     // The same stream, short of the limit, inflates (and fails its checksum).
     let chunks = vec![chunk(0, ChunkKind::Header), Chunk::new(1, ChunkKind::Replay, bomb(10))];
     assert_eq!(Film::from_chunks(chunks).unwrap_err(), Error::Inflate { index: 1 });
+}
+
+/// A set of players serializes as the list of their ids.
+#[cfg(feature = "serde")]
+#[test]
+fn player_sets_are_lists_of_ids() {
+    use filmshell::{PlayerId, PlayerMask};
+    let set: PlayerMask = [PlayerId(3), PlayerId(15)].into_iter().collect();
+    assert_eq!(serde_json::to_string(&set).unwrap(), "[3,15]");
+    assert_eq!(serde_json::from_str::<PlayerMask>("[15,3]").unwrap(), set);
+    assert!(serde_json::from_str::<PlayerMask>("[40]").is_err());
+}
+
+/// A XUID parses alone or as the match stats write it; a tick moves by a
+/// duration.
+#[test]
+fn ids_and_durations() {
+    use filmshell::{Tick, Xuid};
+    assert_eq!("2533274857096890".parse::<Xuid>().unwrap(), Xuid(2533274857096890));
+    assert_eq!("xuid(2533274857096890)".parse::<Xuid>().unwrap(), Xuid(2533274857096890));
+    assert!("xuid(abc)".parse::<Xuid>().is_err());
+    assert_eq!(Tick(60) + std::time::Duration::from_millis(1500), Tick(150));
+}
+
+/// A set of players lists its players in id order, and prints as a set.
+#[test]
+fn player_sets() {
+    use filmshell::{PlayerId, PlayerMask};
+    let set: PlayerMask = [PlayerId(15), PlayerId(0), PlayerId(31)].into_iter().collect();
+    assert_eq!(set.iter().collect::<Vec<_>>(), [PlayerId(0), PlayerId(15), PlayerId(31)]);
+    assert_eq!(set.iter().len(), 3);
+    assert_eq!(set.into_iter().count(), 3);
+    assert_eq!(format!("{set:?}"), "{0, 15, 31}");
+    assert_eq!(format!("{:x}", filmshell::TagId(0x2b1824d5)), "2b1824d5");
 }

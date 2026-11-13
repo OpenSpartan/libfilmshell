@@ -18,12 +18,13 @@ pub struct RawSample {
     pub tick: i64,
     pub c1: f64,
     pub c2: f64,
-    /// Spliced in from a vehicle (`splice_vehicle_rides`).
+    /// Spliced in from a vehicle (`splice_attachments`, `splice_exits`,
+    /// `splice_vehicle_rides`).
     pub in_vehicle: bool,
     /// The vehicle it was spliced from, its id `(generation - 1) * 256 + index`
     /// (a part's rides use its vehicle's); -1 when none.
     pub vehicle: i32,
-    /// A full biped update whose item list marks AI control.
+    /// A full biped update whose component list lists actor control.
     pub ai: bool,
     /// A stationary tick held through a stub run (`hold_through_stubs`).
     pub held: bool,
@@ -114,9 +115,15 @@ pub struct RosterEntry {
     /// first listing to its leaving (infinity while listed to the end), the
     /// span its lives start in.
     pub listed: Option<(f64, f64)>,
-    /// The frames the scoreboard counts each of the player's deaths at, one
-    /// per death; None without a scoreboard.
-    pub death_frames: Option<Vec<i64>>,
+    /// The highlight ticks the player's lives can start between: from their
+    /// first listing for a joiner (minus infinity for a player there from
+    /// the start) to their leaving (infinity for one who stays).
+    pub in_match: Option<(f64, f64)>,
+    /// Each of the player's deaths the scoreboard counts, as the earliest
+    /// frame it can be at and the frame the scoreboard counts it at; None
+    /// without a scoreboard. A bot with no row has none: the match stats
+    /// count no deaths for a bot the scoreboard leaves out.
+    pub death_frames: Option<Vec<(i64, i64)>>,
 }
 
 impl RosterEntry {

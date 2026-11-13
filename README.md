@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/icon.png" alt="" width="200">
+  <img src="https://raw.githubusercontent.com/OpenSpartan/libfilmshell/main/assets/icon.png" alt="" width="200">
 </p>
 
 <h1 align="center">libfilmshell</h1>
@@ -12,10 +12,11 @@
   <img src="https://img.shields.io/badge/rust-1.85%2B-orange.svg" alt="Rust 1.85 or newer">
 </p>
 
-`libfilmshell` is designed to parse out useful data from Halo Infinite film files. I first wrote about
-parsing them in [Extracting Match Stats From Halo Infinite Film
-Files](https://den.dev/blog/extracting-stats-film-files-halo-infinite/), and this library is me
-actually wrapping a lot of the investigations into one, easy-to-consume package.
+`libfilmshell` reads Halo Infinite film files into typed data: who played, where everyone went, every
+kill, shot and medal, and the scoreboard as it changed. I first wrote about parsing them in
+[Extracting Match Stats From Halo Infinite Film
+Files](https://den.dev/blog/extracting-stats-film-files-halo-infinite/), and this library collects
+those investigations in one package.
 
 This is the library that powers [OpenSpartan Films](https://films.openspartan.com).
 
@@ -26,9 +27,17 @@ The crate is named `filmshell`:
 ```toml
 [dependencies]
 filmshell = { git = "https://github.com/OpenSpartan/libfilmshell" }
+
+# Reading a film unoptimized takes about ten times as long, so optimize this crate in debug
+# builds too.
+[profile.dev.package.filmshell]
+opt-level = 3
 ```
 
-## Film Chunks
+With the `serde` feature, the model's serializers are generic and compile in your crate, so a debug
+build of yours writes or reads a film's JSON about ten times slower than a release build.
+
+## Film chunks
 
 Halo Infinite records every match for theater replay in **chunks** that are listed through the API.
 A film has three kinds:
@@ -40,32 +49,37 @@ A film has three kinds:
 | 3    | `Highlights` | Last   | Summary of kills, deaths, and medals on the theater timeline         |
 
 Reading a film takes the header and every replay chunk. The highlights chunk is optional, but
-without it the library can't tell whose life is whose by the players' death times. You can
-download the chunks yourself with a script or a third-party tool, using your own
-[Spartan token](https://den.dev/blog/halo-api-authentication/), including for matches other players
-participated in.
+without it a film has no medals, and a life whose owner the film doesn't name can't be matched to a
+player by death times. You can download the chunks yourself with a script or a third-party tool,
+using your own [Spartan token](https://den.dev/blog/halo-api-authentication/), including for
+matches you didn't play in.
 
 ## Quick start
 
 To extract film data, wrap each chunk in a `Chunk` and pass them all to `Film::from_chunks`:
 
 ```rust
-use filmshell::{Chunk, ChunkKind, Film};
+use filmshell::{Chunk, Film};
 
-/// `chunks`: (index, chunk type, bytes) for every chunk of one film.
+/// `chunks`: (index, chunk type, bytes) for every chunk of one film, as its manifest lists them.
 fn print_match(chunks: &[(u32, u32, Vec<u8>)]) -> Result<(), filmshell::Error> {
-    let film = Film::from_chunks(chunks.iter().map(|(index, chunk_type, bytes)| {
-        let kind = ChunkKind::from_manifest(*chunk_type).expect("a known chunk type");
-        Chunk::new(*index, kind, bytes.as_slice())
-    }))?;
+    let chunks = chunks
+        .iter()
+        .map(|(index, chunk_type, bytes)| Chunk::from_manifest(*index, *chunk_type, bytes.as_slice()))
+        .collect::<Result<Vec<_>, _>>()?;
+    let film = Film::from_chunks(chunks)?;
 
-    let name = |id| film.player(id).and_then(|p| p.name()).unwrap_or("unknown");
+    let name = |id| film.player_name(id).unwrap_or("unknown");
     for player in film.players() {
         println!("{}", name(player.id));
     }
-    for (tick, kill) in film.kills() {
-        let killer = kill.killer.map_or("the environment", name);
-        println!("{tick}: {killer} killed {}", name(kill.victim));
+    // Leaves out the deaths the scoreboard doesn't count: those after a round is decided,
+    // among them the deaths the game deals everyone alive when the match ends.
+    for (tick, kill) in film.kills().filter(|(_, k)| k.is_scored()) {
+        match kill.credited_killer() {
+            Some(killer) => println!("{tick}: {} killed {}", name(killer), name(kill.victim)),
+            None => println!("{tick}: {} died", name(kill.victim)),
+        }
     }
     Ok(())
 }
@@ -73,29 +87,43 @@ fn print_match(chunks: &[(u32, u32, Vec<u8>)]) -> Result<(), filmshell::Error> {
 
 Chunks saved as files named `filmChunk{N}` (as downloaded) or `filmChunk{N}_dec` (inflated) need no
 manifest: `Chunk::from_file(name, bytes)` takes the index from the file name and the kind from the
-bytes. The [`examples` folder](examples) has a few small sample programs that can read a film saved
-as a folder of chunk files and then interpret their contents:
+bytes, and `Film::from_folder(dir)` reads a folder of them. The [`examples` folder](examples) has
+nine programs that read a film saved that way:
 
 ```sh
-cargo run --release --example players -- path/to/film            # the match, its players and the score
-cargo run --release --example kills -- path/to/film              # every kill with its weapon
-cargo run --release --example timeline -- path/to/film 3         # one player's match, event by event
-cargo run --release --example playback -- path/to/film 90        # everyone's state 90 seconds in
-cargo run --release --example trails -- path/to/film > map.svg   # every path and kill, drawn as a map
-cargo run --release --example raw -- path/to/film                # the packets and events underneath
+# The match, its players and the score
+cargo run --release --example players -- path/to/film
+# Every kill with its weapon
+cargo run --release --example kills -- path/to/film
+# One player's match, event by event
+cargo run --release --example timeline -- path/to/film 3
+# The kill feed one player saw, in the game's words
+cargo run --release --example feed -- path/to/film 3
+# The map 90 seconds in: every player, vehicle, grenade and weapon on the ground
+cargo run --release --example playback -- path/to/film 90
+# Every path and scored kill, drawn as a map
+cargo run --release --example trails -- path/to/film > map.svg
+# The map 90 seconds in as a picture: players with their aim, vehicles turned to their heading
+cargo run --release --example frame -- path/to/film 90 > frame.svg
+# The packets and events underneath
+cargo run --release --features raw --example raw -- path/to/film
+# The model as JSON
+cargo run --release --features serde --example json -- path/to/film > film.json
 ```
 
 >[!NOTE]
->Positions are in world units, ten to the game's own engine unit. On every level in the library's
->catalogue they convert exactly. For any other level, give the level's bounds or the map's spawn
+>Positions are in world units, a foot each; the game's engine unit is ten world units. On the test films every level in
+>the library's catalogue converts exactly; a film whose fields don't fit the catalogue's box (another game build) gets
+>a fitted conversion, which `Film::coordinates` names. For any other level, give the level's bounds or the map's spawn
 >points with `Hints` and `Film::from_chunks_with`, or read the unconverted coordinates from
 >`Sample::raw`. A `Sample` records where a player was at a given tick, along with their aim, speed,
 >health, and shield.
 
-If you would like to read the raw contents of the film, `Film::raw()` exposes what the actual
-underlying data model is built from: inflated chunks, packets, frames, each frame's events and
-entity updates, the seek snapshots and a bit reader. It is mostly useful for working on the format
-itself; most applications you will build with `libfilmshell` won't need it.
+If you would like to read the raw contents of the film, `Film::raw()` exposes the layers the data
+model is built from: inflated chunks, packets, frames, each frame's events and entity updates, and
+the seek snapshots. It is mostly useful for working on the format itself; most applications you
+will build with `libfilmshell` won't need it. It comes with the `raw` feature, and
+`filmshell::format` may change in any release.
 
 ## License
 
@@ -103,4 +131,4 @@ MIT. See [LICENSE](LICENSE).
 
 ## Maintainers
 
-- [Den Delimarsky](https://den.dev) (with 💖 for Halo and the Halo community)
+- [Den Delimarsky](https://den.dev), with love for Halo and the Halo community

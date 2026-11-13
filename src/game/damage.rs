@@ -13,11 +13,11 @@ pub enum DamageCause {
     Weapon,
     /// A melee strike, a sword or hammer swing included.
     Melee,
-    /// A grenade.
+    /// A grenade's damage effect.
     Grenade,
-    /// Equipment.
+    /// An equipment's damage effect.
     Equipment,
-    /// A vehicle.
+    /// A vehicle's own damage effect.
     Vehicle,
     /// A physics model: something ran into something.
     Collision,
@@ -51,15 +51,16 @@ impl std::fmt::Display for DamageCause {
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct DamageAmount {
-    /// The lower bound.
+    /// The lower bound, points of damage.
     pub lower: f64,
-    /// The upper bound's minimum and maximum.
+    /// The upper bound's minimum and maximum, points of damage.
     pub upper: [f64; 2],
     /// The Spartan's shield multiplier.
     pub shield_scale: f64,
     /// The Spartan's body multiplier.
     pub body_scale: f64,
-    /// The effect's `DamageDefinitionFlags`.
+    /// The effect's `DamageDefinitionFlags` as the tag stores them; the
+    /// methods name the ones the library reads.
     pub flags: u32,
     /// The area's outer radius in engine units; 0 for a direct hit.
     pub radius: f64,
@@ -67,21 +68,32 @@ pub struct DamageAmount {
 
 impl DamageAmount {
     /// The flag set on an effect that can headshot.
-    pub const CAN_HEADSHOT: u32 = 1 << 1;
+    pub(crate) const CAN_HEADSHOT: u32 = 1 << 1;
     /// The flag set on an effect that goes straight to the body.
-    pub const SKIPS_SHIELDS: u32 = 1 << 9;
+    pub(crate) const SKIPS_SHIELDS: u32 = 1 << 9;
     /// The flag set on an effect whose damage beyond the shield is lost.
-    pub const NO_SPILL: u32 = 1 << 23;
+    pub(crate) const NO_SPILL: u32 = 1 << 23;
 
-    /// One amount whatever the distance or the roll: a direct hit with
-    /// equal bounds.
-    pub fn fixed(&self) -> bool {
+    /// Whether it deals one amount whatever the distance or the roll: a
+    /// direct hit with equal bounds.
+    pub fn is_fixed(&self) -> bool {
         self.radius == 0.0 && self.lower == self.upper[0] && self.lower == self.upper[1]
     }
 
-    /// Whether `flag` is set.
-    pub fn has(&self, flag: u32) -> bool {
-        self.flags & flag != 0
+    /// Whether the effect can headshot.
+    pub fn can_headshot(&self) -> bool {
+        self.flags & Self::CAN_HEADSHOT != 0
+    }
+
+    /// Whether the effect goes straight to the body, past the shield.
+    pub fn skips_shields(&self) -> bool {
+        self.flags & Self::SKIPS_SHIELDS != 0
+    }
+
+    /// Whether the damage the shield can't take spills to the body; an
+    /// effect that doesn't spill loses it.
+    pub fn spills(&self) -> bool {
+        self.flags & Self::NO_SPILL == 0
     }
 }
 
@@ -97,8 +109,8 @@ pub struct DamageEffect {
     pub weapon: Option<TagId>,
     /// Its numbers; None for an effect that deals no damage.
     pub amount: Option<DamageAmount>,
-    /// A blast that grenades spawn among other projectiles, so that the
-    /// effect alone doesn't say what set it off.
+    /// Whether the effect is a blast that grenades and other projectiles both
+    /// spawn, so it doesn't say what set it off.
     pub grenade_blast: bool,
     projectiles: &'static [u32],
 }
@@ -146,10 +158,21 @@ pub fn damage_effect(tag: TagId) -> Option<&'static DamageEffect> {
     DAMAGE.binary_search_by_key(&tag, |d| d.tag).ok().map(|i| &DAMAGE[i])
 }
 
+/// How many points of damage a Spartan's body and shield take.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct Vitality {
+    /// The body's points.
+    pub body: f64,
+    /// The shield's points.
+    pub shield: f64,
+}
+
 /// The multiplayer Spartan's body and shield vitality, from its model's
 /// damage info.
-pub fn spartan_vitality() -> (f64, f64) {
-    SPARTAN
+pub fn spartan_vitality() -> Vitality {
+    Vitality { body: SPARTAN.0, shield: SPARTAN.1 }
 }
 
 #[cfg(test)]
@@ -164,7 +187,7 @@ mod tests {
         assert_eq!(br.cause, DamageCause::Weapon);
         assert_eq!(br.weapon.and_then(Weapon::from_tag), Some(Weapon::Br75BattleRifle));
         let a = br.amount.unwrap();
-        assert!(a.fixed() && a.lower == 12.73 && a.shield_scale == 1.0 && a.has(DamageAmount::NO_SPILL));
+        assert!(a.is_fixed() && a.lower == 12.73 && a.shield_scale == 1.0 && !a.spills());
         assert_eq!(damage_effect(TagId(0xd9dbf765)).map(|d| (d.cause, d.amount)), Some((DamageCause::Collision, None)));
         assert_eq!(damage_effect(TagId(0x00403594)).map(|d| d.cause), Some(DamageCause::World));
         let hammer = damage_effect(TagId(0x877da252)).unwrap();
@@ -172,6 +195,6 @@ mod tests {
         assert_eq!(damage_effect(TagId(0xdaa03c35)).map(|d| (d.cause, d.weapon)), Some((DamageCause::Melee, None)));
         assert!(damage_effect(TagId(0xd21ac495)).unwrap().grenade_blast);
         assert_eq!(damage_effect(TagId(0xda3b5ba4)).map(|d| d.cause), Some(DamageCause::Grenade));
-        assert_eq!(spartan_vitality(), (90.0, 140.0));
+        assert_eq!(spartan_vitality(), Vitality { body: 90.0, shield: 140.0 });
     }
 }

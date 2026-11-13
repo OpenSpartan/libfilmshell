@@ -28,7 +28,13 @@ pub struct Aim {
     pub hits: Vec<Vec<i64>>,
 }
 
-pub fn reader<'a>(paths: &'a [PlayerPath], aim: &'a mut Aim) -> impl FnMut(usize, &[u8], &Payload) + 'a {
+/// `player_of` maps an engine slot at a frame to the player's index, for a
+/// projectile or hit attributed by its player index (`fire::read_mapped`).
+pub fn reader<'a>(
+    paths: &'a [PlayerPath],
+    player_of: impl Fn(u32, i64) -> u32 + 'a,
+    aim: &'a mut Aim,
+) -> impl FnMut(usize, &[u8], &Payload) + 'a {
     let mut slot_owner: HashMap<i32, usize> = HashMap::new();
     let mut by_index: HashMap<i32, usize> = HashMap::new();
     for (k, p) in paths.iter().enumerate() {
@@ -54,7 +60,7 @@ pub fn reader<'a>(paths: &'a [PlayerPath], aim: &'a mut Aim) -> impl FnMut(usize
             let owner = unit
                 .and_then(|h| h.biped_slot())
                 .and_then(|s| slot_owner.get(&s))
-                .or_else(|| player.and_then(|i| by_index.get(&(i as i32))));
+                .or_else(|| player.and_then(|i| by_index.get(&(player_of(i, frame) as i32))));
             if let Some(&k) = owner {
                 aim.projectiles[k].push(frame);
             }
@@ -67,7 +73,7 @@ pub fn reader<'a>(paths: &'a [PlayerPath], aim: &'a mut Aim) -> impl FnMut(usize
             let owner = e.handles[1]
                 .and_then(|h| h.biped_slot())
                 .and_then(|s| slot_owner.get(&s))
-                .or_else(|| d.player.and_then(|i| by_index.get(&(i as i32))));
+                .or_else(|| d.player.and_then(|i| by_index.get(&(player_of(i, frame) as i32))));
             let Some(&k) = owner else { continue };
             if seen.insert((k, e.handles[0].map(|h| h.index), frame)) {
                 aim.hits[k].push(frame);

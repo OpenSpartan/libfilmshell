@@ -39,12 +39,22 @@ pub struct Coordinates {
     pub offset_x: f64,
     /// World y at raw 0.
     pub offset_y: f64,
-    /// For a fit to spawn pads: the life starts checked against the pads,
-    /// and how many landed within 5 world units of one.
+    /// How well the life starts fit the spawn pads, when the box was fitted
+    /// to them.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
-    pub spawn_fit: Option<(usize, usize)>,
+    pub spawn_fit: Option<SpawnFit>,
 }
 
+/// How well a fitted box puts the life starts on the spawn pads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct SpawnFit {
+    /// The life starts checked against the pads.
+    pub checked: usize,
+    /// How many landed within 5 world units of one.
+    pub on_pads: usize,
+}
 impl Coordinates {
     /// A raw position in world units.
     pub fn to_world(&self, raw: [f64; 2]) -> Position {
@@ -52,27 +62,54 @@ impl Coordinates {
     }
 }
 
+/// How a film's tick packets carry its bipeds' positions, which depends on
+/// the lobby ([`Film::encoding`](crate::Film::encoding)).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+pub enum Encoding {
+    /// Up to four players, none a bot: each biped's position is an entity
+    /// record at any bit offset of a tick packet.
+    PerEntity,
+    /// Up to four players with a bot: the same records, a bot's often first.
+    BotComposite,
+    /// Five or more players: every object update is an entry of the tick
+    /// packet's entity view, bit-packed.
+    Composite,
+}
+
 /// One sample of a life: where the biped was and its state as of its last
 /// update.
+///
+/// In a small lobby (four players or fewer: [`Encoding::PerEntity`] and
+/// [`Encoding::BotComposite`]) the
+/// biped updates aren't read field by field, so `yaw`, `pitch`, `speed`,
+/// `health` and `shield` are None, and `position` has no `z`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Sample {
     /// When.
     pub tick: Tick,
-    /// The two horizontal position fields as the film stores them, scaled to
-    /// a 15-bit window (`field * 2^(15 - width)`; small lobbies' units are 64
-    /// and 8 times smaller): `raw[0]` becomes world y, `raw[1]` world x.
+    /// The two horizontal position fields as the film stores them, each
+    /// scaled to a 15-bit window, `field * 2^(15 - width)`: `raw[0]` becomes
+    /// world y, `raw[1]` world x. In a small lobby they are in other units:
+    /// `raw[0]` is `16384 + window / 64` and `raw[1]` is `window / 8`.
     /// [`Coordinates::to_world`] converts them.
     pub raw: [f64; 2],
     /// The position in world units, when the film's coordinates are known.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
-    /// Aim yaw in radians, in world axes (from +x toward +y). The aim, speed,
-    /// health and shield are None in small lobbies, whose biped updates
-    /// aren't read field by field.
+    /// Aim yaw in radians, -π to π, in world axes (from +x toward +y). In a
+    /// vehicle it is where the rider aims, which a vehicle's facing needn't
+    /// follow: [`VehicleTrack::heading_at`](crate::VehicleTrack::heading_at)
+    /// is the vehicle's.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub yaw: Option<f64>,
+    /// Aim pitch in radians, up positive, within ±π/2.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub pitch: Option<f64>,
     /// On-foot speed, world units a second; None in a vehicle.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub speed: Option<f64>,
@@ -83,7 +120,8 @@ pub struct Sample {
     /// in a mode without shields.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub shield: Option<f64>,
-    /// In a vehicle: the sample is the vehicle's position.
+    /// Whether the player is in a vehicle: `x` and `y` are then the
+    /// vehicle's, and there is no `z`.
     pub in_vehicle: bool,
     /// The vehicle, when known: [`Film::vehicle_at`](crate::Film::vehicle_at)
     /// finds its track.
@@ -91,15 +129,16 @@ pub struct Sample {
     pub vehicle: Option<EntityId>,
 }
 
-/// One life of a biped: from its spawn to its death or the film's end.
+/// One life of a biped: from its spawn to its death, its player leaving, or
+/// the film's end.
 ///
 /// A life is one biped entity. Its owner is the player controlling the unit,
 /// as the biped's own records say; where they don't, the library matches
 /// the life's first and last records against the players' death times in
-/// the HighlightEvents chunk. A life neither places has no player.
+/// the highlights chunk. A life neither places has no player.
 ///
-/// For playback, prefer [`Film::sample_at`](crate::Film::sample_at) to
-/// [`Life::at`]: it also ends a life when its player leaves.
+/// [`Film::life_at`](crate::Film::life_at) finds the life a player is in at a
+/// tick, and [`Film::sample_at`](crate::Film::sample_at) their sample then.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
@@ -107,16 +146,27 @@ pub struct Life {
     /// The player whose life it is.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub player: Option<PlayerId>,
-    /// The biped's id, unique among the lives under way at the same time.
+    /// The biped's id, unique among the lives under way at the same time;
+    /// None when the biped's slot isn't known: every life no player owns,
+    /// and an owned life the film doesn't tie to a slot.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub entity: Option<EntityId>,
-    /// Whether the life ended in a death, by the HighlightEvents death times
-    /// or, without them, by a respawn following it.
+    /// Whether the life ended in a death: by the `HighlightEvents` death times,
+    /// else when the player controlling it let go of it at a time the
+    /// scoreboard counts a death (a bot removed to make room for a joiner
+    /// lets go without dying); in a small lobby, by a respawn following it.
     pub died: bool,
-    /// The tick of the kill event that ended the life. It can be None when
-    /// `died` is true: no kill event names that death.
+    /// The tick of the [`Kill`](crate::Kill) that ended the life, recorded or
+    /// [`inferred`](crate::Kill::inferred). None when `died` is true but no
+    /// kill was placed.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub death: Option<Tick>,
+    /// The life's last tick, when it ends before the film does. For a death
+    /// with a kill, the kill's tick; for a death without one, or a life the
+    /// player's next life follows, the last sample; for a player who left,
+    /// the tick they left. None when the life lasts to the film's end.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub until: Option<Tick>,
     /// Its samples, in tick order.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub samples: Vec<Sample>,
@@ -128,71 +178,143 @@ impl Life {
         self.samples.first().map(|s| s.tick)
     }
 
-    /// The last sample's tick.
+    /// The last sample's tick. The life can last past it, to
+    /// [`Life::until`] or the film's end: [`Life::is_over_at`] says when.
     pub fn end(&self) -> Option<Tick> {
         self.samples.last().map(|s| s.tick)
     }
 
-    /// Whether the life is over at `tick`: after its death, or, for a life
-    /// that ended in a death no kill event names, after its last sample.
-    pub fn over_at(&self, tick: Tick) -> bool {
-        match (self.death, self.end()) {
-            (Some(d), _) => tick > d,
-            (None, Some(end)) => self.died && tick > end,
-            (None, None) => true,
-        }
+    /// Whether the life is over at `tick`: after [`Life::until`].
+    pub fn is_over_at(&self, tick: Tick) -> bool {
+        self.samples.is_empty() || self.until.is_some_and(|u| tick > u)
     }
 
     /// The last sample at or before `tick`, while the life lasts: None
-    /// before its first sample and once it is over ([`Life::over_at`]).
-    pub fn at(&self, tick: Tick) -> Option<&Sample> {
-        if self.over_at(tick) {
+    /// before its first sample and once it is over ([`Life::is_over_at`]).
+    pub fn sample_at(&self, tick: Tick) -> Option<&Sample> {
+        if self.is_over_at(tick) {
             return None;
         }
         self.samples.partition_point(|s| s.tick <= tick).checked_sub(1).map(|i| &self.samples[i])
     }
+
+    /// Where the player was at `tick`, for playback that draws every tick:
+    /// between two samples at most [`Life::GLIDE_TICKS`] apart, the point
+    /// between their positions in proportion; else the last sample's
+    /// position. A film samples a moving player every frame, so a longer gap
+    /// is a player standing still, who sends no position: they stay where
+    /// they were. None when [`Life::sample_at`] is, or the sample has no
+    /// position.
+    pub fn position_at(&self, tick: Tick) -> Option<Position> {
+        let a = self.sample_at(tick)?;
+        let p = a.position?;
+        let i = self.samples.partition_point(|s| s.tick <= tick);
+        let Some(b) = self.samples.get(i).filter(|b| self.until.is_none_or(|u| b.tick <= u)) else { return Some(p) };
+        let (Some(q), gap) = (b.position, b.tick.0 - a.tick.0) else { return Some(p) };
+        if gap > Self::GLIDE_TICKS || a.in_vehicle != b.in_vehicle {
+            return Some(p);
+        }
+        let f = (tick.0 - a.tick.0) as f64 / gap as f64;
+        let mid = |a: f64, b: f64| a + (b - a) * f;
+        Some(Position { x: mid(p.x, q.x), y: mid(p.y, q.y), z: p.z.zip(q.z).map(|(a, b)| mid(a, b)).or(p.z) })
+    }
+
+    /// Which way the player aimed at `tick`, for playback that draws every
+    /// tick: between two samples at most [`Life::GLIDE_TICKS`] apart, the
+    /// yaw between theirs in proportion, the shorter way round; else the
+    /// last sample's yaw. None when [`Life::sample_at`] is, or the sample has
+    /// no yaw.
+    pub fn yaw_at(&self, tick: Tick) -> Option<f64> {
+        let a = self.sample_at(tick)?;
+        let y = a.yaw?;
+        let i = self.samples.partition_point(|s| s.tick <= tick);
+        let Some(b) = self.samples.get(i).filter(|b| self.until.is_none_or(|u| b.tick <= u)) else { return Some(y) };
+        let (Some(z), gap) = (b.yaw, b.tick.0 - a.tick.0) else { return Some(y) };
+        if gap > Self::GLIDE_TICKS {
+            return Some(y);
+        }
+        Some(turn(y, z, (tick.0 - a.tick.0) as f64 / gap as f64))
+    }
+
+    /// The longest gap between samples that [`Life::position_at`] and
+    /// [`Life::yaw_at`] interpolate across: 6 ticks, three frames of a 30 Hz
+    /// film.
+    pub const GLIDE_TICKS: u32 = 6;
+}
+
+/// The angle a fraction `f` of the way from `a` to `b`, radians, the shorter
+/// way round, in -π to π.
+pub(crate) fn turn(a: f64, b: f64, f: f64) -> f64 {
+    use std::f64::consts::{PI, TAU};
+    let d = (b - a + PI).rem_euclid(TAU) - PI;
+    (a + d * f + PI).rem_euclid(TAU) - PI
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[test]
+    fn angles_turn_the_short_way() {
+        assert!((turn(0.0, 1.0, 0.5) - 0.5).abs() < 1e-12);
+        // Across ±π, through π rather than through 0.
+        assert!((turn(3.0, -3.0, 0.5).abs() - std::f64::consts::PI).abs() < 1e-12);
+        assert!((turn(-0.5, 0.5, 0.25) + 0.25).abs() < 1e-12);
+    }
+
     fn life(ticks: &[u32], died: bool, death: Option<u32>) -> Life {
         let sample = |t: u32| Sample {
             tick: Tick(t),
             raw: [0.0; 2],
-            position: None,
+            position: Some(Position::new(t as f64, 0.0)),
             yaw: None,
+            pitch: None,
             speed: None,
             health: None,
             shield: None,
             in_vehicle: false,
             vehicle: None,
         };
+        // As the film sets it for a player's only life.
+        let until = death.or(ticks.last().copied().filter(|_| died)).map(Tick);
         Life {
             player: None,
             entity: None,
             died,
             death: death.map(Tick),
+            until,
             samples: ticks.iter().map(|&t| sample(t)).collect(),
         }
     }
 
     #[test]
-    fn a_life_ends_at_its_death() {
+    fn a_life_ends_when_it_is_over() {
         let l = life(&[10, 20, 30], true, Some(32));
-        assert!(l.at(Tick(9)).is_none());
-        assert_eq!(l.at(Tick(25)).map(|s| s.tick), Some(Tick(20)));
-        assert_eq!(l.at(Tick(32)).map(|s| s.tick), Some(Tick(30)));
-        assert!(l.at(Tick(33)).is_none());
-        // A death the kill events don't name ends at the last sample.
+        assert!(l.sample_at(Tick(9)).is_none());
+        assert_eq!(l.sample_at(Tick(25)).map(|s| s.tick), Some(Tick(20)));
+        assert_eq!(l.sample_at(Tick(32)).map(|s| s.tick), Some(Tick(30)));
+        assert!(l.sample_at(Tick(33)).is_none());
+        // A death no kill was placed for ends at the last sample.
         let l = life(&[10, 20, 30], true, None);
-        assert!(l.at(Tick(30)).is_some() && l.at(Tick(31)).is_none());
+        assert!(l.sample_at(Tick(30)).is_some() && l.sample_at(Tick(31)).is_none());
         // Samples past the kill (a vehicle's) don't extend the life.
         let l = life(&[10, 20, 30, 90], true, Some(30));
-        assert!(l.at(Tick(31)).is_none());
+        assert!(l.sample_at(Tick(31)).is_none());
         // A life that didn't end in a death lasts past its last sample.
         let l = life(&[10, 20], false, None);
-        assert_eq!(l.at(Tick(1000)).map(|s| s.tick), Some(Tick(20)));
+        assert_eq!(l.sample_at(Tick(1000)).map(|s| s.tick), Some(Tick(20)));
+    }
+
+    #[test]
+    fn positions_glide_between_close_samples_and_hold_across_gaps() {
+        // Each sample stands at x = its tick.
+        let l = life(&[10, 12, 40], false, None);
+        let x = |t: u32| l.position_at(Tick(t)).map(|p| p.x);
+        assert_eq!(x(11), Some(11.0));
+        assert_eq!(x(12), Some(12.0));
+        // 28 ticks with no sample: standing still at 12.
+        assert_eq!(x(20), Some(12.0));
+        assert_eq!(x(50), Some(40.0));
+        assert_eq!(x(9), None);
     }
 }

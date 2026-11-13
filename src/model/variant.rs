@@ -1,5 +1,5 @@
-use crate::TagId;
 use crate::game::{self, OptionValue};
+use crate::{StringId, TagId};
 
 /// The mode a game variant runs, from the mode scripts chunk 0 names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -7,13 +7,15 @@ use crate::game::{self, OptionValue};
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum GameMode {
-    /// Slayer and its variants (Big Team Battle Slayer, Fiesta).
+    /// Slayer and its variants (Big Team Battle Slayer, Fiesta), and the modes
+    /// that run Slayer's scripts: Grifball, Juggernaut, Headhunter.
     Slayer,
-    /// Capture the Flag.
+    /// Capture the Flag, Big Team Battle's too, and the bomb modes that run
+    /// its scripts.
     CaptureTheFlag,
     /// Oddball.
     Oddball,
-    /// Strongholds.
+    /// Strongholds, and Land Grab, which runs its scripts.
     Strongholds,
     /// King of the Hill.
     KingOfTheHill,
@@ -28,6 +30,17 @@ pub enum GameMode {
     Extraction,
     /// Escalation Slayer: a weapon ladder.
     Escalation,
+    /// Infection: rounds of survivors against the infected, whose team a
+    /// survivor joins when killed, so a player's
+    /// [`Player::team`](crate::Player::team) is the one they ended on.
+    Infection,
+    /// VIP. Recognised by `vipevents.lua`. Among the test films only those
+    /// older than version 41, which the library refuses, carry it, so no
+    /// VIP film has been read.
+    Vip,
+    /// Stockpile: teams carry power seeds to their stockpiles. On a Big Team
+    /// Stockpile film the events include each seed's [`SeedEvent`](crate::SeedEvent)s.
+    Stockpile,
     /// Scripts the library doesn't tell apart.
     Other,
 }
@@ -38,7 +51,7 @@ impl GameMode {
         if has("firefightevents.lua") {
             return if has("fbastionevents.lua") { GameMode::FirefightKingOfTheHill } else { GameMode::Firefight };
         }
-        if has("arenaflagevents.lua") {
+        if has("arenaflagevents.lua") || has("btbflagevents.lua") {
             GameMode::CaptureTheFlag
         } else if has("oddballevents.lua") {
             GameMode::Oddball
@@ -52,6 +65,12 @@ impl GameMode {
             GameMode::Extraction
         } else if has("gungameevents.lua") {
             GameMode::Escalation
+        } else if has("infectionevents.lua") {
+            GameMode::Infection
+        } else if has("vipevents.lua") {
+            GameMode::Vip
+        } else if has("stockpile.lua") || has("btbstockpileevents.lua") {
+            GameMode::Stockpile
         } else if has("slayerevents.lua") || has("btbslayerevents.lua") {
             GameMode::Slayer
         } else {
@@ -77,6 +96,9 @@ impl GameMode {
             GameMode::Attrition => "Attrition",
             GameMode::Extraction => "Extraction",
             GameMode::Escalation => "Escalation Slayer",
+            GameMode::Infection => "Infection",
+            GameMode::Vip => "VIP",
+            GameMode::Stockpile => "Stockpile",
             GameMode::Other => "Other",
         }
     }
@@ -96,9 +118,9 @@ pub struct Loadout {
     /// The starting weapons.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub weapons: Vec<TagId>,
-    /// Starting weapons are random.
+    /// Whether the starting weapons are random.
     pub random: bool,
-    /// The starting equipment, a soft asset's tag.
+    /// The starting equipment's tag.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub equipment: Option<TagId>,
 }
@@ -108,8 +130,8 @@ pub struct Loadout {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct VariantOption {
-    /// The murmur3 hash of the option's lower-cased name.
-    pub hash: u32,
+    /// The string id of the option's lower-cased name.
+    pub hash: StringId,
     /// The option's name, when the game's option scripts name it.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub name: Option<String>,
@@ -146,13 +168,14 @@ impl Rule {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct StatDefinition {
-    /// The statistic's identifier ("AccuracyPercentage").
+    /// The statistic's identifier (`"AccuracyPercentage"`).
     pub name: String,
-    /// The murmur3 hash of `name`.
-    pub id: u32,
+    /// The string id of `name`.
+    pub id: StringId,
     /// The base entry type (2 a best-of, 3 computed).
     pub base: i64,
-    /// How a match's value comes from its rounds, the game's number.
+    /// How a match's value comes from its rounds, as the game numbers it;
+    /// what each number means isn't known.
     pub aggregation: i64,
     /// Whether a lower value ranks higher.
     pub lower_is_better: bool,
@@ -201,15 +224,16 @@ impl StatDisplay {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct StatSettings {
-    /// The statistics, by statborg slot.
+    /// The statistics, by scoreboard slot.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub stats: Vec<StatDefinition>,
-    /// The scoreboard's columns, as statborg slots.
+    /// The scoreboard's columns, as slots.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub scoreboard: Vec<usize>,
-    /// The server runs at 30 Hz.
+    /// Whether the server runs at 30 Hz.
     pub server_30fps: bool,
-    /// The tick rate, when the variant sets one.
+    /// The variant's tick rate setting as stored, when it sets one; its
+    /// unit isn't known.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub tick_rate: Option<i64>,
     /// Kill cams, when set.
@@ -238,7 +262,7 @@ pub struct GameVariant {
     pub name: String,
     /// Its English description.
     pub description: String,
-    /// The scoreboard's English labels, by statborg slot.
+    /// The scoreboard's English labels, by slot.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub stat_labels: Vec<String>,
     /// Seconds from death to respawn.
@@ -294,7 +318,7 @@ impl GameVariant {
 
     /// The stored value of option `name`.
     pub fn option(&self, name: &str) -> Option<OptionValue> {
-        let h = game::murmur3(name.to_ascii_lowercase().as_bytes());
+        let h = StringId::of(&name.to_ascii_lowercase());
         self.options.iter().find(|o| o.hash == h).map(|o| o.value)
     }
 
@@ -316,5 +340,26 @@ impl GameVariant {
             }
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mode(names: &[&str]) -> GameMode {
+        GameMode::from_scripts(&names.iter().map(|s| s.to_string()).collect())
+    }
+
+    #[test]
+    fn modes_come_from_their_event_scripts() {
+        // The mode-specific scripts films carry, beside the shared ones.
+        assert_eq!(mode(&["infectionevents.lua", "pvpevents.lua"]), GameMode::Infection);
+        assert_eq!(mode(&["vipevents.lua", "vipoptions.lua", "pvpevents.lua"]), GameMode::Vip);
+        assert_eq!(mode(&["btbflagevents.lua", "flageventstubs.lua", "ctfbtboptions.lua"]), GameMode::CaptureTheFlag);
+        assert_eq!(mode(&["attritionevents.lua", "eliminationconfig.lua"]), GameMode::Attrition);
+        assert_eq!(mode(&["btbstockpileevents.lua", "stockpile.lua", "bigteambattle.lua"]), GameMode::Stockpile);
+        assert_eq!(mode(&["slayerevents.lua"]), GameMode::Slayer);
+        assert_eq!(mode(&["pvpevents.lua"]), GameMode::Other);
     }
 }

@@ -4,10 +4,14 @@ use std::time::Duration;
 
 /// A game tick: 1/60 s of simulation, counted from the film's first frame.
 ///
+/// The film starts before the match does: the match starts when its clock
+/// first runs, [`Film::match_start`](crate::Film::match_start).
+///
 /// Adding or subtracting a number of ticks works as it does for `u32`: going
-/// below tick 0 panics in debug builds and wraps in release ones, so use
-/// [`Tick::checked_sub`] or [`Tick::saturating_sub`] where it can. The
-/// difference of two ticks is signed:
+/// below tick 0 panics with overflow checks on (debug builds by default) and
+/// wraps otherwise, so use
+/// [`Tick::checked_sub`] or [`Tick::saturating_sub`] where the result can
+/// fall below 0. The difference of two ticks is signed:
 ///
 /// ```
 /// use filmshell::Tick;
@@ -25,6 +29,11 @@ pub struct Tick(pub u32);
 impl Tick {
     /// Ticks in a second of game time.
     pub const PER_SECOND: u32 = 60;
+
+    /// The raw tick count.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
 
     /// The tick `seconds` of game time after the film's first frame, to the
     /// nearest tick. Negative and NaN times give tick 0.
@@ -51,8 +60,24 @@ impl Tick {
     }
 
     /// `ticks` earlier, stopping at tick 0.
+    #[must_use]
     pub fn saturating_sub(self, ticks: u32) -> Tick {
         Tick(self.0.saturating_sub(ticks))
+    }
+}
+
+/// The tick `d` later, to the nearest tick: `start + Duration::from_secs(10)`.
+impl Add<Duration> for Tick {
+    type Output = Tick;
+
+    fn add(self, d: Duration) -> Tick {
+        self + Tick::from_seconds(d.as_secs_f64()).0
+    }
+}
+
+impl From<u32> for Tick {
+    fn from(v: u32) -> Tick {
+        Tick(v)
     }
 }
 
@@ -94,7 +119,7 @@ impl Sub for Tick {
 }
 
 impl fmt::Display for Tick {
-    /// `m:ss.fff` of game time.
+    /// `m:ss.fff` of game time since the film's first frame.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let ms = (self.0 as u64 * 1000) / Self::PER_SECOND as u64;
         write!(f, "{}:{:02}.{:03}", ms / 60_000, ms / 1000 % 60, ms % 1000)
@@ -102,21 +127,34 @@ impl fmt::Display for Tick {
 }
 
 /// The film's clock: which game tick each frame is, and where the
-/// HighlightEvents chunk's millisecond times fall.
+/// highlights chunk's millisecond times fall.
 ///
-/// A frame is one tick packet of the replay chunks. At 60 Hz a frame is one
-/// tick, on 30 Hz films two, and across a recorder hitch a few more.
-#[derive(Clone, Debug, Default)]
+/// A frame is one tick packet of the replay chunks (on a film framed by its
+/// markers, the span from one marker to the next: the fallback when a replay
+/// chunk's packets don't walk to its end,
+/// `format::Frame` with the `raw` feature). At 60 Hz a frame is one tick, on
+/// 30 Hz films two, and across a recorder hitch a few more.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Clock {
     pub(crate) frame_ticks: Vec<u32>,
-    /// Each frame's tick on the clock HighlightEvents times run on: the
+    /// Each frame's tick on the clock `HighlightEvents` times run on: the
     /// time since the first frame by the packets' timestamps, in ticks.
     pub(crate) highlight_ticks: Vec<u32>,
-    /// The highlight tick of HighlightEvents time 0.
+    /// The highlight tick of `HighlightEvents` time 0.
     pub(crate) highlight_zero: Option<f64>,
 }
 
-/// Game ticks per millisecond of HighlightEvents time.
+/// A pause in the recording that `HighlightEvents` time doesn't count.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Hitch {
+    /// Where it falls, on the highlight clock (the ticks `HighlightEvents`
+    /// times count, not [`Tick`]s).
+    pub at: u32,
+    /// The game ticks it skipped.
+    pub skipped: u32,
+}
+/// Game ticks per millisecond of `HighlightEvents` time.
 const TICKS_PER_MS: f64 = crate::lives::TICKS_PER_MS;
 
 impl Clock {
@@ -156,24 +194,31 @@ impl Clock {
         &self.frame_ticks
     }
 
-    /// The highlight clock's tick of HighlightEvents time 0, when the film's
-    /// kills, or its medals, fix it. The highlight clock is the time since
-    /// the first frame by the packets' timestamps, in ticks of 1/59.94 s: a
-    /// recorder hitch skips ticks but no time ([`Clock::hitches`]), and a
-    /// server that falls behind runs fewer ticks than time. Time `ms` is
-    /// highlight tick `zero + ms * 0.05994`.
+    /// The highlight clock's tick of `HighlightEvents` time 0.
+    ///
+    /// The highlights' times count from about the film's first frame, and the
+    /// film doesn't say where their 0 falls, so the library places it from
+    /// events the film times itself: each death record on the kill event of
+    /// that victim, else each medal record on the mode event that names its
+    /// player. None when neither places it; the highlights then have no
+    /// ticks.
+    ///
+    /// The highlight clock is the time since the first frame by the packets'
+    /// timestamps, in ticks of 1/59.94 s: a recorder hitch skips ticks but no
+    /// time ([`Clock::hitches`]), and a server that falls behind runs fewer
+    /// ticks than time. Time `ms` is highlight tick `zero + ms * 0.05994`,
+    /// fractional, which [`Clock::highlight_tick`] turns into a [`Tick`].
     pub fn highlight_zero(&self) -> Option<f64> {
         self.highlight_zero
     }
 
-    /// The recorder hitches HighlightEvents time doesn't count: each as the
-    /// highlight tick it falls at and the game ticks it skipped, in order.
-    pub fn hitches(&self) -> Vec<(u32, u32)> {
-        crate::lives::hitches(&self.frame_ticks)
+    /// The recorder hitches `HighlightEvents` time doesn't count, in order.
+    pub fn hitches(&self) -> Vec<Hitch> {
+        crate::lives::hitches(&self.frame_ticks).into_iter().map(|(at, skipped)| Hitch { at, skipped }).collect()
     }
 
-    /// The tick of HighlightEvents time `ms`, when the film's kills, or its
-    /// medals and the mode events sent with them, fix the highlight clock.
+    /// The tick of `HighlightEvents` time `ms`, when the highlight clock is
+    /// known ([`Clock::highlight_zero`]).
     pub fn highlight_tick(&self, ms: u32) -> Option<Tick> {
         let at = (self.highlight_zero? + ms as f64 * TICKS_PER_MS).round().max(0.0) as u32;
         let k = self.highlight_ticks.partition_point(|&t| t <= at).checked_sub(1)?;

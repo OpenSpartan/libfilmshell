@@ -9,15 +9,14 @@ pub struct Header {
     /// The game build that recorded the film ("6.10026.18411.0"). Always
     /// set on a [`Film`](crate::Film): a header without one is refused with
     /// [`Error::UnknownHeader`](crate::Error::UnknownHeader).
-    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
-    pub build: Option<String>,
-    /// The build's branch ("HI_1_13_0").
+    pub build: String,
+    /// The build's branch (`"HI_1_13_0"`).
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub branch: Option<String>,
     /// When the film starts on the wall clock, Unix seconds. The only wall
     /// clock time a film holds.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
-    pub started_at: Option<u32>,
+    pub started_at: Option<u64>,
     /// The map variant's asset id.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub map_asset_id: Option<Guid>,
@@ -28,5 +27,5 @@ pub struct Header {
     /// [`Hints::level`](crate::Hints::level) when given, else the one chunk 0
     /// names.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
-    pub level: Option<TagId>,
+    pub level_id: Option<TagId>,
 }

@@ -9,17 +9,20 @@ use crate::{Film, TagId};
 /// The scoreboard's accuracy slots are zero in films, so accuracy is
 /// counted: shots are [`Event::Shot`]s plus the non-grenade projectiles the
 /// player created (the two don't overlap), hits are damage events whose
-/// effect belongs to a weapon, once per attacker, victim and frame. Measured
-/// against the match stats, shots and hits are a median 1.00 of the game's
-/// counts, and accuracy is off by a median of 4 points.
+/// effect belongs to a weapon, once per attacker, victim and frame of the
+/// film (one or two ticks: [`Clock`](crate::Clock)). Measured on the test
+/// films against the match stats, for the 605 players with 30 shots or
+/// more, shots and hits are a median 1.00 of theirs, and accuracy is off by
+/// a median of 3.6 percentage points (90th percentile 30).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Accuracy {
     /// Rounds fired.
     pub shots: u32,
-    /// Frames in which the player's weapon damage landed on another player,
-    /// counted once per victim: a shotgun blast counts once, a blast that
-    /// hits two players twice.
+    /// Frames of the film in which the player's weapon damage landed on
+    /// another player, counted once per victim: a shotgun blast counts once,
+    /// a blast that hits two players twice.
     pub hits: u32,
 }
 
@@ -33,6 +36,7 @@ impl Accuracy {
 /// A weapon's numbers in this film, from the projectile and damage effect
 /// its hits used, so a variant that swaps them shows its own.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct WeaponProfile {
     /// The weapon.
@@ -41,13 +45,15 @@ pub struct WeaponProfile {
     pub rounds_per_second: f64,
     /// Shots per trigger pull; 0 for an automatic.
     pub burst: i32,
-    /// Rounds loaded, carried at the start, carried at most.
+    /// Three counts, in order: the magazine's rounds, the rounds carried at
+    /// spawn counting the magazine, and the most rounds carried.
     pub magazine: Option<[i32; 3]>,
     /// The projectile's initial velocity, world units a second.
     pub velocity: Option<f64>,
     /// The projectile's range, world units.
     pub range: Option<f64>,
-    /// A hit's damage on a shield and on a body, when it is one amount.
+    /// A hit's damage on a shield and on a body, points of damage, when it is
+    /// one amount.
     pub damage: Option<[f64; 2]>,
     /// Body hits that kill a Spartan at full shield and health, without
     /// headshots.
@@ -55,7 +61,7 @@ pub struct WeaponProfile {
 }
 
 /// How a respawn's pad scored under the game's default spawn weights, from
-/// where everyone else was a moment before. Needs the map's spawn points in
+/// where everyone else was 2 ticks before. Needs the map's spawn points in
 /// [`Hints::spawn_pads`](crate::Hints::spawn_pads).
 ///
 /// The game scores every spawn point by regions around allies, enemies and
@@ -64,6 +70,7 @@ pub struct WeaponProfile {
 /// the player influencers are modelled, and there is no line of sight, so
 /// a factor can rule pads out but doesn't name the one the game chose.
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct SpawnFactor {
     /// When the player spawned.
@@ -86,6 +93,8 @@ pub struct SpawnFactor {
 
 /// Whose presence a spawn influencer region is around.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 #[non_exhaustive]
 pub enum Influencer {
     /// A living teammate.
@@ -99,6 +108,7 @@ pub enum Influencer {
 /// One influencer region of the spawn model: a cylinder around each source,
 /// which adds its weight to a spawn point inside it.
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct SpawnRegion {
     /// Around whom.
@@ -109,7 +119,7 @@ pub struct SpawnRegion {
     pub height: f64,
     /// What a point inside gets.
     pub weight: f64,
-    /// Every source inside counts; else only the strongest.
+    /// Whether every source inside counts; else only the strongest does.
     pub stacks: bool,
     /// The weight's falloff with `d`, the distance over the radius,
     /// piecewise linear: each piece `[up_to, slope, intercept]` is
@@ -120,11 +130,12 @@ pub struct SpawnRegion {
 
 /// The game's default spawn weights as [`spawn_factors`] models them.
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct SpawnModel {
     /// Scores are compared in steps of this.
     pub step: f64,
-    /// A death counts this many seconds.
+    /// How long, in seconds, a death stays a dead-ally source.
     pub dead_seconds: f64,
     /// The modelled regions, as [`SpawnFactor::sources`] counts them.
     pub regions: Vec<SpawnRegion>,
@@ -132,6 +143,7 @@ pub struct SpawnModel {
 
 /// One player's projectiles and hits, as their accuracy counts them.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub struct AccuracyTicks<'a> {
     /// When the player created a non-grenade projectile.
@@ -157,6 +169,15 @@ pub(crate) struct AnalysisData {
 }
 
 /// `player`'s accuracy over the whole film.
+///
+/// ```no_run
+/// # fn run(film: &filmshell::Film, player: filmshell::PlayerId) {
+/// let a = filmshell::analysis::accuracy(film, player);
+/// if let Some(r) = a.ratio() {
+///     println!("{} of {} shots hit, about {:.0}%", a.hits, a.shots, r * 100.0);
+/// }
+/// # }
+/// ```
 pub fn accuracy(film: &Film, player: PlayerId) -> Accuracy {
     accuracy_at(film, player, Tick(u32::MAX))
 }
@@ -191,9 +212,8 @@ pub fn weapon_profiles(film: &Film) -> &[WeaponProfile] {
     &film.analysis.weapons
 }
 
-/// Every respawn that started on a hinted spawn pad, of a player whose
-/// lives the HighlightEvents death times placed. Empty unless the film has
-/// five or more players, its positions convert to world units, and the
+/// Every respawn that started on a hinted spawn pad. Empty unless the film
+/// has five or more players, its positions convert to world units, and the
 /// hints carry spawn pads.
 pub fn spawn_factors(film: &Film) -> &[SpawnFactor] {
     &film.analysis.spawn_factors

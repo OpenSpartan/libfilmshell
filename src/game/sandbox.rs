@@ -15,7 +15,8 @@ pub struct FireStats {
     pub burst: i32,
     /// Seconds between bursts.
     pub recovery: f64,
-    /// Rounds loaded, carried at the start and carried at most; None for a
+    /// Three counts, in order: the magazine's rounds, the rounds carried at
+    /// spawn counting the magazine, and the most rounds carried; None for a
     /// weapon without a magazine.
     pub magazine: Option<[i32; 3]>,
     /// The projectile it fires.
@@ -49,10 +50,21 @@ pub fn projectile_stats(tag: TagId) -> Option<&'static ProjectileStats> {
     PROJECTILES.binary_search_by_key(&tag, |r| r.tag).ok().map(|i| &PROJECTILES[i])
 }
 
-/// A vehicle's render-model bounds in engine units: x min, x max, y min,
-/// y max, z min, z max.
-pub fn vehicle_bounds(tag: TagId) -> Option<[f64; 6]> {
-    VEHICLE_BOUNDS.binary_search_by_key(&tag, |r| r.0).ok().map(|i| VEHICLE_BOUNDS[i].1)
+/// A box in engine units, its axes `[x, y, z]` with `z` up.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct Bounds {
+    /// The low corner.
+    pub min: [f64; 3],
+    /// The high corner.
+    pub max: [f64; 3],
+}
+
+/// A vehicle's render-model bounds, in the vehicle's own frame (x forward).
+pub fn vehicle_bounds(tag: TagId) -> Option<Bounds> {
+    let b = VEHICLE_BOUNDS.binary_search_by_key(&tag, |r| r.0).ok().map(|i| VEHICLE_BOUNDS[i].1)?;
+    Some(Bounds { min: [b[0], b[2], b[4]], max: [b[1], b[3], b[5]] })
 }
 
 #[cfg(test)]
@@ -66,6 +78,6 @@ mod tests {
         let p = projectile_stats(br.projectile.unwrap()).unwrap();
         assert_eq!((p.velocity, p.range, p.impact), (480.0, 250.0, Some(TagId(0x0000b29c))));
         let b = vehicle_bounds(TagId(0x00002705)).unwrap();
-        assert_eq!(b[2], -b[3]);
+        assert_eq!(b.min[1], -b.max[1]);
     }
 }

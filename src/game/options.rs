@@ -33,7 +33,7 @@ impl std::fmt::Display for OptionValue {
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct ModeOption {
-    /// The name variants store it under.
+    /// The option's name in the Options script (one of `keys`).
     pub name: &'static str,
     /// Every name a variant may store it under.
     pub keys: &'static [&'static str],
@@ -45,7 +45,7 @@ pub struct ModeOption {
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct ModeOptions {
-    /// The options' name prefix ("CTFOptions").
+    /// The options' name prefix (`"CTFOptions"`).
     pub prefix: &'static str,
     /// The Options script's file name, lower-cased.
     pub script: &'static str,
@@ -54,8 +54,8 @@ pub struct ModeOptions {
 }
 
 /// The option whose lower-cased name hashes to `hash`.
-pub fn option_name(hash: u32) -> Option<&'static str> {
-    OPTION_NAMES.binary_search_by_key(&hash, |o| o.0).ok().map(|i| OPTION_NAMES[i].1)
+pub fn option_name(hash: crate::StringId) -> Option<&'static str> {
+    OPTION_NAMES.binary_search_by_key(&hash.0, |o| o.0).ok().map(|i| OPTION_NAMES[i].1)
 }
 
 /// Every mode's options.

@@ -15,9 +15,13 @@ include = ["src/**/*.rs", "examples/**/*.rs", "README.md", "CHANGELOG.md", "LICE
 [features]
 ## Derive serde's `Serialize` and `Deserialize` on the model types.
 serde = ["dep:serde"]
+## The raw layers: `filmshell::format` and `Film::raw`. Outside the API's
+## stability guarantees.
+raw = []
 ## Makes the internal readers public under `filmshell::research`, for
-## studying the format. Outside the API's stability guarantees.
-research = []
+## studying the format, and turns on `raw`. Outside the API's stability
+## guarantees.
+research = ["raw"]
 
 [dependencies]
 indexmap = "2"
@@ -26,6 +30,16 @@ serde = { version = "1", features = ["derive"], optional = true }
 [dev-dependencies]
 # Reads the film manifests in the tests, and round-trips the model.
 serde_json = { version = "1", features = ["float_roundtrip"] }
+
+# Writes the model with serde.
+[[example]]
+name = "json"
+required-features = ["serde"]
+
+# Reads the raw layers.
+[[example]]
+name = "raw"
+required-features = ["raw"]
 
 [profile.release]
 opt-level = 3
@@ -36,7 +50,7 @@ codegen-units = 1
 opt-level = 2
 
 [package.metadata.docs.rs]
-features = ["serde"]
+features = ["serde", "raw"]
 
 [lints.rust]
 missing_docs = "deny"
@@ -53,6 +67,8 @@ unescaped_backticks = "warn"
 [lints.clippy]
 missing_errors_doc = "warn"
 missing_panics_doc = "warn"
+# A doc's first paragraph is its summary in the module listings.
+too_long_first_doc_paragraph = "warn"
 # Bit layouts read field by field: tuples of fields, binary literals
 # grouped by field, readers that take a layout's parts.
 type_complexity = "allow"

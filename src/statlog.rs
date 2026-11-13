@@ -20,6 +20,9 @@ pub struct Change {
     pub id: u32,
     pub slot: u32,
     pub value: i32,
+    /// The round the value is for, 0 the first: the game sends it with each
+    /// row, twice (the two counts agree on every reference film).
+    pub round: u32,
 }
 
 /// A respawn countdown (`player-respawn-timer-component`: `[flag:1]`, seconds
@@ -124,7 +127,7 @@ pub fn reader<'a>(
     let frames: Vec<_> = film.frames().collect();
     let at: BTreeMap<usize, usize> = frames.iter().enumerate().map(|(k, f)| (f.index, k)).collect();
     let chunk_of: HashMap<*const u8, usize> = film.chunks.iter().enumerate().map(|(i, c)| (c.as_ptr(), i)).collect();
-    let mut last: HashMap<(u32, u32, u32), i32> = HashMap::new();
+    let mut last: HashMap<(u32, u32, u32), (i32, u32)> = HashMap::new();
     let mut left: HashMap<u32, u32> = HashMap::new();
     move |i, _, p| {
         let Some(f) = at.get(&i).map(|&k| &frames[k]) else { return };
@@ -163,13 +166,15 @@ pub fn reader<'a>(
                 continue;
             }
             for &(row, b) in fields.blocks.iter().filter(|x| x.0 < ROWS) {
-                // Two 5-bit round counts, then the row's two values.
+                // The round, twice in 5 bits, then the row's two values.
+                let round = bits_at(f.chunk, b, 5);
                 let (x, q) = stat_value(f.chunk, b + 10);
                 let (y, _) = stat_value(f.chunk, q);
                 for (slot, value) in [(2 * row, x), (2 * row + 1, y)] {
-                    if last.insert((kind, id, slot), value).unwrap_or(0) != value {
+                    // A value is new when it changes, or when a new round restates it.
+                    if last.insert((kind, id, slot), (value, round)).unwrap_or((0, 0)) != (value, round) {
                         let id = if kind == 0 { holders.api(id, i as i64) } else { id };
-                        log.changes.push(Change { frame: i as i64, kind, id, slot, value });
+                        log.changes.push(Change { frame: i as i64, kind, id, slot, value, round });
                     }
                 }
             }
@@ -182,10 +187,11 @@ pub fn finish(log: &mut Log) {
     fix_respawn_owners(log);
 }
 
-/// A death and its countdown share a frame. An engine player slot is reused by
-/// a joiner, also without a bot between, so the slot's first holder can be the
-/// wrong owner: when the holder didn't die on that frame and exactly one other
-/// player did, without a countdown of their own, the countdown is theirs.
+/// A death and its countdown share a frame. An engine player slot is reused
+/// by a joiner, even when no bot held it in between, so the slot's first
+/// holder can be the wrong owner: when the holder didn't die on that frame
+/// and exactly one other player did, without a countdown of their own, the
+/// countdown is theirs.
 fn fix_respawn_owners(log: &mut Log) {
     let mut deaths: HashMap<i64, Vec<u32>> = HashMap::new();
     for c in log.changes.iter().filter(|c| c.kind == 0 && c.slot == DEATHS_SLOT) {

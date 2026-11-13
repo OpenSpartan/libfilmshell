@@ -32,15 +32,45 @@ pub enum Error {
         /// The chunk's index.
         index: u32,
     },
-    /// Chunk 0 is not a film header the library knows: not a film's, or a
-    /// film an older game build recorded (film versions before 41, the
-    /// manifest's `FilmMajorVersion`; the format of chunk 0 changed).
+    /// Chunk 0 is not a film header this library reads: either not a film's,
+    /// or one recorded by a build older than film version 41 (the manifest's
+    /// `FilmMajorVersion`), whose chunk 0 has another layout.
     UnknownHeader,
     /// The film has no replay chunk.
     NoReplay,
     /// No replay chunk records a tick: the bytes given as replay chunks
     /// aren't a film's.
     NoTicks,
+    /// A file name that isn't a chunk's (`filmChunk{N}` or
+    /// `filmChunk{N}_dec`), given to [`Chunk::from_file`](crate::Chunk::from_file).
+    NotAChunkFile {
+        /// The name.
+        name: String,
+    },
+    /// The bytes of a chunk file are no kind of film chunk:
+    /// [`ChunkKind::detect`](crate::ChunkKind::detect) doesn't know them.
+    UnknownChunk {
+        /// The chunk's index.
+        index: u32,
+    },
+    /// A manifest entry's `ChunkType` is none of a film's
+    /// ([`Chunk::from_manifest`](crate::Chunk::from_manifest)).
+    UnknownChunkType {
+        /// The entry's index.
+        index: u32,
+        /// The type it gave.
+        chunk_type: u32,
+    },
+    /// A folder or a file in it could not be read
+    /// ([`Chunk::read_folder`](crate::Chunk::read_folder)).
+    Io {
+        /// The folder or file.
+        path: std::path::PathBuf,
+        /// What went wrong, as [`std::io::Error::kind`] gives it.
+        kind: std::io::ErrorKind,
+        /// The operating system's message.
+        message: String,
+    },
 }
 
 impl fmt::Display for Error {
@@ -54,10 +84,16 @@ impl fmt::Display for Error {
             Error::DuplicateChunk(i) => write!(f, "chunk {i} given twice"),
             Error::UnexpectedKind { index, kind } => write!(f, "chunk {index} cannot be a {kind} chunk"),
             Error::Inflate { index } => write!(f, "chunk {index} does not inflate"),
-            Error::TooLarge { index } => write!(f, "chunk {index} is too large"),
+            Error::TooLarge { index } => write!(f, "chunk {index} is past the size limit for a chunk or a film"),
             Error::UnknownHeader => write!(f, "chunk 0 is not a film header this library reads"),
             Error::NoReplay => write!(f, "the film has no replay chunk"),
             Error::NoTicks => write!(f, "no replay chunk records a tick"),
+            Error::NotAChunkFile { name } => write!(f, "{name} is not the name of a film chunk file"),
+            Error::UnknownChunk { index } => write!(f, "chunk {index} is not a film chunk"),
+            Error::UnknownChunkType { index, chunk_type } => {
+                write!(f, "chunk {index} has type {chunk_type}; a film's are 1 (header), 2 (replay) and 3 (highlights)")
+            }
+            Error::Io { path, message, .. } => write!(f, "{}: {message}", path.display()),
         }
     }
 }

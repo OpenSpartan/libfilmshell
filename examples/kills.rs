@@ -8,23 +8,32 @@ mod common;
 
 use filmshell::{Film, Kill, PlayerId};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let dir = std::env::args().nth(1).ok_or("usage: kills <film folder>")?;
-    let film = Film::from_chunks(common::load_folder(dir.as_ref())?)?;
-    let name = |id: PlayerId| film.player(id).and_then(|p| p.name()).unwrap_or("someone");
+fn main() -> std::process::ExitCode {
+    common::main(run)
+}
 
-    // The deaths everyone still alive takes when the match ends are kills
-    // the scoreboard doesn't count.
-    for (tick, kill) in film.kills().filter(|(_, k)| k.scored != Some(false)) {
+fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = std::env::args().nth(1).ok_or("usage: kills <film folder>")?;
+    let film = Film::from_folder(&dir)?;
+    let name = |id: PlayerId| film.player_name(id).unwrap_or("someone");
+
+    // Leaves out the deaths the scoreboard doesn't count: those after a round
+    // is decided, among them the deaths the game deals everyone alive when the
+    // match ends.
+    let mut any = false;
+    for (tick, kill) in film.kills().filter(|(_, k)| k.is_scored()) {
+        any = true;
         let victim = name(kill.victim);
-        let line = match kill.killer {
-            Some(killer) if killer != kill.victim && !kill.suicide => {
-                format!("{} killed {victim} with {}", name(killer), how(kill))
-            }
-            _ => format!("{victim} died to {}", how(kill)),
+        let line = match kill.credited_killer() {
+            Some(killer) => format!("{} killed {victim} with {}", name(killer), how(kill)),
+            None => format!("{victim} died to {}", how(kill)),
         };
-        let headshot = if kill.headshot == Some(true) { ", headshot" } else { "" };
+        let headshot = if kill.is_headshot() { ", headshot" } else { "" };
         println!("{tick}  {line}{headshot}");
+    }
+    if !any {
+        // Firefight's AI aren't players: killing them is no kill here.
+        println!("No player died.");
     }
     Ok(())
 }

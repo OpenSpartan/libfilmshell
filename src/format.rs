@@ -1,9 +1,10 @@
 //! The film's raw layers, for reading the bytes the model is built from.
 //!
-//! A replay chunk is a sequence of packets, each a 16-byte head (a 16-bit
-//! kind, a 32-bit payload size, a microsecond timestamp) and its payload,
-//! little-endian. Kind 0 is a tick packet, one frame
-//! of the film; its payload is bit-packed (MSB first) and holds two views:
+//! A replay chunk is a sequence of packets, each a 16-byte head and its
+//! payload. The head, little-endian: the kind (16 bits), two bytes the
+//! library doesn't read, the payload's size (32 bits) and a 64-bit
+//! timestamp in microseconds. Kind 0 is a tick packet, one frame of the
+//! film; its payload is bit-packed (MSB first) and holds two views:
 //!
 //! - the **event view**: one-off events (weapon fire, kills, pickups, voice
 //!   lines), each a 7-bit type, up to three object handles and a body;
@@ -12,12 +13,13 @@
 //!   component registry in chunk 0.
 //!
 //! Kind 2 is the chunk's seek snapshot: every live entity with its type and,
-//! for objects, its tag and position. Kind 8 holds the players' structs and
+//! for objects, its tag and position ([`Snapshot`] gives the types and
+//! tags). Kind 8 holds the players' structs and
 //! kind 12 the bots' records.
 //!
 //! This layer follows the format as far as it is understood, so it changes
-//! more often than the model: expect breaking changes here in minor
-//! releases.
+//! more often than the model: it comes with the `raw` feature, outside the
+//! crate's semantic versioning, and can break in any release.
 //!
 //! ```no_run
 //! # fn run(film: &filmshell::Film) {
@@ -105,8 +107,8 @@ impl<'a> BitReader<'a> {
 pub struct Packet<'a> {
     /// The chunk's index.
     pub chunk: u32,
-    /// The packet kind: 0 a tick, 2 the seek snapshot, 8 player structs, 12
-    /// bot records.
+    /// The packet kind: 0 a tick, 1 the first of a replay chunk, 2 the seek
+    /// snapshot, 8 player structs, 12 bot records.
     pub kind: u16,
     /// The packet's timestamp, microseconds.
     pub timestamp_us: u64,
@@ -116,11 +118,15 @@ pub struct Packet<'a> {
     pub offset: usize,
 }
 
-/// One frame: a tick packet.
+/// One frame: a tick packet, or on a film framed by its markers (the
+/// fallback when a replay chunk's packets don't walk to its end) the span
+/// from one marker to the next.
 #[derive(Clone, Copy, Debug)]
 #[non_exhaustive]
 pub struct Frame<'a> {
-    /// The frame's index.
+    /// The frame's index, counting the film's frames from 0: the index
+    /// [`Clock::tick`](crate::Clock::tick) takes and
+    /// [`Raw::for_each_entity_view`] passes to its closure.
     pub index: usize,
     /// Its tick.
     pub tick: Tick,
@@ -130,7 +136,9 @@ pub struct Frame<'a> {
     pub chunk_data: &'a [u8],
     /// The payload's first and one-past-last byte in the chunk.
     pub span: (usize, usize),
-    /// The packet's timestamp, microseconds.
+    /// The packet's timestamp, microseconds; None on a film framed by its
+    /// `A0 7B 42` markers, the fallback when a replay chunk's packets don't
+    /// walk to its end.
     pub timestamp_us: Option<u64>,
 }
 
@@ -149,7 +157,7 @@ pub struct Handle {
     pub index: u32,
     /// Its 2-bit generation.
     pub generation: u32,
-    /// The handle names a unit.
+    /// Whether the handle names a unit.
     pub unit: bool,
 }
 
@@ -160,11 +168,14 @@ impl Handle {
     }
 }
 
-/// The model's [`EntityId`] of a biped (index 512 to 767) or vehicle (768 to
-/// 1023) with its generation, the id [`Life::entity`](crate::Life::entity),
-/// [`Vehicle::entity`](crate::Vehicle::entity) and
-/// [`Sample::vehicle`](crate::Sample::vehicle) use. None for other entities
-/// and generation 0.
+/// The model's [`EntityId`] of a biped's or a vehicle's entity index and
+/// generation.
+///
+/// Bipeds are indexes 512 to 767 and vehicles 768 to 1023. The id is the one
+/// [`Life::entity`](crate::Life::entity),
+/// [`VehicleTrack::entity`](crate::VehicleTrack::entity) and
+/// [`Sample::vehicle`](crate::Sample::vehicle) use. None for other entities and
+/// generation 0.
 pub fn entity_id(index: u32, generation: u32) -> Option<EntityId> {
     let base = match index {
         512..=767 => 512,
@@ -262,20 +273,7 @@ pub struct Raw<'a> {
     encoding: Encoding,
 }
 
-/// How a film's tick packets carry its bipeds' positions, which depends on
-/// the lobby.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum Encoding {
-    /// Up to four players, none a bot: each biped's position is an entity
-    /// record at any bit offset of a tick packet.
-    PerEntity,
-    /// Up to four players with a bot: the same records, a bot's often first.
-    BotComposite,
-    /// Five or more players: every object update is an entry of the tick
-    /// packet's entity view, bit-packed.
-    Composite,
-}
+pub use crate::Encoding;
 
 impl<'a> Raw<'a> {
     pub(crate) fn new(
@@ -303,7 +301,7 @@ impl<'a> Raw<'a> {
         self.film.chunks[..n].iter().enumerate().skip(1).map(|(i, c)| (i as u32, c.as_slice()))
     }
 
-    /// The HighlightEvents chunk, inflated.
+    /// The highlights chunk, inflated.
     pub fn highlights_chunk(&self) -> Option<&'a [u8]> {
         self.has_highlights.then(|| self.film.chunks[self.film.chunks.len() - 1].as_slice())
     }
@@ -338,7 +336,8 @@ impl<'a> Raw<'a> {
     }
 
     /// The event view of `frame`, as far as it reads. Empty when the film's
-    /// position field widths aren't known.
+    /// component layouts aren't known (they come with the position field
+    /// widths) or its frames aren't tick packets.
     pub fn events(&self, frame: &Frame<'_>) -> Vec<RawEvent> {
         let Some(p) = self.params else { return Vec::new() };
         if self.film.framing != Framing::Packets || frame.span.1 - frame.span.0 < 2 {
@@ -360,8 +359,9 @@ impl<'a> Raw<'a> {
 
     /// Walks every frame's entity view in order, calling `f` with the frame
     /// index and its entries. Entities alive at a chunk's start are typed
-    /// from its snapshot. Nothing when the film's position field widths
-    /// aren't known.
+    /// from its snapshot. Nothing when the film's component layouts aren't
+    /// known (they come with the position field widths) or its frames aren't
+    /// tick packets.
     pub fn for_each_entity_view(&self, mut f: impl FnMut(usize, &[EntityEntry])) {
         let Some(p) = self.params else { return };
         let mut walker = crate::payload::Walker::new(&self.film.chunks[0], p);
@@ -411,15 +411,18 @@ impl<'a> Raw<'a> {
 }
 
 /// The game's name of event type `kind`, from the executable's event
-/// definitions ("action_weapon_fire", "PlayerKilledEvent"). The names are
+/// definitions (`"action_weapon_fire"`, `"PlayerKilledEvent"`). The names are
 /// the game's own, spelling included.
 pub fn event_name(kind: u32) -> Option<&'static str> {
     EVENT_NAMES.get(kind as usize).copied()
 }
 
-/// The game's name of entity type `entity_type`, a block of chunk 0's
-/// component registry ("biped", "weapon", "game-engine-statborg"), from the
-/// executable's entity definitions.
+/// The game's name of entity type `entity_type`, a block of chunk 0's component
+/// registry.
+///
+/// The names are the executable's entity definitions' (`"biped"`, `"weapon"`,
+/// `"game-engine-statborg"`). The game names types 2 and 10 both
+/// `"managed-engine-object"`.
 pub fn entity_type_name(entity_type: u32) -> Option<&'static str> {
     ENTITY_TYPE_NAMES.get(entity_type as usize).copied().filter(|n| !n.is_empty())
 }

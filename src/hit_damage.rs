@@ -11,18 +11,18 @@
 //! The body's first 5-bit field scales the hit: 15 on almost every direct
 //! hit, lower with distance from a blast, 19 on some hits that take 1.2
 //! times the amount off a shield. What it encodes isn't traced, so a hit
-//! with any other value, an area or range-falloff effect (whose scale `s`
-//! isn't traced either) or an effect the catalogue lacks is measured
+//! with any other value, an area or range-falloff effect (whose scale isn't
+//! traced either) or an effect the catalogue lacks is measured
 //! instead: the victim's shield and health readings across the hit's frame,
 //! shared between that frame's hits. Those are 8-bit fractions, so a
 //! measured hit is good to about 2 points of shield and 1 of health, and is
 //! marked as measured.
 //!
-//! Headshots aren't in the event. A kill by an effect that can headshot that
-//! takes more health than the amount explains took what was left: the
-//! game's headshot path finished the victim.
+//! Headshots aren't in the event. When an effect that can headshot kills
+//! and takes more health than its amount explains, the hit took what was
+//! left: the game's headshot path finished the victim.
 
-use crate::damage::{self, CAN_HEADSHOT, NO_SPILL, SKIPS_SHIELDS};
+use crate::damage;
 use crate::fire::FilmFire;
 use crate::vitals::Vitals;
 
@@ -39,12 +39,13 @@ pub struct HitDamage {
 
 impl HitDamage {}
 
-/// What `amount` takes off a Spartan with `shield` and `body` points left.
+/// What `d` points of effect `a` take off a Spartan with `shield` and
+/// `body` points left.
 pub fn apply(a: &damage::Amount, d: f64, shield: f64, body: f64) -> (f64, f64) {
-    let (s, b) = if shield > 0.0 && a.flags & SKIPS_SHIELDS == 0 {
+    let (s, b) = if shield > 0.0 && !a.skips_shields() {
         let on_shield = d * a.shield_scale;
         if on_shield >= shield {
-            let rest = if a.flags & NO_SPILL != 0 { 0.0 } else { d * (1.0 - shield / on_shield) * a.body_scale };
+            let rest = if a.spills() { d * (1.0 - shield / on_shield) * a.body_scale } else { 0.0 };
             (shield, rest)
         } else {
             (on_shield, 0.0)
@@ -73,9 +74,9 @@ pub fn read(ff: &FilmFire, vitals: &Vitals) -> Vec<HitDamage> {
         for &i in group {
             let (_, tag, scale) = ff.hit_details[i];
             let hit = match tag.and_then(damage::amount) {
-                Some(a) if a.fixed() && scale == FULL => {
+                Some(a) if a.is_fixed() && scale == FULL => {
                     let (s, mut b) = apply(&a, a.lower, shield, body);
-                    if h1 <= 0.0 && a.flags & CAN_HEADSHOT != 0 && seen.1 > b + 1.0 && shield - s < 1.0 {
+                    if h1 <= 0.0 && a.can_headshot() && seen.1 > b + 1.0 && shield - s < 1.0 {
                         b = body;
                     }
                     HitDamage { shield: s, body: b, measured: false }
