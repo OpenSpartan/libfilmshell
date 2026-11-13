@@ -652,19 +652,18 @@ impl Film {
         self.hill_score.as_ref()
     }
 
-    /// What a mode script's game event is in this film's mode: its
-    /// response in the mode's event tree, with the medal, personal score,
-    /// announcer words and kill feed line it stands for. None when the
-    /// library has no event tree for the film's scripts, the tree has no
-    /// response for the id, the event's own text names another response, or
-    /// the id is one the tree can't place for certain (inside a script's
-    /// loop, or in Firefight's own files) and the event's text doesn't
-    /// confirm it.
-    /// The match stats also count
-    /// personal scores the game gives no name, which have no response here:
-    /// on the test films' Big Team Battle matches they are the whole
-    /// difference between a player's named points and their stats' score
-    /// for 91 of 95 players.
+    /// What a mode script's game event is in this film's mode.
+    ///
+    /// It is the event's response in the mode's event tree, with the medal,
+    /// personal score, announcer words and kill feed line it stands for. None
+    /// when the library has no event tree for the film's scripts, the tree has
+    /// no response for the id, the event's own text names another response, or
+    /// the id is one the tree can't place for certain (inside a script's loop,
+    /// or in Firefight's own files) and the event's text doesn't confirm it.
+    /// The match stats also count personal scores the game gives no name, which
+    /// have no response here: on the test films' Big Team Battle matches they
+    /// are the whole difference between a player's named points and their
+    /// stats' score for 91 of 95 players.
     ///
     /// ```no_run
     /// # fn run(film: &filmshell::Film) {
