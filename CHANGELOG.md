@@ -144,6 +144,8 @@ packets and the model as JSON.
   sandbox's numbers (`fire_stats`, `projectile_stats`, `vehicle_bounds`), and levels with their
   quantization boxes, the services' level ids and, where the game's map info gives one, an English
   name. `TeamId::name` gives the multiplayer teams' names, Eagle to Hazard.
+- The catalogue names the Threat Seeker and the Repair Field (`Equipment::ThreatSeeker`,
+  `Equipment::RepairField`), and lists the Komodo's tag, which has no English name.
 - `Stat::Betrayals`, the scoreboard's slot for kills of teammates. `Xuid` parses the match stats'
   `xuid(N)` form too. With serde, `game::tags()` serializes, to name the tag ids of a film's JSON.
 - `filmshell::format`, with the `raw` feature, exposes the raw layers, with the game's names for

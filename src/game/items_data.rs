@@ -238,10 +238,14 @@ pub enum Equipment {
     Overshield,
     /// Quantum Translocator.
     QuantumTranslocator,
+    /// Repair Field.
+    RepairField,
     /// Repulsor.
     Repulsor,
     /// Shroud Screen.
     ShroudScreen,
+    /// Threat Seeker.
+    ThreatSeeker,
     /// Threat Sensor.
     ThreatSensor,
     /// Thruster.
@@ -257,8 +261,10 @@ impl Equipment {
             Equipment::Grappleshot => "Grappleshot",
             Equipment::Overshield => "Overshield",
             Equipment::QuantumTranslocator => "Quantum Translocator",
+            Equipment::RepairField => "Repair Field",
             Equipment::Repulsor => "Repulsor",
             Equipment::ShroudScreen => "Shroud Screen",
+            Equipment::ThreatSeeker => "Threat Seeker",
             Equipment::ThreatSensor => "Threat Sensor",
             Equipment::Thruster => "Thruster",
         }
@@ -708,6 +714,7 @@ pub(crate) static TAGS: &[TagInfo] = &[
     r(0x32930329, K::Projectile, "", None, 0x0, 0x0, false),
     r(0x32adc45c, K::Crate, "Covenant Tank Doorframe", None, 0x0, 0x0, false),
     r(0x32c1aad1, K::Crate, "Team Blocker 64x16x16", None, 0x0, 0x0, false),
+    r(0x32d97758, K::Equipment, "Repair Field", Some(I::Equipment(Equipment::RepairField)), 0x0, 0x0, false),
     r(0x32df6f30, K::Crate, "Banished Wedge", None, 0x0, 0x0, false),
     r(0x32f8ef9f, K::Equipment, "Threat Sensor", Some(I::Equipment(Equipment::ThreatSensor)), 0x0, 0x0, false),
     r(0x3334dc07, K::Crate, "Forerunner Pyramid", None, 0x0, 0x0, false),
@@ -874,7 +881,7 @@ pub(crate) static TAGS: &[TagInfo] = &[
     r(0x470a1649, K::Crate, "Damage Emitter", None, 0x0, 0x0, false),
     r(0x470e2b8e, K::Crate, "Forerunner Spartan Doorframe", None, 0x0, 0x0, false),
     r(0x471d494c, K::Crate, "Plasma Beam Full 8x32", None, 0x0, 0x0, false),
-    r(0x4744d742, K::Equipment, "", None, 0x0, 0x0, false),
+    r(0x4744d742, K::Equipment, "Threat Seeker", Some(I::Equipment(Equipment::ThreatSeeker)), 0x0, 0x0, false),
     r(0x4772be66, K::Crate, "Player Blocker 16x2x8", None, 0x0, 0x0, false),
     r(0x47834fb3, K::Crate, "Forerunner Infantry Bridge Elbow Corner", None, 0x0, 0x0, false),
     r(0x4787c8c5, K::Crate, "Banished Trapezoid", None, 0x0, 0x0, false),
@@ -1606,6 +1613,7 @@ pub(crate) static TAGS: &[TagInfo] = &[
     r(0xaaf26b2d, K::Crate, "Steam Low Crawling", None, 0x0, 0x0, false),
     r(0xab0893e3, K::Weapon, "Scrap Cannon", Some(I::Weapon(Weapon::ScrapCannon)), 0x0, 0x0, false),
     r(0xab500c0e, K::Crate, "Forerunner Energy Stream Short 01", None, 0x0, 0x0, false),
+    r(0xab7eaefd, K::Vehicle, "", None, 0x0, 0x0, false),
     r(0xab8cd22e, K::Weapon, "", None, 0x0, 0x0, false),
     r(0xab9039d8, K::Crate, "Forerunner Cone", None, 0x0, 0x0, false),
     r(0xabb49b3c, K::Crate, "Light Ray Noisy Unlit Soft", None, 0x0, 0x0, false),
