@@ -73,10 +73,11 @@ packets and the model as JSON.
 - `Scoreboard::rows_at`: every row of the scoreboard at a tick in one pass, for a scoreboard drawn
   in playback. `Film::respawn_in`: seconds until a dead player respawns, from their respawn
   countdown.
-- The scoreboard has every value the game sends, with the round it is for (`StatChange::round`);
-  `Scoreboard::total` adds the rounds up, as the match stats do. The match clock's state is the
-  index of its rate in the game's table: `MatchClock::rate`, `is_stopped`, `is_counting_down` and
-  `is_counting_up`.
+- The scoreboard has every value the game sends, with the round it is for (`StatChange::round`),
+  counted in the order the rounds are played where the game's own number starts over (Action Sack
+  numbers each set of its minigame rounds from 0); `Scoreboard::total` adds the rounds up. The
+  match clock's state is the index of its rate in the game's table: `MatchClock::rate`,
+  `is_stopped`, `is_counting_down` and `is_counting_up`.
 - `Film::projectiles` and `Film::projectiles_at`: every projectile but thrown grenades, from where
   it was created, with the player who fired it, or who rode the vehicle or turret that did.
 
