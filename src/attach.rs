@@ -14,7 +14,9 @@
 //!
 //! The parent is a kind-1 handle: `[unit:1]`, a 9-bit unit index (bipeds
 //! 0-255, vehicles 256-511) and a 2-bit generation, so a vehicle parent's id
-//! is `(generation - 1) * 256 + index - 256`, the id `vehicles::id` gives.
+//! is `(generation - 1) * 256 + index - 256`, the id `vehicles::id` gives
+//! (with the vehicle's creates before, `recreate.rs`: the parent is the
+//! object last created under that index and generation).
 //! Parts of a vehicle (a Falcon's side guns, a Wraith's or Scorpion's turret)
 //! are vehicles attached to their vehicle the same way, and the Pelican
 //! carrying a dropped vehicle has it attached in a seat; `Attachments::root`
@@ -71,26 +73,32 @@ pub struct Attachments {
     pub read: bool,
 }
 
+/// An object: its entity index, generation, and the creates of both before
+/// it (`recreate.rs`).
+type Key = (u32, u32, u32);
+
 /// What the reader has seen so far.
 #[derive(Debug, Default)]
 pub struct Seen {
     out: Attachments,
-    /// Per entity (index, generation): the open span's first frame, vehicle
-    /// and seat.
-    open: HashMap<(u32, u32), (i64, i32, Option<u32>)>,
+    /// Per object: the open span's first frame, vehicle and seat.
+    open: HashMap<Key, (i64, i32, Option<u32>)>,
+    /// Per entity (index, generation): the creates of the object last read
+    /// under them before it.
+    current: HashMap<(u32, u32), u32>,
     /// Per life slot: updates, and those listing actor control.
     control: HashMap<i32, (u32, u32)>,
     last: i64,
 }
 
-fn slot(index: u32, generation: u32) -> Option<i32> {
-    (BIPEDS.contains(&index) && generation > 0).then(|| (generation as i32 - 1) * 256 + (index - BIPEDS.start) as i32)
-}
-
 impl Seen {
-    fn close(&mut self, key: (u32, u32), o: (i64, i32, Option<u32>), to: i64, end: End) {
+    fn close(&mut self, key: Key, o: (i64, i32, Option<u32>), to: i64, end: End) {
         let biped = BIPEDS.contains(&key.0);
-        let id = if biped { slot(key.0, key.1) } else { crate::vehicles::id(key.0, key.1) };
+        let id = if biped {
+            crate::recreate::biped_id(key.0, key.1, key.2)
+        } else {
+            crate::vehicles::id(key.0, key.1, key.2)
+        };
         let Some(id) = id else { return };
         let s = Span { id, from: o.0, to, vehicle: o.1, seat: o.2, end, ai: false };
         if biped {
@@ -111,10 +119,11 @@ pub fn reader(actor_control: u32, seen: &mut Seen) -> impl FnMut(usize, &[u8], &
             if !(BIPEDS.contains(&op.index) || VEHICLES.contains(&op.index)) {
                 continue;
             }
-            let key = (op.index, op.generation);
+            let key = (op.index, op.generation, op.instance);
+            seen.current.insert((op.index, op.generation), op.instance);
             let f = match &op.kind {
                 OpKind::Update { fields, list } => {
-                    if let Some(s) = slot(op.index, op.generation) {
+                    if let Some(s) = op.biped_id() {
                         seen.out.read = true;
                         let c = seen.control.entry(s).or_default();
                         c.0 += 1;
@@ -122,16 +131,24 @@ pub fn reader(actor_control: u32, seen: &mut Seen) -> impl FnMut(usize, &[u8], &
                     }
                     fields
                 }
-                OpKind::Create { .. } => match &op.init {
-                    Some(f) => f,
-                    None => continue,
-                },
+                OpKind::Create { .. } => {
+                    // Created again with no delete read: the object before is
+                    // gone.
+                    let before = op.instance.checked_sub(1).map(|i| (op.index, op.generation, i));
+                    if let Some((k, o)) = before.and_then(|k| seen.open.remove(&k).map(|o| (k, o))) {
+                        seen.close(k, o, frame - 1, End::Delete);
+                    }
+                    match &op.init {
+                        Some(f) => f,
+                        None => continue,
+                    }
+                }
                 OpKind::Delete => {
                     if let Some(o) = seen.open.remove(&key) {
                         seen.close(key, o, frame, End::Delete);
                     }
                     // What hung from a deleted vehicle hangs from nothing.
-                    if let Some(gone) = crate::vehicles::id(op.index, op.generation) {
+                    if let Some(gone) = op.vehicle_id() {
                         let mut on: Vec<_> = seen.open.iter().filter(|(_, o)| o.1 == gone).map(|(&k, &o)| (k, o)).collect();
                         on.sort_unstable();
                         for (k, o) in on {
@@ -145,7 +162,8 @@ pub fn reader(actor_control: u32, seen: &mut Seen) -> impl FnMut(usize, &[u8], &
             let Some(parent) = f.parent else { continue };
             let now = match (parent, f.parent_generation) {
                 (Some(Parent::Unit(u)), Some(g)) => {
-                    crate::vehicles::id(u + BIPEDS.start, g).map(|v| (v, f.seat.flatten()))
+                    let instance = seen.current.get(&(u + BIPEDS.start, g)).copied().unwrap_or(0);
+                    crate::vehicles::id(u + BIPEDS.start, g, instance).map(|v| (v, f.seat.flatten()))
                 }
                 _ => None,
             };

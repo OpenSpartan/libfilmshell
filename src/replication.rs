@@ -10,7 +10,7 @@
 //!   component   strictly increasing indices into the archetype's block of
 //!               the chunk-0 registry (`registry.rs`); the data that follows
 //!               is one block per listed component, in list order
-//! slot_id = (generation - 1) * 256 + index
+//! slot_id = (generation - 1) * 256 + index  (+ recreate::SPAN per create of both before)
 //! ```
 //!
 //! Class and index are the low 11 bits of the entity view's 13-bit entity
@@ -19,7 +19,8 @@
 //! payload by that grammar; this module scans for updates.
 //!
 //! The index + generation name one object (one biped life) for the whole
-//! match. An update sends only the components that changed:
+//! match, unless the game creates them again, which makes a new one
+//! (`recreate.rs`). An update sends only the components that changed:
 //!
 //! * a **position update** lists position first and the command tick, with
 //!   selector 0; position (c1, c2, Z, quantized over the level's box) is the
@@ -366,10 +367,20 @@ pub fn extract_multiplayer_composite(film: &Film, c1_at: i32, c2_start: i32, c2_
     let mut vehicles: IndexMap<i32, Vec<RawSample>> = IndexMap::new();
     let game_ticks = film.frame_ticks().to_vec();
     let mut tick_gp: Vec<Option<i64>> = vec![None; game_ticks.len()];
+    // An object the game created again under an index and generation is a
+    // new one (`recreate.rs`), by the first walk's creates.
+    let made = film.recreated.get().filter(|m| m.any());
+    let id_at = |kind: Kind, id: i32, frame: i64| {
+        let Some(m) = made else { return id };
+        let (generation, index) = ((id / 256 + 1) as u32, (id % 256) as u32);
+        let entity = index + if kind == Kind::Vehicle { 768 } else { 512 };
+        id + crate::recreate::SPAN * m.instance(entity, generation, frame) as i32
+    };
     for_each_object_update(film, |g, gp, tick, kind, id, off| {
         if (tick as usize) < tick_gp.len() {
             tick_gp[tick as usize] = Some(gp);
         }
+        let id = id_at(kind, id, tick);
         if kind == Kind::Stub {
             stubs.entry(id).or_default().push(tick);
             return true;

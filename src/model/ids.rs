@@ -30,14 +30,20 @@ impl fmt::Display for PlayerId {
     }
 }
 
-/// A biped's or a vehicle's id: `(generation - 1) * 256 + index`.
+/// A biped's or a vehicle's id: `(generation - 1) * 256 + index`, and 768 more
+/// for each time the game had created that index and generation again before
+/// the object.
 ///
 /// The index is counted within the object's kind (a raw entity index less 512
 /// for a biped, less 768 for a vehicle, as the raw layer (`format`) gives
 /// them), so bipeds and vehicles count ids separately: a biped and a vehicle
-/// can share a number. The game reuses an id once its object is gone, so an id
-/// is unique only among the objects that exist at the same time: a biped's id
-/// names one life, a vehicle's one [`VehicleTrack`](crate::VehicleTrack).
+/// can share a number. The generation counts the index's wraps, so on most
+/// films an index and generation name one object; a game that resets its
+/// objects (Action Sack, between its minigame rounds) creates them again from
+/// the first index, generation and all, and each such object is a new id. The
+/// game reuses a vehicle's id once its object is gone, so an id is unique only
+/// among the objects that exist at the same time: a biped's id names one life,
+/// a vehicle's one [`VehicleTrack`](crate::VehicleTrack).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct EntityId(pub u16);

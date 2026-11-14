@@ -41,8 +41,6 @@ pub const SPRINT: u8 = 8;
 
 /// Registry block of bipeds.
 const BIPED: u32 = 35;
-/// First entity of the bipeds.
-const BIPED_BASE: u32 = 512;
 /// First entity of the objects kind-5 handles index (projectiles).
 const PROJECTILE_BASE: u32 = 1024;
 /// The headshot-kill id of PlayerGameEventSmall.
@@ -96,7 +94,7 @@ pub fn reader<'a>(
         for e in &p.events {
             // A kind-2 handle (an 8-bit biped index), else a unit handle.
             let life = e.handles[0].and_then(|h| match e.kind {
-                11 | 38 | 40 => (h.generation > 0).then(|| (h.generation as i32 - 1) * 256 + h.index as i32),
+                11 | 38 | 40 => h.biped_index_slot(),
                 _ => h.biped_slot(),
             });
             let owner = |player: Option<u32>| {
@@ -138,10 +136,7 @@ pub fn reader<'a>(
         }
         for op in &p.ops {
             let (Some(BIPED), OpKind::Update { fields, .. }) = (op.entity_type, &op.kind) else { continue };
-            if op.generation == 0 || !(BIPED_BASE..BIPED_BASE + 256).contains(&op.index) {
-                continue;
-            }
-            let slot = (op.generation as i32 - 1) * 256 + (op.index - BIPED_BASE) as i32;
+            let Some(slot) = op.biped_id() else { continue };
             let Some(&k) = slot_owner.get(&slot) else { continue };
             if let Some(s) = fields.ability {
                 if ability.insert(slot, s) != Some(s) {

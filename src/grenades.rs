@@ -57,8 +57,7 @@ pub fn reader(out: &mut Flights) -> impl FnMut(usize, &[u8], &Payload) + '_ {
         let frame = frame as i64;
         for e in &p.events {
             if let Body::Throw { grenade, .. } = e.body {
-                let slot_id =
-                    e.handles[0].filter(|h| h.generation > 0).map(|h| (h.generation as i32 - 1) * 256 + h.index as i32);
+                let slot_id = e.handles[0].and_then(|h| h.biped_index_slot());
                 out.throws.push(Throw { frame, slot_id, grenade });
             }
         }

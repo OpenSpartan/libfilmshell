@@ -50,10 +50,6 @@ struct Slots {
 /// The unarmed weapon a biped holds before it spawns.
 const UNARMED: u32 = 0x0000_7ca9;
 
-fn slot_of(index: u32, generation: u32) -> i32 {
-    (generation as i32 - 1) * 256 + (index as i32 - 512)
-}
-
 fn percent(v: f64) -> i32 {
     f64::round(v * 100.0) as i32
 }
@@ -77,9 +73,9 @@ pub fn reader<'a>(paths: &'a [PlayerPath], out: &'a mut Vec<PlayerAmmo>) -> impl
     let owner: HashMap<i32, usize> =
         paths.iter().enumerate().flat_map(|(k, p)| p.life_slots.iter().flatten().map(move |&s| (s, k))).collect();
     let mut bipeds: HashMap<i32, Slots> = HashMap::new();
-    // The generation of each biped index's current life, for equipment's
-    // parents (a unit handle names the index only).
-    let mut generation: HashMap<u32, u32> = HashMap::new();
+    // The slot of each biped index's current life, for equipment's parents (a
+    // unit handle names the index only).
+    let mut current: HashMap<u32, i32> = HashMap::new();
     // Equipment: its holder's slot, energy and recharge.
     let mut equipment: HashMap<u32, (Option<i32>, i32, i32)> = HashMap::new();
     let mut last_ammo = HashMap::new();
@@ -103,8 +99,8 @@ pub fn reader<'a>(paths: &'a [PlayerPath], out: &'a mut Vec<PlayerAmmo>) -> impl
             let Some(f) = fields else { continue };
             match op.entity_type {
                 Some(BIPED) if (512..768).contains(&op.index) => {
-                    generation.insert(op.index, op.generation);
-                    let slot = slot_of(op.index, op.generation);
+                    let Some(slot) = op.biped_id() else { continue };
+                    current.insert(op.index, slot);
                     let s = bipeds.entry(slot).or_insert(Slots {
                         ammo: [(-1, -1); 4],
                         energy: [-1; 4],
@@ -154,7 +150,7 @@ pub fn reader<'a>(paths: &'a [PlayerPath], out: &'a mut Vec<PlayerAmmo>) -> impl
                     let e = equipment.entry(op.index).or_insert((None, -1, -1));
                     match f.parent {
                         Some(Some(Parent::Unit(u))) if u < 256 => {
-                            e.0 = generation.get(&(512 + u)).map(|&g| slot_of(512 + u, g));
+                            e.0 = current.get(&(512 + u)).copied();
                         }
                         Some(_) => e.0 = None,
                         None => {}

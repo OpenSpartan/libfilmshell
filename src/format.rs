@@ -159,30 +159,38 @@ pub struct Handle {
     pub generation: u32,
     /// Whether the handle names a unit.
     pub unit: bool,
+    /// For a biped or a vehicle, how many times the game had created its
+    /// index and generation again by the end of the frame (see
+    /// [`EntityId`]).
+    pub instance: u32,
 }
 
 impl Handle {
-    /// The biped's or vehicle's id in the model ([`entity_id`]).
+    /// The biped's or vehicle's id in the model ([`entity_id`], counting
+    /// [`Handle::instance`]).
     pub fn entity_id(&self) -> Option<EntityId> {
-        entity_id(self.index, self.generation)
+        instance_id(self.index, self.generation, self.instance)
     }
 }
 
 /// The model's [`EntityId`] of a biped's or a vehicle's entity index and
-/// generation.
+/// generation, for the first object the game created under them.
 ///
 /// Bipeds are indexes 512 to 767 and vehicles 768 to 1023. The id is the one
 /// [`Life::entity`](crate::Life::entity),
 /// [`VehicleTrack::entity`](crate::VehicleTrack::entity) and
 /// [`Sample::vehicle`](crate::Sample::vehicle) use. None for other entities and
-/// generation 0.
+/// generation 0. [`Handle::entity_id`] and [`EntityEntry::entity_id`] also
+/// count the objects created again under them.
 pub fn entity_id(index: u32, generation: u32) -> Option<EntityId> {
-    let base = match index {
-        512..=767 => 512,
-        768..=1023 => 768,
-        _ => return None,
-    };
-    let id = generation.checked_sub(1)? * 256 + index - base;
+    instance_id(index, generation, 0)
+}
+
+fn instance_id(index: u32, generation: u32, instance: u32) -> Option<EntityId> {
+    let id = match index {
+        512..=767 => crate::recreate::biped_id(index, generation, instance),
+        _ => crate::recreate::vehicle_id(index, generation, instance),
+    }?;
     u16::try_from(id).ok().map(EntityId)
 }
 
@@ -231,12 +239,17 @@ pub struct EntityEntry {
     pub op: EntityOp,
     /// The bit of the entry's index field in the chunk.
     pub bit: i64,
+    /// For a biped or a vehicle, how many times the game had created its
+    /// index and generation again before this entry's object (see
+    /// [`EntityId`]).
+    pub instance: u32,
 }
 
 impl EntityEntry {
-    /// The biped's or vehicle's id in the model ([`entity_id`]).
+    /// The biped's or vehicle's id in the model ([`entity_id`], counting
+    /// [`EntityEntry::instance`]).
     pub fn entity_id(&self) -> Option<EntityId> {
-        entity_id(self.index, self.generation)
+        instance_id(self.index, self.generation, self.instance)
     }
 }
 
@@ -346,12 +359,15 @@ impl<'a> Raw<'a> {
         let mut out = Vec::new();
         let mut r = crate::events::Bits { c: frame.chunk_data, at: 8 * frame.span.0 as i64 + 1 };
         let _ = crate::events::walk(&mut r, (&p).into(), &mut out);
+        if let Some(made) = self.film.recreated.get() {
+            made.stamp_events(frame.index as i64, &mut out);
+        }
         out.iter()
             .map(|e| RawEvent {
                 kind: e.kind,
-                handles: e
-                    .handles
-                    .map(|h| h.map(|h| Handle { index: h.index, generation: h.generation, unit: h.unit })),
+                handles: e.handles.map(|h| {
+                    h.map(|h| Handle { index: h.index, generation: h.generation, unit: h.unit, instance: h.instance })
+                }),
                 bit: e.at,
             })
             .collect()
@@ -377,6 +393,7 @@ impl<'a> Raw<'a> {
                     crate::payload::OpKind::Update { list, .. } => EntityOp::Update { components: list.clone() },
                     crate::payload::OpKind::Delete => EntityOp::Delete,
                 },
+                instance: op.instance,
                 bit: op.at,
             }));
             f(i, &entries);

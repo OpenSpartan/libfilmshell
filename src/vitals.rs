@@ -33,17 +33,19 @@ struct Life {
 /// Each life's marks while a film is being read: [`Vitals::start`], then
 /// [`Vitals::reader`] over a walk, then [`Vitals::finish`].
 #[derive(Default, Debug)]
-pub struct Marks(HashMap<i32, Life>);
+pub struct Marks {
+    /// The snapshots' marks, by the biped's entity index and generation: a
+    /// life's id waits for the walk to tell which object the game had
+    /// created under them (`recreate.rs`).
+    snapshots: Vec<((u32, u32), Life)>,
+    lives: HashMap<i32, Life>,
+}
 
 #[derive(Debug)]
 pub struct Vitals {
     lives: HashMap<i32, Life>,
     /// Most lives' answer, for a life with no statement of its own.
     shieldless: bool,
-}
-
-fn slot_of(index: u32, generation: u32) -> i32 {
-    (generation as i32 - 1) * 256 + (index as i32 - 512)
 }
 
 /// Whether a snapshot's maximum vitalities block sets a shield maximum of 0.
@@ -62,8 +64,7 @@ fn shieldless_at(c: &[u8], mut at: i64) -> bool {
 impl Vitals {
     /// The marks the seek snapshots give.
     pub fn start(film: &Film, params: &Params, level: Option<&LevelBox>) -> Marks {
-        let mut lives: HashMap<i32, Life> = HashMap::new();
-        // Snapshots first: sorting keeps them before a same-frame update.
+        let mut snapshots = Vec::new();
         if let Some(level) = level {
             let mut first_frame: HashMap<*const u8, i64> = HashMap::new();
             for f in film.frames() {
@@ -83,30 +84,31 @@ impl Vitals {
                     }
                     let at = |r: u32| rows.iter().find(|x| x.0 == r).map(|x| x.1);
                     let (Some(h), Some(s)) = (at(HEALTH), at(SHIELD)) else { continue };
-                    let life = lives.entry(slot_of(e.index, e.generation)).or_default();
-                    life.marks.push((
-                        frame,
-                        Some(dequantize(bits_at(c, h, 8), 8, -1.0, 1.0, true, true)),
-                        Some(dequantize(bits_at(c, s, 8), 8, 0.0, 4.0, false, true)),
-                    ));
-                    if let Some(m) = at(MAX_VITALITIES) {
-                        life.shieldless.get_or_insert(shieldless_at(c, m));
-                    }
+                    let life = Life {
+                        marks: vec![(
+                            frame,
+                            Some(dequantize(bits_at(c, h, 8), 8, -1.0, 1.0, true, true)),
+                            Some(dequantize(bits_at(c, s, 8), 8, 0.0, 4.0, false, true)),
+                        )],
+                        shieldless: at(MAX_VITALITIES).map(|m| shieldless_at(c, m)),
+                    };
+                    snapshots.push(((e.index, e.generation), life));
                 }
             }
         }
-        Marks(lives)
+        Marks { snapshots, lives: HashMap::new() }
     }
 
     /// The marks the tick packets give, for a shared walk.
     pub fn reader(marks: &mut Marks) -> impl FnMut(usize, &[u8], &Payload) + '_ {
-        let lives = &mut marks.0;
+        let lives = &mut marks.lives;
         move |frame, _, payload| {
             for op in &payload.ops {
                 if !(512..768).contains(&op.index) || op.entity_type != Some(BIPED_TYPE) {
                     continue;
                 }
-                let life = lives.entry(slot_of(op.index, op.generation)).or_default();
+                let Some(id) = op.biped_id() else { continue };
+                let life = lives.entry(id).or_default();
                 match &op.kind {
                     OpKind::Create { .. } => {
                         if let Some(s) = op.init.as_ref().and_then(|f| f.shieldless) {
@@ -122,9 +124,29 @@ impl Vitals {
         }
     }
 
-    /// The vitals from the marks of both.
-    pub fn finish(marks: Marks) -> Vitals {
-        let mut lives = marks.0;
+    /// The vitals from the marks of both, the snapshots' lives told apart by
+    /// `made`, the walk's creates.
+    pub fn finish(marks: Marks, made: &crate::recreate::Recreated) -> Vitals {
+        // Snapshots first: sorting keeps them before a same-frame update. A
+        // snapshot shows what was alive before its chunk's first frame.
+        let mut lives: HashMap<i32, Life> = HashMap::new();
+        for ((index, generation), s) in marks.snapshots {
+            let frame = s.marks[0].0;
+            let instance = made.instance(index, generation, frame - 1);
+            let Some(id) = crate::recreate::biped_id(index, generation, instance) else { continue };
+            let life = lives.entry(id).or_default();
+            life.marks.extend(s.marks);
+            if let Some(x) = s.shieldless {
+                life.shieldless.get_or_insert(x);
+            }
+        }
+        for (id, w) in marks.lives {
+            let life = lives.entry(id).or_default();
+            life.marks.extend(w.marks);
+            if w.shieldless.is_some() {
+                life.shieldless = w.shieldless;
+            }
+        }
         let (mut without, mut with) = (0, 0);
         for life in lives.values_mut() {
             life.marks.sort_by_key(|m| m.0);

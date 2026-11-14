@@ -9,9 +9,6 @@
 use crate::payload::{OpKind, Payload};
 use std::collections::HashMap;
 
-/// Entity indexes of bipeds.
-const BIPEDS: std::ops::Range<u32> = 512..768;
-
 /// What the film says of one biped life.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Control {
@@ -57,10 +54,7 @@ pub fn reader(out: &mut Controls) -> impl FnMut(usize, &[u8], &Payload) + '_ {
     move |frame, _, p| {
         let frame = frame as i64;
         for op in &p.ops {
-            if !BIPEDS.contains(&op.index) || op.generation == 0 {
-                continue;
-            }
-            let slot = (op.generation as i32 - 1) * 256 + (op.index - BIPEDS.start) as i32;
+            let Some(slot) = op.biped_id() else { continue };
             let fields = match &op.kind {
                 OpKind::Update { fields, .. } => fields,
                 OpKind::Create { .. } => {

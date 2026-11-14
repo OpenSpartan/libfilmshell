@@ -825,7 +825,8 @@ pub struct Fields {
     /// Some(None) detached (a dropped or placed item).
     pub parent: Option<Option<Parent>>,
     /// With an attached `parent`: its handle's 2-bit generation (a vehicle
-    /// parent's id is `(generation - 1) * 256 + index - 256`) and the
+    /// parent's id is `(generation - 1) * 256 + index - 256`, with its
+    /// creates before, `recreate.rs`) and the
     /// parent's node it hangs from (the object's node index, `142f0b490`).
     pub parent_generation: Option<u32>,
     pub parent_node: Option<u32>,

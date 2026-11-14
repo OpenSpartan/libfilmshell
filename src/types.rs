@@ -21,8 +21,8 @@ pub struct RawSample {
     /// Spliced in from a vehicle (`splice_attachments`, `splice_exits`,
     /// `splice_vehicle_rides`).
     pub in_vehicle: bool,
-    /// The vehicle it was spliced from, its id `(generation - 1) * 256 + index`
-    /// (a part's rides use its vehicle's); -1 when none.
+    /// The vehicle it was spliced from, its id (`vehicles::id`; a part's
+    /// rides use its vehicle's); -1 when none.
     pub vehicle: i32,
     /// A full biped update whose component list lists actor control.
     pub ai: bool,
