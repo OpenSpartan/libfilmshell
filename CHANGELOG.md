@@ -144,11 +144,34 @@ packets and the model as JSON.
   sandbox's numbers (`fire_stats`, `projectile_stats`, `vehicle_bounds`), and levels with their
   quantization boxes, the services' level ids and, where the game's map info gives one, an English
   name. `TeamId::name` gives the multiplayer teams' names, Eagle to Hazard.
+- `game::mp_item` and `game::mp_items`: the item each multiplayer item identifier stands for (the
+  number a stock weapon, equipment or vehicle spawner names its item by), from the game's
+  placement tables.
+- The catalogue names the Threat Seeker and the Repair Field (`Equipment::ThreatSeeker`,
+  `Equipment::RepairField`), and lists the Komodo's tag, which has no English name.
 - `Stat::Betrayals`, the scoreboard's slot for kills of teammates. `Xuid` parses the match stats'
   `xuid(N)` form too. With serde, `game::tags()` serializes, to name the tag ids of a film's JSON.
 - `filmshell::format`, with the `raw` feature, exposes the raw layers, with the game's names for
   every event and entity type; `filmshell::analysis` estimates what films don't state: accuracy,
   weapon numbers, spawn factors.
+
+### Map variants
+
+- `map_variant::MapVariant::from_bytes` reads a map variant (`map.mvar`, Bond compact binary, as
+  the Halo services serve a map's files), which a film doesn't carry: the level and every object
+  with its Forge object (`game::forge_object_name` names it), type, position and axes in world
+  units, team, Forge labels, volume (a `ZoneShape`), spawn order, variant, respawn time and Forge
+  script properties. Bytes that aren't one are `Error::NotAMapVariant`. Films' zones read their
+  shapes with the same reader.
+- `MapVariant::spawn_pads` gives its spawn points, initial or respawn and with their teams and
+  heights, for `Hints::spawn_pads`.
+- `MapVariant::objectives`: each game mode's objectives, by the objects' Forge labels: Capture the
+  Flag's flag stands and plates, King of the Hill's hills with their order in the rotation,
+  Strongholds', Land Grab's, Total Control's and Extraction's zones, Oddball's ball stands and
+  Assault's bomb spawns and sites. One object can serve several modes; minigames' objects are left
+  out.
+- On 29 map variants (Forge downloads and the variants of film bundles) every gameplay object, 6,118
+  of them, and every objective placement, 434, agree with the asset tools' Python readers.
 
 ### Features
 

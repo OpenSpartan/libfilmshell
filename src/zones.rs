@@ -406,141 +406,6 @@ pub struct ZoneShape {
     pub team: Option<i32>,
 }
 
-/// Bond Compact Binary v2, as much as the multiplayer properties need.
-mod bond {
-    #[derive(Debug, Clone)]
-    pub enum V {
-        Int(i64),
-        Struct(Vec<(u16, V)>),
-        List(Vec<V>),
-        Other,
-    }
-    pub struct R<'a> {
-        pub b: &'a [u8],
-        pub p: usize,
-    }
-    impl R<'_> {
-        fn u8(&mut self) -> Option<u8> {
-            let v = *self.b.get(self.p)?;
-            self.p += 1;
-            Some(v)
-        }
-        fn uleb(&mut self) -> Option<u64> {
-            let (mut v, mut sh) = (0u64, 0);
-            loop {
-                let b = self.u8()?;
-                v |= u64::from(b & 0x7f) << sh;
-                sh += 7;
-                if b & 0x80 == 0 || sh > 63 {
-                    return Some(v);
-                }
-            }
-        }
-        fn val(&mut self, ty: u8) -> Option<V> {
-            Some(match ty {
-                2 | 3 => V::Int(i64::from(self.u8()?)),
-                14 => V::Int(i64::from(self.u8()? as i8)),
-                4..=6 => V::Int(self.uleb()? as i64),
-                15..=17 => {
-                    let u = self.uleb()?;
-                    V::Int((u >> 1) as i64 ^ -((u & 1) as i64))
-                }
-                7 => {
-                    self.p += 4;
-                    V::Other
-                }
-                8 => {
-                    self.p += 8;
-                    V::Other
-                }
-                9 => {
-                    let n = self.uleb()? as usize;
-                    self.p += n;
-                    V::Other
-                }
-                18 => {
-                    let n = self.uleb()? as usize;
-                    self.p += 2 * n;
-                    V::Other
-                }
-                10 => {
-                    let n = self.uleb()? as usize;
-                    let end = self.p + n;
-                    let s = self.fields(end)?;
-                    self.p = end;
-                    V::Struct(s)
-                }
-                11 | 12 => {
-                    let tc = self.u8()?;
-                    let (e, c) = (tc & 0x1f, tc >> 5);
-                    let n = if c == 0 { self.uleb()? as usize } else { c as usize - 1 };
-                    let mut l = Vec::with_capacity(n.min(256));
-                    for _ in 0..n {
-                        l.push(self.val(e)?);
-                    }
-                    V::List(l)
-                }
-                13 => {
-                    let k = self.u8()? & 0x1f;
-                    let v = self.u8()? & 0x1f;
-                    let n = self.uleb()?;
-                    for _ in 0..n {
-                        self.val(k)?;
-                        self.val(v)?;
-                    }
-                    V::Other
-                }
-                _ => return None,
-            })
-        }
-        pub fn fields(&mut self, end: usize) -> Option<Vec<(u16, V)>> {
-            let mut out = Vec::new();
-            while self.p < end {
-                let b = self.u8()?;
-                let (ty, mut id) = (b & 0x1f, u16::from(b >> 5));
-                if ty == 0 {
-                    break;
-                }
-                if ty == 1 {
-                    continue;
-                }
-                if id == 6 {
-                    id = u16::from(self.u8()?);
-                } else if id == 7 {
-                    id = u16::from(self.u8()?) | (u16::from(self.u8()?) << 8);
-                }
-                out.push((id, self.val(ty)?));
-            }
-            Some(out)
-        }
-    }
-    pub fn get(s: &[(u16, V)], id: u16) -> Option<&V> {
-        s.iter().find(|f| f.0 == id).map(|f| &f.1)
-    }
-    /// A list's first struct, or the struct itself.
-    pub fn first_struct(v: Option<&V>) -> Option<&[(u16, V)]> {
-        match v? {
-            V::List(l) => match l.first()? {
-                V::Struct(s) => Some(s),
-                _ => None,
-            },
-            V::Struct(s) => Some(s),
-            _ => None,
-        }
-    }
-    /// An int field, or a struct field holding `{0: int}`.
-    pub fn int(s: &[(u16, V)], id: u16) -> Option<i64> {
-        match get(s, id)? {
-            V::Int(v) => Some(*v),
-            V::Struct(f) => match get(f, 0)? {
-                V::Int(v) => Some(*v),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
-}
-
 /// A crate's multiplayer properties at bit `at`: `[0][variant:5]`, a ULEB
 /// length, then that many bytes of Bond, bit-aligned.
 fn shape_at(c: &[u8], at: i64) -> Option<ZoneShape> {
@@ -562,24 +427,24 @@ fn shape_at(c: &[u8], at: i64) -> Option<ZoneShape> {
         return None;
     }
     let bytes: Vec<u8> = (0..len).map(|_| r.bits(8) as u8).collect();
-    let mut br = bond::R { b: &bytes, p: 0 };
-    let root = br.fields(bytes.len())?;
-    let item = bond::first_struct(bond::get(&root, 0))?;
-    let geo = bond::first_struct(bond::get(item, 0))?;
-    let unit = |id| bond::int(geo, id).map_or(0.0, |v| v as f64 / 65536.0 * crate::calibrate::WORLD_PER_ENGINE);
-    let shape = bond::int(geo, 0)?;
-    if shape != 2 && shape != 3 {
-        return None;
-    }
+    // A map variant's PropertyStorage: its first list, the BaseProperties,
+    // holds the volume and the team.
+    let root = crate::bond::fields(&bytes).ok()?;
+    let base = root.first(0)?;
+    let (area, top, bottom) = crate::map_variant::boundary(base)?;
+    let (cylinder, a, b) = match area {
+        crate::ZoneArea::Cylinder { radius } => (true, radius, 0.0),
+        crate::ZoneArea::Box { length, width } => (false, length, width),
+    };
     Some(ZoneShape {
-        cylinder: shape == 2,
-        a: unit(5),
-        b: if shape == 2 { 0.0 } else { unit(6) },
-        top: unit(7),
-        bottom: unit(8),
+        cylinder,
+        a,
+        b,
+        top,
+        bottom,
         // No orientation component: forward is engine +x, world +y.
         angle: std::f64::consts::FRAC_PI_2,
-        team: bond::int(item, 8).map(|t| t as i32),
+        team: base.int(8).map(|t| t as i32),
     })
 }
 

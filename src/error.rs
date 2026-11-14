@@ -1,7 +1,7 @@
 use crate::ChunkKind;
 use std::fmt;
 
-/// Why a film could not be read.
+/// Why a film, or a map variant, could not be read.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Error {
@@ -61,6 +61,11 @@ pub enum Error {
         /// The type it gave.
         chunk_type: u32,
     },
+    /// The bytes given to
+    /// [`MapVariant::from_bytes`](crate::map_variant::MapVariant::from_bytes)
+    /// are not a map variant: not Bond compact binary, or without a map
+    /// variant's level and objects.
+    NotAMapVariant,
     /// A folder or a file in it could not be read
     /// ([`Chunk::read_folder`](crate::Chunk::read_folder)).
     Io {
@@ -93,6 +98,7 @@ impl fmt::Display for Error {
             Error::UnknownChunkType { index, chunk_type } => {
                 write!(f, "chunk {index} has type {chunk_type}; a film's are 1 (header), 2 (replay) and 3 (highlights)")
             }
+            Error::NotAMapVariant => write!(f, "the bytes are not a map variant"),
             Error::Io { path, message, .. } => write!(f, "{}: {message}", path.display()),
         }
     }
