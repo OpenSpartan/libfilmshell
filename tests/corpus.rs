@@ -527,8 +527,7 @@ fn older_films_are_refused() {
 fn scoreboard_totals_agree_with_the_match_stats() {
     let (mut rows, mut agree) = (0usize, 0usize);
     for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
-        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
-        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        let Some(stats) = counted_stats(dir, f) else { continue };
         if f.scoreboard().changes.is_empty() {
             continue;
         }
@@ -578,8 +577,7 @@ fn lives_die_as_the_match_stats_count() {
     let (mut players, mut agree) = (0usize, 0usize);
     let mut wrong = Vec::new();
     for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
-        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
-        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        let Some(stats) = counted_stats(dir, f) else { continue };
         for p in f.players() {
             let Some(s) = stats_row(&stats, p) else { continue };
             let Some(want) = s["PlayerTeamStats"][0]["Stats"]["CoreStats"]["Deaths"].as_u64() else { continue };
@@ -602,8 +600,7 @@ fn lives_die_as_the_match_stats_count() {
 fn power_seeds_count_as_the_match_stats_do() {
     let mut seen = 0;
     for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
-        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
-        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        let Some(stats) = counted_stats(dir, f) else { continue };
         for p in f.players() {
             let Some(row) = stats_row(&stats, p) else { continue };
             let st = &row["PlayerTeamStats"][0]["Stats"]["StockpileStats"];
@@ -629,6 +626,34 @@ fn power_seeds_count_as_the_match_stats_do() {
     assert!(corpus().is_empty() || seen > 0);
 }
 
+/// The film's match stats (`match-metadata.json`) for comparing what it
+/// counts: None without them, or when the film runs on more than a minute past
+/// the match they time (`Duration`). The services take the stats as their
+/// match ends, and Action Sack can play on after it: a test film plays three
+/// more sets of minigame rounds, twelve minutes the stats never count, and of
+/// the sets before counts only the last (every other test film ends 4 to 13 s
+/// past its stats' duration). Its deaths are its HighlightEvents records,
+/// which cover it all ([`lives_end_in_the_recorded_deaths`]).
+fn counted_stats(dir: &Path, f: &Film) -> Option<serde_json::Value> {
+    let stats: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.join("match-metadata.json")).ok()?).unwrap();
+    let timed = stats["MatchInfo"]["Duration"].as_str().and_then(seconds_of);
+    timed.is_none_or(|s| f.clock().end().seconds() <= s + 60.0).then_some(stats)
+}
+
+/// The seconds of an ISO 8601 duration such as `PT11M28.347S`.
+fn seconds_of(d: &str) -> Option<f64> {
+    let mut rest = d.strip_prefix("PT")?;
+    let mut total = 0.0;
+    for (unit, scale) in [('H', 3600.0), ('M', 60.0), ('S', 1.0)] {
+        if let Some(i) = rest.find(unit) {
+            total += rest[..i].parse::<f64>().ok()? * scale;
+            rest = &rest[i + 1..];
+        }
+    }
+    rest.is_empty().then_some(total)
+}
+
 /// A player's match stats row: by XUID, or a bot's by its bot id.
 fn stats_row<'a>(stats: &'a serde_json::Value, p: &Player) -> Option<&'a serde_json::Value> {
     let key = match &p.kind {
@@ -646,8 +671,7 @@ fn stats_row<'a>(stats: &'a serde_json::Value, p: &Player) -> Option<&'a serde_j
 fn hijacks_count_as_the_match_stats_do() {
     let (mut hijacks, mut rides, mut from) = (0, 0, 0);
     for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
-        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
-        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        let Some(stats) = counted_stats(dir, f) else { continue };
         for p in f.players() {
             let Some(row) = stats_row(&stats, p) else { continue };
             let want = row["PlayerTeamStats"][0]["Stats"]["CoreStats"]["Hijacks"].as_u64().unwrap_or(0) as usize;
@@ -678,8 +702,7 @@ fn hijacks_count_as_the_match_stats_do() {
 fn flag_events_count_as_the_match_stats_do() {
     let (mut checked, mut grabs, mut carried) = (0, 0, 0);
     for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
-        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
-        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        let Some(stats) = counted_stats(dir, f) else { continue };
         for p in f.players() {
             let Some(row) = stats_row(&stats, p) else { continue };
             let st = &row["PlayerTeamStats"][0]["Stats"]["CaptureTheFlagStats"];
@@ -774,8 +797,7 @@ fn carriers_carry_as_long_as_the_match_stats_say() {
             GameMode::Stockpile => (Carried::PowerSeed, "StockpileStats", "TimeAsPowerSeedCarrier"),
             _ => continue,
         };
-        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
-        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        let Some(stats) = counted_stats(dir, f) else { continue };
         // The match stats stop counting when a round is won, as the mode
         // scripts announce it, until the next round starts.
         let won: Vec<Tick> = f
@@ -871,8 +893,7 @@ fn projectiles_start_at_their_shooters() {
 fn game_responses_score_as_the_match_stats_do() {
     let (mut slayer, mut slayer_equal, mut exact) = (0, 0, 0);
     for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
-        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
-        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        let Some(stats) = counted_stats(dir, f) else { continue };
         let big_team = f.variant().is_some_and(|v| v.scripts.iter().any(|s| s == "bigteambattle.lua"));
         let must_equal = matches!(
             f.mode(),
@@ -1044,8 +1065,7 @@ fn kills_count_as_the_match_stats_do() {
     let (mut players, mut agree) = (0usize, 0usize);
     let mut wrong = Vec::new();
     for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
-        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
-        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        let Some(stats) = counted_stats(dir, f) else { continue };
         // Teams just before the kill: Infection and some minigames move
         // players between teams, Infection at the kill itself.
         let team = |id: PlayerId, t: Tick| f.player(id).and_then(|p| p.team_at(Tick(t.0.saturating_sub(1))));
@@ -1085,8 +1105,7 @@ fn betrayals_count_as_the_match_stats_do() {
     let (mut players, mut betrayals) = (0usize, 0u64);
     let mut wrong = Vec::new();
     for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
-        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
-        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        let Some(stats) = counted_stats(dir, f) else { continue };
         for player in f.players() {
             let Some(s) = stats_row(&stats, player) else { continue };
             let Some(want) = s["PlayerTeamStats"][0]["Stats"]["CoreStats"]["Betrayals"].as_u64() else { continue };
@@ -1113,10 +1132,15 @@ fn betrayals_count_as_the_match_stats_do() {
 }
 
 /// Between two readings of the match clock with the same limit, the time
-/// left moves by the timer's rate: on 93% of them at least (95% on the
-/// test films; the mode's scripts can also set the time outright).
+/// left moves by the timer's rate: on 95% of them at least (98% on the test
+/// films; a minigame's scripts can also set the time mid-round). The scripts
+/// set a round's timer outright as the round starts or ends, to its limit or,
+/// counting up, to 0: a reading there says nothing of the rate (Action Sack's
+/// 18 rounds in 24 minutes give a test film 17 of them).
 #[test]
 fn the_match_clock_runs_at_its_rate() {
+    // The timer's step: 36,000 s over 16 bits.
+    const STEP: f64 = 36000.0 / 65535.0;
     let (mut intervals, mut agree) = (0usize, 0usize);
     for (_, f) in corpus() {
         for w in f.scoreboard().match_clock.windows(2) {
@@ -1125,12 +1149,15 @@ fn the_match_clock_runs_at_its_rate() {
             if a.limit != b.limit || seconds < 1.0 {
                 continue;
             }
+            if (b.left - b.limit).abs() <= STEP || (b.is_counting_up() && b.left <= STEP) {
+                continue;
+            }
             intervals += 1;
             let run = f.scoreboard().clock_at(b.tick - 1).unwrap();
             agree += usize::from((b.left - run).abs() <= 1.0 + 0.02 * seconds);
         }
     }
-    assert!(corpus().is_empty() || agree * 100 >= intervals * 93, "{agree} of {intervals}");
+    assert!(corpus().is_empty() || agree * 100 >= intervals * 95, "{agree} of {intervals}");
 }
 
 /// The scoreboard's rows at a tick hold what each value read alone at that
@@ -1246,8 +1273,7 @@ fn deaths_at_the_match_end_are_not_scored() {
 fn team_scores_agree_with_the_match_stats() {
     let (mut teams, mut agree) = (0usize, 0usize);
     for (dir, (name, f)) in common::film_dirs().iter().zip(corpus()) {
-        let Ok(stats) = std::fs::read(dir.join("match-metadata.json")) else { continue };
-        let stats: serde_json::Value = serde_json::from_slice(&stats).unwrap();
+        let Some(stats) = counted_stats(dir, f) else { continue };
         if f.scoreboard().changes.is_empty() {
             continue;
         }
