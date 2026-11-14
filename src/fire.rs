@@ -165,9 +165,7 @@ pub fn read_mapped(
                     }
                 }
                 Body::Throw { grenade, player, .. } => {
-                    let life = e.handles[0]
-                        .filter(|h| h.generation > 0)
-                        .map(|h| (h.generation as i32 - 1) * 256 + h.index as i32);
+                    let life = e.handles[0].and_then(|h| h.biped_index_slot());
                     let owner = life
                         .and_then(|s| slot_owner.get(&s))
                         .or_else(|| player.and_then(|p| by_index.get(&(player_of(p, frame as i64) as i32))));

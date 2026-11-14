@@ -81,6 +81,10 @@ pub struct Handle {
     pub index: u32,
     pub generation: u32,
     pub unit: bool,
+    /// For a biped or a vehicle, how many times the game had created its
+    /// index and generation again by the end of the frame (`recreate.rs`); 0
+    /// until a walk numbers it.
+    pub instance: u32,
 }
 
 /// First entity index of the unit range (bipeds 512-767, vehicles 768-1023).
@@ -98,20 +102,36 @@ impl Handle {
         }
     }
 
+    /// The entity in the unit range (bipeds, then vehicles) a handle of
+    /// `kind` names, if it names one: kinds 2 and 3 keep an index within
+    /// bipeds and vehicles, kind 5 within class 4.
+    pub fn unit_entity(&self, kind: u32) -> Option<u32> {
+        let e = match kind {
+            2 => UNIT_BASE + self.index,
+            3 => UNIT_BASE + 256 + self.index,
+            5 => return None,
+            _ => self.entity(),
+        };
+        (UNIT_BASE..UNIT_BASE + 512).contains(&e).then_some(e)
+    }
+
     /// The biped slot id (`(generation - 1) * 256 + index`, the per-life id
-    /// of a biped) when the handle names a biped.
+    /// of a biped, `recreate::SPAN` more for each create of its index and
+    /// generation before its own) when the handle names a biped.
     pub fn biped_slot(&self) -> Option<i32> {
-        let e = self.entity();
-        ((UNIT_BASE..UNIT_BASE + 256).contains(&e) && self.generation > 0)
-            .then(|| (self.generation as i32 - 1) * 256 + (e - UNIT_BASE) as i32)
+        crate::recreate::biped_id(self.entity(), self.generation, self.instance)
+    }
+
+    /// [`Handle::biped_slot`] of a kind-2 handle, whose index is within the
+    /// bipeds.
+    pub fn biped_index_slot(&self) -> Option<i32> {
+        crate::recreate::biped_id(UNIT_BASE + self.index, self.generation, self.instance)
     }
 
     /// The vehicle id (`(generation - 1) * 256 + index` in the vehicles' own
-    /// space) of a handle in the vehicle range.
+    /// space, as [`Handle::biped_slot`]) of a handle in the vehicle range.
     pub fn vehicle_slot(&self) -> Option<i32> {
-        let e = self.entity();
-        ((UNIT_BASE + 256..UNIT_BASE + 512).contains(&e) && self.generation > 0)
-            .then(|| (self.generation as i32 - 1) * 256 + (e - UNIT_BASE - 256) as i32)
+        crate::recreate::vehicle_id(self.entity(), self.generation, self.instance)
     }
 }
 
@@ -365,7 +385,7 @@ impl Bits<'_> {
     pub fn handle(&mut self, kind: u32) -> Handle {
         if kind == 0 {
             let index = OBJECT_BASE + self.bits(INDEX_BITS);
-            return Handle { index, generation: self.bits(2), unit: false };
+            return Handle { index, generation: self.bits(2), unit: false, instance: 0 };
         }
         let (n, unit) = match kind {
             1 => {
@@ -380,7 +400,7 @@ impl Bits<'_> {
             _ => (INDEX_BITS, false),
         };
         let index = self.bits(n);
-        Handle { index, generation: self.bits(2), unit }
+        Handle { index, generation: self.bits(2), unit, instance: 0 }
     }
     /// `[present:1]`, then a handle of `kind`.
     pub(crate) fn opt_handle(&mut self, kind: u32) -> Option<Handle> {

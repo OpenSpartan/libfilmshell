@@ -618,6 +618,7 @@ struct FirstWalk {
     attach_seen: crate::attach::Seen,
     controls: crate::owners::Controls,
     designators: crate::teams::Designators,
+    recreated: crate::recreate::Recreated,
 }
 
 impl FirstWalk {
@@ -625,7 +626,7 @@ impl FirstWalk {
         let mut w = FirstWalk::default();
         let actor_control = crate::registry::Schema::read(&film.chunks[0]).biped.actor_control;
         w.vitals_marks = Vitals::start(film, &p, level);
-        walk_shared(
+        w.recreated = walk_shared(
             film,
             p,
             &mut [
@@ -721,11 +722,14 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         attach_seen,
         controls,
         designators,
+        recreated,
     } = first;
+    // The passes from here on number what they read by it.
+    let recreated = film.recreated.get_or_init(|| recreated);
     let mut team_history: Vec<Vec<(i64, u32)>> = Vec::new();
     if let Some(p) = walk {
         crate::statlog::finish(&mut stat_log);
-        vehicle_ident.finish(&film, p);
+        vehicle_ident.finish(&film, p, recreated);
         // Teams for the players HighlightEvents doesn't give one: bots, and
         // people without records.
         let team_rows = stat_log.changes.iter().any(|c| c.kind == 1);
@@ -733,7 +737,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
         crate::teams::assign(&mut roster, &series, team_rows);
         team_history = crate::teams::history(&roster, &series);
     }
-    let vitals = walk.map(|_| Vitals::finish(vitals_marks));
+    let vitals = walk.map(|_| Vitals::finish(vitals_marks, recreated));
     let splashes = walk.map(|_| crate::splash::finish(splash_seen)).unwrap_or_default();
     let deploys = walk.map(|_| crate::deploys::finish(deploys_seen)).unwrap_or_default();
     let attachments = walk.map(|_| crate::attach::finish(attach_seen));

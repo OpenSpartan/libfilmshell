@@ -2,9 +2,10 @@
 //! creates in the tick packets, and from the snapshots for vehicles created
 //! before the film), and which vehicle each part belongs to.
 //!
-//! A vehicle id is `(generation - 1) * 256 + index - 768`, the id the vehicle
-//! updates and `unit_exit_vehicle` use (`replication`, `events::Handle::
-//! vehicle_slot`). Some vehicles are built from parts, each a vehicle tag of
+//! A vehicle id is `(generation - 1) * 256 + index - 768` (and `recreate::SPAN`
+//! more for each create of its index and generation before its own), the id
+//! the vehicle updates and `unit_exit_vehicle` use (`replication`,
+//! `events::Handle::vehicle_slot`). Some vehicles are built from parts, each a vehicle tag of
 //! its own that the vehicle's model attaches (the Falcon's side guns, the
 //! Rocket Warthog's launcher; `game::TagInfo::part_of`). A part sends no
 //! position updates, and a rider in its seat leaves the part. In the
@@ -19,15 +20,13 @@ use std::collections::HashMap;
 
 /// The registry block of vehicles.
 pub const VEHICLE: u32 = 40;
-/// The vehicles' entity indexes: the first, and the one after the last.
-const FIRST: u32 = 768;
-const END: u32 = 1024;
 /// Engine units between a part and its vehicle in a snapshot.
 const ATTACHED: f32 = 1.0;
 
-/// The vehicle id of an entity, when it is in the vehicle range.
-pub fn id(index: u32, generation: u32) -> Option<i32> {
-    ((FIRST..END).contains(&index) && generation > 0).then(|| (generation as i32 - 1) * 256 + (index - FIRST) as i32)
+/// The vehicle id of an entity, when it is in the vehicle range: its
+/// `instance` the creates of its index and generation before its own.
+pub fn id(index: u32, generation: u32, instance: u32) -> Option<i32> {
+    crate::recreate::vehicle_id(index, generation, instance)
 }
 
 fn is_part(tag: u32) -> bool {
@@ -55,8 +54,8 @@ impl Vehicles {
     /// Packet framing only (the tick packets' creates and the snapshots).
     pub fn read(film: &Film, params: Params) -> Vehicles {
         let mut v = Vehicles::default();
-        walk_shared(film, params, &mut [&mut v.reader()]);
-        v.finish(film, params);
+        let made = walk_shared(film, params, &mut [&mut v.reader()]);
+        v.finish(film, params, &made);
         v
     }
 
@@ -65,8 +64,7 @@ impl Vehicles {
     pub fn reader(&mut self) -> impl FnMut(usize, &[u8], &Payload) + '_ {
         move |i, _, p| {
             for op in &p.ops {
-                let Some(id) = id(op.index, op.generation).filter(|_| op.entity_type.is_none_or(|e| e == VEHICLE))
-                else {
+                let Some(id) = op.vehicle_id().filter(|_| op.entity_type.is_none_or(|e| e == VEHICLE)) else {
                     continue;
                 };
                 match &op.kind {
@@ -86,8 +84,9 @@ impl Vehicles {
         }
     }
 
-    /// The snapshots' vehicles and parts, after the walk.
-    pub fn finish(&mut self, film: &Film, params: Params) {
+    /// The snapshots' vehicles and parts, after the walk, told apart by
+    /// `made`, the walk's creates.
+    pub fn finish(&mut self, film: &Film, params: Params, made: &crate::recreate::Recreated) {
         let v = self;
         let ctx = snapshot::Context::new(&film.chunks[0], params, params.box_bits);
         let mut frame = 0i64;
@@ -102,7 +101,11 @@ impl Vehicles {
                 }
                 let mut here: Vec<(i32, u32, Option<[f32; 3]>)> = Vec::new();
                 for e in snapshot::entities(chunk, pk.start, pk.end, &ctx) {
-                    let Some(id) = id(e.index, e.generation).filter(|_| e.entity_type == VEHICLE) else { continue };
+                    // What was alive before the chunk's first frame.
+                    let instance = made.instance(e.index, e.generation, frame - 1);
+                    let Some(id) = id(e.index, e.generation, instance).filter(|_| e.entity_type == VEHICLE) else {
+                        continue;
+                    };
                     let Some((made, state)) = snapshot::creation(chunk, &e) else { continue };
                     v.note(id, frame, made.tag);
                     here.push((id, made.tag, snapshot::raw_position(chunk, &e, state)));

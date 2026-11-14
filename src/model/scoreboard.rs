@@ -117,7 +117,9 @@ pub struct StatChange {
     /// The new value.
     pub value: i32,
     /// The round the value is for, 0 the first. The game sends it with each
-    /// row, so a value restated for a new round is a change too.
+    /// row, so a value restated for a new round is a change too. Rounds count
+    /// in the order they're played: the game's own number can start over
+    /// (Action Sack numbers each set of its minigame rounds from 0).
     #[cfg_attr(feature = "serde", serde(default))]
     pub round: u32,
 }

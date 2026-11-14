@@ -21,7 +21,8 @@ pub struct Change {
     pub slot: u32,
     pub value: i32,
     /// The round the value is for, 0 the first: the game sends it with each
-    /// row, twice (the two counts agree on every reference film).
+    /// row, twice (the two counts agree on every reference film), and
+    /// [`finish`] counts the rounds in the order they're played.
     pub round: u32,
 }
 
@@ -184,7 +185,24 @@ pub fn reader<'a>(
 
 /// What [`reader`] leaves to do once the walk is over.
 pub fn finish(log: &mut Log) {
+    number_rounds(log);
     fix_respawn_owners(log);
+}
+
+/// The rounds in the order they're played. The game's round number can start
+/// over: Action Sack numbers each set of its minigame rounds from 0 (measured
+/// on films). Everywhere else it counts up from 0 by one, and this keeps it.
+/// The number changing is a new round.
+fn number_rounds(log: &mut Log) {
+    let Some(first) = log.changes.first() else { return };
+    let (mut sent, mut round) = (first.round, first.round);
+    for c in &mut log.changes {
+        if c.round != sent {
+            sent = c.round;
+            round += 1;
+        }
+        c.round = round;
+    }
 }
 
 /// A death and its countdown share a frame. An engine player slot is reused
@@ -219,5 +237,27 @@ fn fix_respawn_owners(log: &mut Log) {
         if free.len() == 1 {
             r.player = free[0];
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rounds(sent: &[u32]) -> Vec<u32> {
+        let mut log = Log::default();
+        for (i, &round) in sent.iter().enumerate() {
+            log.changes.push(Change { frame: i as i64, kind: 0, id: 0, slot: DEATHS_SLOT, value: 1, round });
+        }
+        finish(&mut log);
+        log.changes.iter().map(|c| c.round).collect()
+    }
+
+    #[test]
+    fn rounds_count_on_when_the_game_starts_its_number_over() {
+        assert_eq!(rounds(&[0, 0, 1, 2, 2]), [0, 0, 1, 2, 2], "a number counting up is kept");
+        // Action Sack's sets: 0 to 4, then 0 to 3.
+        assert_eq!(rounds(&[0, 1, 2, 3, 4, 0, 1, 2, 3]), [0, 1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(rounds(&[3, 0]), [3, 4], "the first round's number is kept");
     }
 }

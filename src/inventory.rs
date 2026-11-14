@@ -34,8 +34,8 @@ const UNARMED: u32 = 0x0000_7ca9;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Pickup {
     pub frame: i64,
-    /// The biped's slot id (`(generation - 1) * 256 + index`), as life
-    /// assignment keys lives.
+    /// The biped's slot id (`(generation - 1) * 256 + index`, with its
+    /// creates before, `recreate.rs`), as life assignment keys lives.
     pub slot_id: i32,
     /// Inventory slot: 0 and 1 weapons, 2 grenades, 3 equipment.
     pub slot: u32,
@@ -76,10 +76,7 @@ pub fn reader(inv: &mut Inventory) -> impl FnMut(usize, &[u8], &Payload) + '_ {
         let mut deleted: Vec<usize> = Vec::new();
         for e in p.events.iter().filter(|e| e.kind == BIPED_PICKUP) {
             let (Body::Pickup { slot, tag: Some(tag) }, Some(h)) = (e.body, e.handles[0]) else { continue };
-            if tag == UNARMED || h.generation == 0 {
-                continue;
-            }
-            let slot_id = (h.generation as i32 - 1) * 256 + h.index as i32;
+            let Some(slot_id) = h.biped_index_slot().filter(|_| tag != UNARMED) else { continue };
             inv.pickups.push(Pickup { frame, slot_id, slot, tag });
             taken.push(tag);
         }

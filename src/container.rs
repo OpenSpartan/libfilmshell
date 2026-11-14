@@ -62,6 +62,10 @@ pub struct Film {
     /// The object updates the record scan finds, kept from its first run
     /// (`replication::for_each_object_update`).
     pub(crate) object_updates: std::sync::OnceLock<Vec<crate::replication::Found>>,
+    /// The bipeds and vehicles the game created again, from the first walk
+    /// (`recreate.rs`): the passes after it number their handles and records
+    /// by it.
+    pub(crate) recreated: std::sync::OnceLock<crate::recreate::Recreated>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -105,6 +109,7 @@ impl Film {
             frames: Vec::new(),
             ticks: Vec::new(),
             object_updates: std::sync::OnceLock::new(),
+            recreated: std::sync::OnceLock::new(),
         };
         // A chunk whose walk fails falls back to markers for the whole film,
         // so a film never mixes two frame definitions.

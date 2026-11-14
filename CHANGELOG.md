@@ -43,9 +43,12 @@ packets and the model as JSON.
 - A life belongs to the player the film names as controlling it, else to the player whose death
   times in the highlights chunk it matches; none starts before its player joined or after they left.
   A player letting go of a life is a death only when the scoreboard counts one then, so a bot
-  removed to make room for a joiner doesn't die. On the test films every player's kills of enemy
-  players and deaths, the bots' included, equal the match stats' (which stop counting a player whose
-  scoreboard row a reconnect clears).
+  removed to make room for a joiner doesn't die. A biped or vehicle the game creates again under an
+  entity index and generation it used before is a new one, with an `EntityId` of its own: Action
+  Sack resets its objects at most of its minigame rounds. On the test films every player's kills of
+  enemy players and deaths, the bots' included, equal the match stats' (which stop counting a player
+  whose scoreboard row a reconnect clears, and stop at the services' match end, which an Action Sack
+  match can play on past).
 - `Player::teams` and `Player::team_at` give a player's team over the match, as the game replicates
   it: Infection moves a survivor to the infected when killed, and some minigames change teams
   between rounds.
@@ -73,10 +76,11 @@ packets and the model as JSON.
 - `Scoreboard::rows_at`: every row of the scoreboard at a tick in one pass, for a scoreboard drawn
   in playback. `Film::respawn_in`: seconds until a dead player respawns, from their respawn
   countdown.
-- The scoreboard has every value the game sends, with the round it is for (`StatChange::round`);
-  `Scoreboard::total` adds the rounds up, as the match stats do. The match clock's state is the
-  index of its rate in the game's table: `MatchClock::rate`, `is_stopped`, `is_counting_down` and
-  `is_counting_up`.
+- The scoreboard has every value the game sends, with the round it is for (`StatChange::round`),
+  counted in the order the rounds are played where the game's own number starts over (Action Sack
+  numbers each set of its minigame rounds from 0); `Scoreboard::total` adds the rounds up. The
+  match clock's state is the index of its rate in the game's table: `MatchClock::rate`,
+  `is_stopped`, `is_counting_down` and `is_counting_up`.
 - `Film::projectiles` and `Film::projectiles_at`: every projectile but thrown grenades, from where
   it was created, with the player who fired it, or who rode the vehicle or turret that did.
 

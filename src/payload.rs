@@ -112,6 +112,37 @@ pub struct EntityOp {
     pub shooter: (Option<u32>, Option<Handle>),
     /// A managed player's create: the participant it stands for.
     pub participant: Option<u32>,
+    /// For a biped or a vehicle, the creates of its index and generation
+    /// before this entry's object (`recreate.rs`).
+    pub instance: u32,
+}
+
+impl EntityOp {
+    /// The biped's id (`recreate::biped_id`), when the entry is a biped's.
+    pub fn biped_id(&self) -> Option<i32> {
+        crate::recreate::biped_id(self.index, self.generation, self.instance)
+    }
+
+    /// The vehicle's id (`recreate::vehicle_id`), when the entry is a
+    /// vehicle's.
+    pub fn vehicle_id(&self) -> Option<i32> {
+        crate::recreate::vehicle_id(self.index, self.generation, self.instance)
+    }
+
+    #[cfg(test)]
+    pub fn test(index: u32, generation: u32, kind: OpKind) -> EntityOp {
+        EntityOp {
+            at: 0,
+            index,
+            generation,
+            entity_type: None,
+            kind,
+            init: None,
+            shooter: (None, None),
+            participant: None,
+            instance: 0,
+        }
+    }
 }
 
 /// One payload as far as it could be read.
@@ -184,6 +215,8 @@ pub struct Walker {
     ahead: HashMap<u32, (u32, u32)>,
     /// The entity and the types that fit, at the last `AmbiguousEntity`.
     ambiguous: std::cell::RefCell<Option<(u32, Vec<(u32, i64)>)>>,
+    /// The bipeds and vehicles created again, as far as the walk has read.
+    pub recreated: crate::recreate::Recreated,
 }
 
 impl Walker {
@@ -197,6 +230,7 @@ impl Walker {
             types: HashMap::new(),
             ahead: HashMap::new(),
             ambiguous: Default::default(),
+            recreated: Default::default(),
         }
     }
 
@@ -305,6 +339,7 @@ impl Walker {
                 init: None,
                 shooter: shooter.get(),
                 participant: participant.get(),
+                instance: 0,
             })
         };
         match op {
@@ -539,15 +574,18 @@ fn component_list(r: &mut Bits<'_>) -> Result<Vec<u32>, Stop> {
 pub type Reader<'a> = dyn FnMut(usize, &[u8], &Payload) + 'a;
 
 /// One walk of every type-0 payload of `film`, each payload handed to every
-/// reader in turn. A walk depends only on the film and `params`, so the
-/// readers that need one share it.
-pub fn walk_shared(film: &Film, params: Params, readers: &mut [&mut Reader<'_>]) {
+/// reader in turn.
+///
+/// A walk depends only on the film and `params`, so the readers that need one
+/// share it. Returns the bipeds and vehicles the game created again.
+pub fn walk_shared(film: &Film, params: Params, readers: &mut [&mut Reader<'_>]) -> crate::recreate::Recreated {
     let mut walker = Walker::new(&film.chunks[0], params);
     for_each_payload_in(film, &mut walker, |i, c, p| {
         for r in readers.iter_mut() {
             r(i, c, p);
         }
     });
+    walker.recreated
 }
 
 /// Every type-0 payload of `film` walked in order: f(frame index, payload).
@@ -596,6 +634,7 @@ pub fn for_each_payload_in(film: &Film, walker: &mut Walker, mut f: impl FnMut(u
                 p = q;
             }
         }
+        walker.recreated.stamp(fr.index as i64, &mut p.ops, &mut p.events);
         f(fr.index, fr.chunk, &p);
     }
 }
@@ -656,8 +695,11 @@ fn resolve(walker: &mut Walker, c: &[u8], start: usize, end: usize, depth: u32) 
 }
 
 /// The event views of every type-0 payload of `film`: f(frame index, the
-/// events read), game events the game sent again left out
-/// ([`events::Resends`]). Packet framing only.
+/// events read). Packet framing only.
+///
+/// Game events the game sent again are left out ([`events::Resends`]), and
+/// handles are numbered by the bipeds and vehicles the first walk found
+/// created again.
 pub fn for_each_event_view(film: &Film, widths: impl Into<events::Layout>, mut f: impl FnMut(usize, &[Event])) {
     let widths = widths.into();
     if film.framing != crate::container::Framing::Packets {
@@ -673,6 +715,9 @@ pub fn for_each_event_view(film: &Film, widths: impl Into<events::Layout>, mut f
         let mut r = Bits { c: fr.chunk, at: 8 * fr.start as i64 + 1 };
         let _ = events::walk(&mut r, widths, &mut out);
         out.retain(|e| if let events::Body::Game(g) = &e.body { resends.fresh(fr.index, g) } else { true });
+        if let Some(made) = film.recreated.get() {
+            made.stamp_events(fr.index as i64, &mut out);
+        }
         f(fr.index, &out);
     }
 }
@@ -695,6 +740,7 @@ mod tests {
             types: HashMap::new(),
             ahead: HashMap::new(),
             ambiguous: Default::default(),
+            recreated: Default::default(),
         }
     }
 
