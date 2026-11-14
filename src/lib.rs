@@ -94,6 +94,9 @@
 //!   understood, outside the crate's semantic versioning.
 //! - [`analysis`] derives estimates the film doesn't state directly:
 //!   accuracy, weapon numbers, spawn factors.
+//! - [`map_variant`] reads a map variant, which a film doesn't carry: the
+//!   objects a map places, its spawn points for [`Hints`], and each game
+//!   mode's objectives.
 //!
 //! # Time and space
 //!
@@ -159,8 +162,8 @@
 //!   `format` types; [`Rule`] only serializes), the
 //!   [`analysis`] results ([`analysis::AccuracyTicks`] only serializes), the
 //!   inputs [`ChunkKind`] and
-//!   [`Hints`] with its parts, and the `game` enums and value types such as
-//!   [`game::Bounds`]. [`Film`] only serializes: as its model, each part under
+//!   [`Hints`] with its parts, the [`map_variant`] types, and the `game`
+//!   enums and value types such as [`game::Bounds`]. [`Film`] only serializes: as its model, each part under
 //!   its accessor's name. [`Chunk`], [`Error`] and the `game` catalogues'
 //!   entries ([`game::Level`], [`game::DamageEffect`] and the like) have
 //!   neither. A [`TimedEvent`] is `{"tick": 4279, "event": {"type": "kill",
@@ -187,6 +190,7 @@ mod film;
 pub mod format;
 pub mod game;
 mod hints;
+pub mod map_variant;
 mod model;
 mod tag;
 mod text;
@@ -233,6 +237,7 @@ internal!(
     assemble,
     attach,
     bits,
+    bond,
     calibrate,
     components,
     container,

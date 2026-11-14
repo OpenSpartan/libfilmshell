@@ -5,8 +5,9 @@
 //! range and impact effect, vehicles' bounds, medals, levels and their
 //! quantization boxes, the names and defaults of game variant options, the
 //! modes' event trees, the multiplayer teams' names
-//! ([`TeamId::name`](crate::TeamId::name)), and the English text of the text
-//! keys films use.
+//! ([`TeamId::name`](crate::TeamId::name)), the English text of the text
+//! keys films use, the Forge objects' names, and the items the multiplayer
+//! item identifiers stand for.
 //!
 //! Everything here is a static table compiled into the library, in the game
 //! files' engine units. Lookups by tag id are binary searches.
@@ -26,6 +27,9 @@ mod damage_data;
 pub(crate) mod events;
 #[rustfmt::skip]
 mod events_data;
+mod forge;
+#[rustfmt::skip]
+mod forge_data;
 mod items;
 #[rustfmt::skip]
 mod items_data;
@@ -49,6 +53,7 @@ mod text_data;
 
 pub use damage::{DamageAmount, DamageCause, DamageEffect, Vitality, damage_effect, spartan_vitality};
 pub use events::GameResponse;
+pub use forge::{MpItem, forge_object_name, mp_item, mp_items};
 pub use items::{
     Equipment, Grenade, Item, ObjectKind, TagInfo, Vehicle, Weapon, item, tag_info, tags, weapon_variant_name,
 };

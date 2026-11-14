@@ -38,6 +38,15 @@ cargo build --release --all-features --examples
 sh .github/examples-on-films.sh /path/to/films 4   # films four at a time
 ```
 
+The map variant tests read a checkout of film-assets, a private repository: set `FILM_ASSETS_DIR`
+to it. They read its Forge downloads (`sources/forge/<asset>/map.mvar` and `version.json`) and
+compare them with its catalogue (`sources/catalogue.json`) and objective placements
+(`objectives/`). Without the variable they check nothing.
+
+```sh
+FILM_ASSETS_DIR=/path/to/film-assets cargo test --release --all-features --test map_variants
+```
+
 ## How the format is known
 
 The game's own code is the source of truth for the format, and films verify it. A comment that

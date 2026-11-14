@@ -115,7 +115,8 @@ cargo run --release --features serde --example json -- path/to/film > film.json
 >Positions are in world units, a foot each; the game's engine unit is ten world units. On the test films every level in
 >the library's catalogue converts exactly; a film whose fields don't fit the catalogue's box (another game build) gets
 >a fitted conversion, which `Film::coordinates` names. For any other level, give the level's bounds or the map's spawn
->points with `Hints` and `Film::from_chunks_with`, or read the unconverted coordinates from
+>points with `Hints` and `Film::from_chunks_with` (`map_variant::MapVariant` reads them, and each mode's objectives, from
+>the map's `map.mvar`), or read the unconverted coordinates from
 >`Sample::raw`. A `Sample` records where a player was at a given tick, along with their aim, speed,
 >health, and shield.
 
