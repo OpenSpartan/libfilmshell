@@ -117,7 +117,7 @@ pub struct MapObject {
     /// angle is the object's [`heading`](MapObject::heading), its team the
     /// object's.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
-    pub boundary: Option<ZoneShape>,
+    pub shape: Option<ZoneShape>,
     /// Its spawn order: King of the Hill's plates give their hills' places
     /// in the rotation by it.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
@@ -327,7 +327,7 @@ fn object(e: &Struct<'_>, script: Option<&Struct<'_>>) -> MapObject {
                 _ => None,
             })
             .collect(),
-        boundary: volume(props, forward[1].atan2(forward[0])),
+        shape: volume(props, forward[1].atan2(forward[0])),
         spawn_order: base.int(BASE_SPAWN_ORDER).and_then(|v| u32::try_from(v).ok()),
         variant: default.first(DEFAULT_VARIANT).and_then(|v| v.int(0)).map(|v| StringId(v as u32)).filter(|v| v.0 != 0),
         respawn_time: default.int(DEFAULT_RESPAWN_TIME).and_then(|v| u32::try_from(v).ok()),
@@ -542,7 +542,7 @@ impl MapVariant {
                 }
             };
             let team = o.team.filter(|t| t.0 < 8);
-            let shape = o.boundary.map(|b| ZoneShape { team, ..b });
+            let shape = o.shape.map(|b| ZoneShape { team, ..b });
             if kind == ObjectiveKind::Zone && shape.is_none() {
                 continue;
             }
@@ -756,7 +756,7 @@ mod tests {
         assert_eq!(hill.variant, Some(StringId::of("default")));
         assert_eq!(hill.respawn_time, Some(45));
         assert_eq!(hill.spawn, None);
-        let shape = hill.boundary.unwrap();
+        let shape = hill.shape.unwrap();
         assert_eq!(shape.area, ZoneArea::Box { length: 25.0, width: 10.0 });
         assert_eq!((shape.top, shape.bottom, shape.angle), (15.0, 2.5, std::f64::consts::FRAC_PI_2));
         assert_eq!(hill.script_property(StringId::of("spawntime")), Some(ScriptValue::Number(30.0)));
@@ -797,7 +797,7 @@ mod tests {
             up: [0.0, 0.0, 1.0],
             team: None,
             labels: labels.iter().map(|l| StringId::of(l)).collect(),
-            boundary: None,
+            shape: None,
             spawn_order: None,
             variant: None,
             respawn_time: None,
@@ -820,10 +820,10 @@ mod tests {
         let plate = MapObject { team: Some(TeamId(9)), ..placed(2, 0.0, 160.0, &["flag_delivery"]) };
         let no_volume = placed(3, 50.0, 50.0, &["strongholds_zone"]);
         let hill_a =
-            MapObject { boundary: volume(false), ..placed(KOTH, 0.0, 0.0, &["bastion_zone", "strongholds_zone"]) };
-        let hill_b = MapObject { boundary: volume(true), ..placed(KOTH, 100.0, 0.0, &["bastion_zone"]) };
+            MapObject { shape: volume(false), ..placed(KOTH, 0.0, 0.0, &["bastion_zone", "strongholds_zone"]) };
+        let hill_b = MapObject { shape: volume(true), ..placed(KOTH, 100.0, 0.0, &["bastion_zone"]) };
         // Labelled a hill, but not a hill's object: a custom game's.
-        let banner = MapObject { boundary: volume(true), ..placed(4, 200.0, 0.0, &["bastion_zone"]) };
+        let banner = MapObject { shape: volume(true), ..placed(4, 200.0, 0.0, &["bastion_zone"]) };
         let plate_a = MapObject { spawn_order: Some(2), ..placed(5, 5.0, 0.0, &["bastion_plate"]) };
         let too_far = MapObject { spawn_order: Some(3), ..placed(5, 100.0, 45.0, &["bastion_plate"]) };
         let plate_b = MapObject { spawn_order: Some(5), ..placed(5, 98.0, 1.0, &["bastion_plate"]) };
