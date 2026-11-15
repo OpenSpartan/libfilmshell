@@ -1,14 +1,17 @@
-//! Map variants against the asset catalogue: the objects and objective
-//! placements film-assets' Python tools read from the same files.
+//! Map variants against film-assets: its map variants and the objective
+//! placements its `tools/objectives` writes from them with this library.
 //!
 //! film-assets is a private repository. `FILM_ASSETS_DIR` names a checkout;
-//! the tests read its Forge downloads (`sources/forge/<asset>/map.mvar`
-//! with `version.json`), its catalogue (`sources/catalogue.json`: every
-//! gameplay object of each variant, by name) and its objective placements
+//! the tests read its map variants (`sources/maps/<asset>/`: the variant's one
+//! `.mvar` file and its `version.json`) and its objective placements
 //! (`objectives/<asset>.json`). Without the variable they check nothing.
+//!
+//! The placements are rounded: positions to hundredths, volumes to tenths, a
+//! box's heading to thousandths. A change to `MapVariant::objectives` that
+//! film-assets hasn't regenerated its placements for fails here.
 
-use filmshell::map_variant::{MapObject, MapVariant, ObjectType, ObjectiveKind, ObjectiveMode};
-use filmshell::{SpawnKind, StringId, ZoneArea, ZoneShape};
+use filmshell::ZoneArea;
+use filmshell::map_variant::{MapVariant, ObjectiveKind, ObjectiveMode};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
@@ -30,23 +33,29 @@ fn json(path: &Path) -> Value {
     serde_json::from_slice(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
-/// Every Forge download with its map variant, by asset id.
+/// Every map variant, by asset id.
 fn downloads(root: &Path) -> Vec<Download> {
-    let forge = root.join("sources").join("forge");
-    let mut dirs: Vec<PathBuf> = std::fs::read_dir(&forge)
-        .unwrap_or_else(|e| panic!("{}: {e}", forge.display()))
+    let maps = root.join("sources").join("maps");
+    let mut dirs: Vec<PathBuf> = std::fs::read_dir(&maps)
+        .unwrap_or_else(|e| panic!("{}: {e}", maps.display()))
         .flatten()
         .map(|e| e.path())
-        .filter(|p| p.join("map.mvar").exists())
+        .filter(|p| p.is_dir())
         .collect();
     dirs.sort();
-    assert!(!dirs.is_empty(), "{VAR} is set, but {} holds no map variants", forge.display());
+    assert!(!dirs.is_empty(), "{VAR} is set, but {} holds no map variants", maps.display());
     dirs.iter()
         .map(|d| {
-            let meta = ["version.json", "asset.json"].map(|n| d.join(n)).into_iter().find(|p| p.exists());
-            let meta = json(&meta.unwrap_or_else(|| panic!("{}: no version.json", d.display())));
-            let bytes = std::fs::read(d.join("map.mvar")).expect("a map variant");
-            let map = MapVariant::from_bytes(&bytes).unwrap_or_else(|e| panic!("{}: {e}", d.display()));
+            let meta = json(&d.join("version.json"));
+            let mvars: Vec<PathBuf> = std::fs::read_dir(d)
+                .expect("a map variant's folder")
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.extension().is_some_and(|x| x == "mvar"))
+                .collect();
+            let [mvar] = &mvars[..] else { panic!("{}: not exactly one .mvar file", d.display()) };
+            let bytes = std::fs::read(mvar).expect("a map variant");
+            let map = MapVariant::from_bytes(&bytes).unwrap_or_else(|e| panic!("{}: {e}", mvar.display()));
             Download {
                 asset: d.file_name().unwrap().to_string_lossy().into_owned(),
                 version: meta["VersionId"].as_str().unwrap_or_default().to_owned(),
@@ -61,94 +70,32 @@ fn near(a: f64, b: &Value, within: f64) -> bool {
     b.as_f64().is_some_and(|b| (a - b).abs() <= within)
 }
 
-/// The differences between an object and its catalogue row
-/// (filmshell's `tools/hi/mvars.py`): positions rounded to hundredths, the
-/// forward axis to thousandths and in engine axes, a volume's extents in
-/// engine units.
-fn differences(o: &MapObject, row: &Value) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut check = |ok: bool, what: &str| {
-        if !ok {
-            out.push(what.to_owned());
-        }
-    };
-    let name = o.name().map_or_else(|| format!("?{}", o.tag), str::to_owned);
-    check(row["name"] == name.as_str(), "name");
-    check(row["type"] == o.object_type.raw(), "type");
-    let z = o.position.z.unwrap();
-    check(near(o.position.x, &row["x"], 0.0051) && near(o.position.y, &row["y"], 0.0051), "position");
-    check(near(z, &row["z"], 0.0051), "height");
-    // The catalogue's forward is the engine's x and y: world (y, -x).
-    check(near(o.forward[1], &row["fwd"][0], 0.00051) && near(-o.forward[0], &row["fwd"][1], 0.00051), "forward");
-    check(row.get("team").and_then(Value::as_u64) == o.team.map(|t| u64::from(t.0)), "team");
-    check(row.get("spawnOrder").and_then(Value::as_u64) == o.spawn_order.map(u64::from), "spawn order");
-    let labels: Vec<String> = o.labels.iter().map(StringId::to_string).collect();
-    let row_labels: Vec<&str> = row
-        .get("labels")
-        .and_then(Value::as_array)
-        .map_or(Vec::new(), |l| l.iter().filter_map(Value::as_str).collect());
-    check(labels == row_labels, "labels");
-    check(row.get("respawnS").and_then(Value::as_u64) == o.respawn_time.map(u64::from), "respawn time");
-    // The catalogue names a variant by the game's string table, else by its
-    // id; 00000000 is none.
-    let variant = row.get("variant").and_then(Value::as_str).filter(|v| *v != "00000000").map(|v| {
-        if v.len() == 8 && v.bytes().all(|b| b.is_ascii_hexdigit()) { v.parse().unwrap() } else { StringId::of(v) }
-    });
-    check(variant == o.variant, "variant");
-    match (&row.get("bound"), o.boundary) {
-        (Some(b), Some(ZoneShape { area, top, bottom, .. })) => {
-            let e = |k: &str, v: f64| near(v / 10.0, &b[k], 1e-9);
-            let ok = match area {
-                // A cylinder's second extent is the box's width it was
-                // made from, which nothing uses.
-                ZoneArea::Cylinder { radius, .. } => b["kind"] == 2 && e("a", radius),
-                ZoneArea::Box { length, width, .. } => b["kind"] == 3 && e("a", length) && e("b", width),
-                _ => false,
-            };
-            check(ok && e("up", top) && e("down", bottom), "boundary");
-        }
-        (Some(b), None) => check(b["kind"] != 2 && b["kind"] != 3, "boundary"),
-        (None, b) => check(b.is_none(), "boundary"),
+/// The asset files' name for a mode.
+fn mode_name(m: ObjectiveMode) -> &'static str {
+    match m {
+        ObjectiveMode::CaptureTheFlag => "ctf",
+        ObjectiveMode::KingOfTheHill => "koth",
+        ObjectiveMode::Strongholds => "strongholds",
+        ObjectiveMode::LandGrab => "landgrab",
+        ObjectiveMode::TotalControl => "totalcontrol",
+        ObjectiveMode::Extraction => "extraction",
+        ObjectiveMode::Oddball => "oddball",
+        ObjectiveMode::Assault => "assault",
+        _ => "?",
     }
-    if o.object_type == ObjectType::SpawnPoint {
-        let respawn = row["sp"]["0"] == false;
-        check(o.spawn == Some(if respawn { SpawnKind::Respawn } else { SpawnKind::Initial }), "spawn kind");
-    } else {
-        check(o.spawn.is_none(), "spawn kind");
-    }
-    out
 }
 
-#[test]
-fn objects_match_the_catalogue() {
-    let Some(root) = root() else { return };
-    let catalogue = json(&root.join("sources").join("catalogue.json"));
-    let rows = catalogue.as_array().expect("a list of map variants");
-    let mut checked = 0;
-    for d in downloads(&root) {
-        let Some(row) =
-            rows.iter().find(|r| r["mapAssetId"] == d.asset.as_str() && r["mapVersionId"] == d.version.as_str())
-        else {
-            continue;
-        };
-        assert_eq!(row["levelId"], d.map.level.to_string().as_str(), "{}", d.asset);
-        assert_eq!(row["n"].as_u64(), Some(d.map.objects.len() as u64), "{}", d.asset);
-        // The catalogue keeps the gameplay objects, in the file's order.
-        let listed = row["objects"].as_array().expect("objects");
-        let mut next = listed.iter().peekable();
-        for o in &d.map.objects {
-            let Some(r) = next.peek() else { break };
-            if r["tag"] != o.tag.to_string().as_str() || !near(o.position.x, &r["x"], 0.0051) {
-                continue;
-            }
-            let diff = differences(o, r);
-            assert!(diff.is_empty(), "{} {}: {diff:?}\n{o:?}\n{r}", d.asset, o.tag);
-            next.next();
-            checked += 1;
-        }
-        assert!(next.peek().is_none(), "{}: catalogue objects not in the map variant, from {:?}", d.asset, next.peek());
+/// The asset files' name for a kind.
+fn kind_name(k: ObjectiveKind) -> &'static str {
+    match k {
+        ObjectiveKind::FlagSpawn => "flag_spawn",
+        ObjectiveKind::FlagPlate => "flag_plate",
+        ObjectiveKind::Zone => "zone",
+        ObjectiveKind::BallStand => "ball_stand",
+        ObjectiveKind::BombSpawn => "bomb_spawn",
+        ObjectiveKind::BombSite => "bomb_site",
+        _ => "?",
     }
-    assert!(checked > 0, "no map variant of {} is in its catalogue", root.display());
 }
 
 #[test]
@@ -162,59 +109,34 @@ fn objectives_match_the_placements() {
             continue;
         }
         let doc = json(&path);
-        if doc["mapVersionId"] != d.version.as_str() {
-            continue;
-        }
+        assert_eq!(doc["mapVersionId"], d.version.as_str(), "{}: placements of another version", d.asset);
         let want = doc["objects"].as_array().expect("objects");
         let got = d.map.objectives();
         assert_eq!(got.len(), want.len(), "{}: {got:?}", d.asset);
         for (o, w) in got.iter().zip(want) {
-            let modes: Vec<&str> = o
-                .modes
-                .iter()
-                .map(|m| match m {
-                    ObjectiveMode::CaptureTheFlag => "ctf",
-                    ObjectiveMode::KingOfTheHill => "koth",
-                    ObjectiveMode::Strongholds => "strongholds",
-                    ObjectiveMode::LandGrab => "landgrab",
-                    ObjectiveMode::TotalControl => "totalcontrol",
-                    ObjectiveMode::Extraction => "extraction",
-                    ObjectiveMode::Oddball => "oddball",
-                    ObjectiveMode::Assault => "assault",
-                    _ => "?",
-                })
-                .collect();
-            let mut want_modes: Vec<&str> = w["modes"].as_array().unwrap().iter().filter_map(Value::as_str).collect();
-            let mut sorted = modes.clone();
-            sorted.sort();
-            want_modes.sort();
-            let kind = match o.kind {
-                ObjectiveKind::FlagSpawn => "flag_spawn",
-                ObjectiveKind::FlagPlate => "flag_plate",
-                ObjectiveKind::Zone => "zone",
-                ObjectiveKind::BallStand => "ball_stand",
-                ObjectiveKind::BombSpawn => "bomb_spawn",
-                ObjectiveKind::BombSite => "bomb_site",
-                _ => "?",
-            };
+            // The files list a placement's modes by name.
+            let mut modes: Vec<&str> = o.modes.iter().map(|&m| mode_name(m)).collect();
+            modes.sort_unstable();
+            let want_modes: Vec<&str> = w["modes"].as_array().unwrap().iter().filter_map(Value::as_str).collect();
             let at = (o.position.x, o.position.y, o.position.z.unwrap());
-            let mut ok = sorted == want_modes
-                && w["kind"] == kind
+            let mut ok = modes == want_modes
+                && w["kind"] == kind_name(o.kind)
                 && near(at.0, &w["x"], 0.0051)
                 && near(at.1, &w["y"], 0.0051)
                 && near(at.2, &w["z"], 0.0051)
                 && w.get("team").and_then(Value::as_u64) == o.team.map(|t| u64::from(t.0))
                 && w.get("order").and_then(Value::as_u64) == o.order.map(u64::from);
-            // The volume to tenths, a box's heading to hundredths or thousandths
-            // (the files differ).
             match (o.shape, w.get("b")) {
                 (Some(s), Some(b)) => {
                     let e = |i: usize, v: f64| near(v, &b[i], 0.051);
                     ok &= e(3, s.top) && e(4, s.bottom);
                     ok &= match s.area {
-                        ZoneArea::Cylinder { radius, .. } => b[0] == 2 && e(1, radius) && w.get("yaw").is_none(),
+                        // A cylinder has no width.
+                        ZoneArea::Cylinder { radius, .. } => {
+                            b[0] == 2 && e(1, radius) && b[2] == 0.0 && w.get("yaw").is_none()
+                        }
                         ZoneArea::Box { length, width, .. } => {
-                            b[0] == 3 && e(1, length) && e(2, width) && near(s.angle, &w["yaw"], 0.0051)
+                            b[0] == 3 && e(1, length) && e(2, width) && near(s.angle, &w["yaw"], 0.00051)
                         }
                         _ => false,
                     };

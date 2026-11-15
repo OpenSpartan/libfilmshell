@@ -115,16 +115,34 @@ cargo run --release --features serde --example json -- path/to/film > film.json
 >Positions are in world units, a foot each; the game's engine unit is ten world units. On the test films every level in
 >the library's catalogue converts exactly; a film whose fields don't fit the catalogue's box (another game build) gets
 >a fitted conversion, which `Film::coordinates` names. For any other level, give the level's bounds or the map's spawn
->points with `Hints` and `Film::from_chunks_with` (`map_variant::MapVariant` reads them, and each mode's objectives, from
->the map's `map.mvar`), or read the unconverted coordinates from
->`Sample::raw`. A `Sample` records where a player was at a given tick, along with their aim, speed,
->health, and shield.
+>points with `Hints` and `Film::from_chunks_with` (`MapVariant::spawn_pads` reads them from the map's `map.mvar`, below),
+>or read the unconverted coordinates from `Sample::raw`. A `Sample` records where a player was at a given tick, along
+>with their aim, speed, health, and shield.
 
 If you would like to read the raw contents of the film, `Film::raw()` exposes the layers the data
 model is built from: inflated chunks, packets, frames, each frame's events and entity updates, and
 the seek snapshots. It is mostly useful for working on the format itself; most applications you
 will build with `libfilmshell` won't need it. It comes with the `raw` feature, and
 `filmshell::format` may change in any release.
+
+## Map variants
+
+A film doesn't carry its map variant: the `map.mvar` file among a map's files on the Halo services, which places every
+object on the map. `map_variant::MapVariant::from_bytes` reads one: the level it is built on, every object with its Forge
+name, position, team, labels and volume, its spawn points for `Hints`, and each game mode's objectives (flag stands and
+plates, zones and hills, ball stands, bomb spawns and sites):
+
+```rust
+use filmshell::map_variant::MapVariant;
+
+fn print_objectives(mvar: &[u8]) -> Result<(), filmshell::Error> {
+    let map = MapVariant::from_bytes(mvar)?;
+    for o in map.objectives() {
+        println!("{:?} {:?} at {:.1}, {:.1}", o.modes, o.kind, o.position.x, o.position.y);
+    }
+    Ok(())
+}
+```
 
 ## License
 

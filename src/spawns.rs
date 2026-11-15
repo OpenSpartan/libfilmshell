@@ -16,6 +16,7 @@
 //! key's parts before the score, mode filters (labels, zones). So the model
 //! can show a pad was ruled out but not why one pad won over its equals.
 
+use crate::calibrate::WORLD_PER_ENGINE;
 use crate::types::{PlayerPath, WorldPosition};
 
 /// A spawn pad (`Spawn Point [Initial]` or `[Respawn]`), in world units, and
@@ -60,8 +61,6 @@ pub struct Model {
     pub terms: Vec<Term>,
 }
 
-/// World units per engine unit.
-const WORLD_PER_ENGINE: f64 = 10.0;
 /// A life start within this of a pad (wu) was on it.
 const PAD_WU: f64 = 2.0;
 /// Where the others are: their latest sample this many ticks before the

@@ -29,7 +29,7 @@
 //! ```
 
 use crate::bond::{self, Struct, Value};
-use crate::calibrate::WORLD_PER_ENGINE;
+use crate::calibrate::{WORLD_PER_ENGINE, engine_to_world, world_axes};
 use crate::{Error, Position, SpawnKind, SpawnPad, StringId, TagId, TeamId, ZoneArea, ZoneShape, game};
 
 // The fields, by the names the game's Bond metadata gives them.
@@ -117,7 +117,7 @@ pub struct MapObject {
     /// angle is the object's [`heading`](MapObject::heading), its team the
     /// object's.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
-    pub boundary: Option<ZoneShape>,
+    pub shape: Option<ZoneShape>,
     /// Its spawn order: King of the Hill's plates give their hills' places
     /// in the rotation by it.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
@@ -305,28 +305,20 @@ fn object(e: &Struct<'_>, script: Option<&Struct<'_>>) -> MapObject {
         let s = e.strukt(id);
         [0, 1, 2].map(|i| s.and_then(|s| s.float(i)).unwrap_or(0.0))
     };
-    // Engine (x, y, z) is world (-y, x, z), ten times as long.
-    let world = |v: [f64; 3]| [-v[1], v[0], v[2]];
-    let p = v3(ENT_POSITION);
+    let [x, y, z] = engine_to_world(v3(ENT_POSITION));
     let object_type = ObjectType::from_raw(e.int(ENT_TYPE).and_then(|t| u8::try_from(t).ok()).unwrap_or(0));
     let empty = Struct::default();
     let props = e.strukt(ENT_PROPERTIES).unwrap_or(&empty);
     let base = props.first(SLOT_BASE).unwrap_or(&empty);
     let default = props.first(SLOT_DEFAULT).unwrap_or(&empty);
-    let forward = world(v3(ENT_FORWARD));
-    let team = base.int(BASE_TEAM).and_then(|t| u8::try_from(t).ok()).map(TeamId);
-    let heading = forward[1].atan2(forward[0]);
+    let forward = world_axes(v3(ENT_FORWARD));
     MapObject {
         tag: TagId(e.int(ENT_TAG).unwrap_or(0) as u32),
         object_type,
-        position: Position {
-            x: -p[1] * WORLD_PER_ENGINE,
-            y: p[0] * WORLD_PER_ENGINE,
-            z: Some(p[2] * WORLD_PER_ENGINE),
-        },
+        position: Position { x, y, z: Some(z) },
         forward,
-        up: world(v3(ENT_UP)),
-        team,
+        up: world_axes(v3(ENT_UP)),
+        team: team(base),
         labels: base
             .list(BASE_LABELS)
             .iter()
@@ -335,7 +327,7 @@ fn object(e: &Struct<'_>, script: Option<&Struct<'_>>) -> MapObject {
                 _ => None,
             })
             .collect(),
-        boundary: boundary(base).map(|(area, top, bottom)| ZoneShape { area, top, bottom, angle: heading, team }),
+        shape: volume(props, forward[1].atan2(forward[0])),
         spawn_order: base.int(BASE_SPAWN_ORDER).and_then(|v| u32::try_from(v).ok()),
         variant: default.first(DEFAULT_VARIANT).and_then(|v| v.int(0)).map(|v| StringId(v as u32)).filter(|v| v.0 != 0),
         respawn_time: default.int(DEFAULT_RESPAWN_TIME).and_then(|v| u32::try_from(v).ok()),
@@ -349,13 +341,20 @@ fn object(e: &Struct<'_>, script: Option<&Struct<'_>>) -> MapObject {
     }
 }
 
-/// The volume an object's `BaseProperties` give it, in world units: the
-/// ground it covers, its height above its centre and its depth below. None
-/// for a shape other than a cylinder or a box.
+/// The team an object's `BaseProperties` give it.
+fn team(base: &Struct<'_>) -> Option<TeamId> {
+    base.int(BASE_TEAM).and_then(|t| u8::try_from(t).ok()).map(TeamId)
+}
+
+/// The volume an object's properties (its `PropertyStorage`) give it, in
+/// world units, its forward axis at `angle`, with the object's team: what it
+/// covers, its height above its centre and its depth below. None for a shape
+/// other than a cylinder or a box.
 ///
 /// A film carries the same struct for a zone it places, so its zones read
 /// their shapes with this too.
-pub(crate) fn boundary(base: &Struct<'_>) -> Option<(ZoneArea, f64, f64)> {
+pub(crate) fn volume(properties: &Struct<'_>, angle: f64) -> Option<ZoneShape> {
+    let base = properties.first(SLOT_BASE)?;
     let b = base.first(BASE_BOUNDARY)?;
     let [a, w, top, bottom] =
         BOUNDARY_EXTENTS.map(|id| b.int(id).map_or(0.0, |v| v as f64 / 65536.0 * WORLD_PER_ENGINE));
@@ -364,7 +363,7 @@ pub(crate) fn boundary(base: &Struct<'_>) -> Option<(ZoneArea, f64, f64)> {
         3 => ZoneArea::Box { length: a, width: w },
         _ => return None,
     };
-    Some((area, top, bottom))
+    Some(ZoneShape { area, top, bottom, angle, team: team(base) })
 }
 
 /// A `ValueCollection`'s properties: its flags, numbers, string ids and
@@ -543,7 +542,7 @@ impl MapVariant {
                 }
             };
             let team = o.team.filter(|t| t.0 < 8);
-            let shape = o.boundary.map(|b| ZoneShape { team, ..b });
+            let shape = o.shape.map(|b| ZoneShape { team, ..b });
             if kind == ObjectiveKind::Zone && shape.is_none() {
                 continue;
             }
@@ -757,7 +756,7 @@ mod tests {
         assert_eq!(hill.variant, Some(StringId::of("default")));
         assert_eq!(hill.respawn_time, Some(45));
         assert_eq!(hill.spawn, None);
-        let shape = hill.boundary.unwrap();
+        let shape = hill.shape.unwrap();
         assert_eq!(shape.area, ZoneArea::Box { length: 25.0, width: 10.0 });
         assert_eq!((shape.top, shape.bottom, shape.angle), (15.0, 2.5, std::f64::consts::FRAC_PI_2));
         assert_eq!(hill.script_property(StringId::of("spawntime")), Some(ScriptValue::Number(30.0)));
@@ -798,7 +797,7 @@ mod tests {
             up: [0.0, 0.0, 1.0],
             team: None,
             labels: labels.iter().map(|l| StringId::of(l)).collect(),
-            boundary: None,
+            shape: None,
             spawn_order: None,
             variant: None,
             respawn_time: None,
@@ -821,10 +820,10 @@ mod tests {
         let plate = MapObject { team: Some(TeamId(9)), ..placed(2, 0.0, 160.0, &["flag_delivery"]) };
         let no_volume = placed(3, 50.0, 50.0, &["strongholds_zone"]);
         let hill_a =
-            MapObject { boundary: volume(false), ..placed(KOTH, 0.0, 0.0, &["bastion_zone", "strongholds_zone"]) };
-        let hill_b = MapObject { boundary: volume(true), ..placed(KOTH, 100.0, 0.0, &["bastion_zone"]) };
+            MapObject { shape: volume(false), ..placed(KOTH, 0.0, 0.0, &["bastion_zone", "strongholds_zone"]) };
+        let hill_b = MapObject { shape: volume(true), ..placed(KOTH, 100.0, 0.0, &["bastion_zone"]) };
         // Labelled a hill, but not a hill's object: a custom game's.
-        let banner = MapObject { boundary: volume(true), ..placed(4, 200.0, 0.0, &["bastion_zone"]) };
+        let banner = MapObject { shape: volume(true), ..placed(4, 200.0, 0.0, &["bastion_zone"]) };
         let plate_a = MapObject { spawn_order: Some(2), ..placed(5, 5.0, 0.0, &["bastion_plate"]) };
         let too_far = MapObject { spawn_order: Some(3), ..placed(5, 100.0, 45.0, &["bastion_plate"]) };
         let plate_b = MapObject { spawn_order: Some(5), ..placed(5, 98.0, 1.0, &["bastion_plate"]) };
