@@ -1,5 +1,6 @@
-//! Bond Compact Binary v2, the encoding of map variants and of the
-//! multiplayer properties a film carries for a placed object.
+//! Bond Compact Binary v2, the encoding of map variants, of the game variant
+//! a film's chunk 0 carries, and of the multiplayer properties a film carries
+//! for a placed object.
 //!
 //! A struct is its length in bytes (ULEB128), then its fields, each a byte
 //! with the type in the low five bits and the id in the high three (6: the id
@@ -118,6 +119,13 @@ pub fn read(bytes: &[u8]) -> Result<Struct<'_>, usize> {
 pub fn fields(bytes: &[u8]) -> Result<Struct<'_>, usize> {
     let mut r = Reader { b: bytes, p: 0 };
     r.body(bytes.len(), 0).ok_or(r.p)
+}
+
+/// The ULEB128 number `bytes` start with, and how many bytes it takes.
+pub fn uleb(bytes: &[u8]) -> Option<(u64, usize)> {
+    let mut r = Reader { b: bytes, p: 0 };
+    let v = r.uleb()?;
+    Some((v, r.p))
 }
 
 struct Reader<'a> {

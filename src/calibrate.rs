@@ -453,6 +453,19 @@ fn window_to_calibration(f: &WindowCalibration, source: CalibSource, st: Option<
 
 /// World units per engine unit.
 pub(crate) const WORLD_PER_ENGINE: f64 = 10.0;
+
+/// A direction in engine axes in world axes: world x is engine -y, world y
+/// engine x, z up in both.
+pub(crate) fn world_axes(v: [f64; 3]) -> [f64; 3] {
+    [-v[1], v[0], v[2]]
+}
+
+/// A position in engine units in world units: world x is `-10 * y`, world y
+/// `10 * x`, world z `10 * z`.
+pub(crate) fn engine_to_world(v: [f64; 3]) -> [f64; 3] {
+    world_axes(v).map(|c| c * WORLD_PER_ENGINE)
+}
+
 /// Whether a quantized value converts to the middle of its step rather than
 /// its start.
 const MID_STEP: bool = true;

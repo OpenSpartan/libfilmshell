@@ -1,10 +1,13 @@
 //! The game variant as the film carries it: chunk 0 holds it as Bond Compact
-//! Binary at a bit offset. Its strings are one blob, NUL-separated, 18
+//! Binary at a bit offset, read with the crate's Bond reader once shifted onto
+//! byte boundaries (`aligned`). Its strings are one blob, NUL-separated, 18
 //! languages per string with English first: the name, the description,
 //! score text, then the scoreboard's labels in slot order.
 
+use crate::bond::{self, Struct, Value};
+
 /// Where the variant's structures start in chunk 0.
-const START: usize = 0xce680;
+pub(crate) const START: usize = 0xce680;
 /// Entries per string: one per language.
 const LANGUAGES: usize = 18;
 /// The slot after the fixed labels, where a mode's own labels start. One
@@ -39,7 +42,7 @@ const LOADOUT_WEAPON: &[u32] = &[1, 6, 1, 1, 0, 0];
 const LOADOUT_RANDOM: &[u32] = &[1, 6, 1, 1, 2];
 const LOADOUT_EQUIPMENT: &[u32] = &[1, 6, 1, 2, 0, 0];
 /// More of the options, each named by the game's Bond writer for its field.
-/// A field at its default isn't written. Floats are in thousandths (`value`).
+/// A field at its default isn't written. Floats are in thousandths (`walk`).
 const RULES: &[(&[u32], &str)] = &[
     (&[1, 0, 1, 6], "droppedWeaponsSeconds"),
     (&[1, 0, 4, 2], "botsTeam1"),
@@ -114,7 +117,7 @@ pub struct Variant {
 
 pub use crate::game::OptionValue;
 
-/// An option's 8 bytes (packed little-endian by `value`): the value in the
+/// An option's 8 bytes (packed little-endian by `walk`): the value in the
 /// first four, the type in the fifth; the last three vary for equal values.
 fn option_value(raw: i64) -> Option<OptionValue> {
     let b = raw.to_le_bytes();
@@ -128,134 +131,37 @@ fn option_value(raw: i64) -> Option<OptionValue> {
     }
 }
 
-fn varint(b: &[u8], p: &mut usize) -> Option<u64> {
-    let (mut v, mut s) = (0u64, 0);
-    loop {
-        let x = *b.get(*p)?;
-        *p += 1;
-        v |= ((x & 127) as u64) << s;
-        s += 7;
-        if x < 128 {
-            return Some(v);
-        }
-        if s > 63 {
-            return None;
-        }
+/// Calls `f` on every number in `s` with the path of field ids to it:
+/// integers and flags as they are, floats in thousandths, and a list of 8
+/// bytes (an option's value) as one little-endian integer. A list's elements,
+/// and a map's keys and values, take the path of the field that holds them.
+fn walk(s: &Struct<'_>, path: &mut Vec<u32>, f: &mut impl FnMut(&[u32], i64)) {
+    for (id, v) in &s.fields {
+        path.push(u32::from(*id));
+        walk_value(v, path, f);
+        path.pop();
     }
 }
 
-/// How deep values may nest: real variants nest a few levels.
-const MAX_DEPTH: u32 = 32;
-
-/// Moves `p` on by `n` bytes, which must lie within `b`.
-fn advance(b: &[u8], p: &mut usize, n: u64) -> Option<()> {
-    *p = p.checked_add(usize::try_from(n).ok()?).filter(|&e| e <= b.len())?;
-    Some(())
-}
-
-/// Read a Bond Compact Binary v2 value of type `t` at `p`, `depth` levels
-/// down, calling `f` on each integer with the path of field ids to it.
-fn nested(
-    b: &[u8],
-    p: &mut usize,
-    t: u8,
-    path: &mut Vec<u32>,
-    f: &mut impl FnMut(&[u32], i64),
-    depth: u32,
-) -> Option<()> {
-    if depth > MAX_DEPTH {
-        return None;
-    }
-    let zig = |v: u64| (v >> 1) as i64 ^ -((v & 1) as i64);
-    match t {
-        // bool, uint8, int8
-        2 | 3 | 14 => {
-            let v = *b.get(*p)? as i8 as i64;
-            *p += 1;
-            f(path, v);
-        }
-        4..=6 => {
-            let v = varint(b, p)?;
-            f(path, v as i64);
-        }
-        15..=17 => {
-            let v = varint(b, p)?;
-            f(path, zig(v));
-        }
-        7 => {
-            let v = f32::from_le_bytes(b.get(*p..*p + 4)?.try_into().ok()?);
-            *p += 4;
-            f(path, (v as f64 * 1000.0).round() as i64);
-        }
-        8 => advance(b, p, 8)?,
-        9 => {
-            let n = varint(b, p)?;
-            advance(b, p, n)?;
-        }
-        18 => {
-            let n = varint(b, p)?;
-            advance(b, p, n.checked_mul(2)?)?;
-        }
-        10 => {
-            let n = varint(b, p)?;
-            let mut end = *p;
-            advance(b, &mut end, n)?;
-            fields(b, p, path, f, depth + 1)?;
-            *p = end;
-        }
-        11 | 12 => {
-            let x = *b.get(*p)?;
-            *p += 1;
-            let n = if x >> 5 == 0 { varint(b, p)? } else { (x >> 5) as u64 - 1 };
-            if x & 31 == 3 {
-                // A byte list: the string blob, the script list, or an
-                // option's 8 bytes, which are passed on as one integer.
-                if n == 8 {
-                    f(path, i64::from_le_bytes(b.get(*p..*p + 8)?.try_into().ok()?));
-                }
-                advance(b, p, n)?;
-                return Some(());
-            }
-            for _ in 0..n {
-                nested(b, p, x & 31, path, f, depth + 1)?;
+fn walk_value(v: &Value<'_>, path: &mut Vec<u32>, f: &mut impl FnMut(&[u32], i64)) {
+    match v {
+        Value::Bool(b) => f(path, i64::from(*b)),
+        Value::Int(x) => f(path, *x),
+        Value::Float(x) => f(path, (x * 1000.0).round() as i64),
+        Value::Bytes(b) => {
+            if let Ok(b) = <[u8; 8]>::try_from(*b) {
+                f(path, i64::from_le_bytes(b));
             }
         }
-        13 => {
-            let (kt, vt) = (*b.get(*p)?, *b.get(*p + 1)?);
-            *p += 2;
-            for _ in 0..varint(b, p)? {
-                nested(b, p, kt, path, f, depth + 1)?;
-                nested(b, p, vt, path, f, depth + 1)?;
+        Value::Struct(s) => walk(s, path, f),
+        Value::List(l) => l.iter().for_each(|v| walk_value(v, path, f)),
+        Value::Map(m) => {
+            for (k, v) in m {
+                walk_value(k, path, f);
+                walk_value(v, path, f);
             }
         }
-        _ => return None,
-    }
-    Some(())
-}
-
-/// A struct's fields, up to its stop.
-fn fields(b: &[u8], p: &mut usize, path: &mut Vec<u32>, f: &mut impl FnMut(&[u32], i64), depth: u32) -> Option<()> {
-    loop {
-        let h = *b.get(*p)?;
-        *p += 1;
-        let (t, mut id) = (h & 31, (h >> 5) as u32);
-        if id == 6 {
-            id = *b.get(*p)? as u32;
-            *p += 1;
-        } else if id == 7 {
-            id = *b.get(*p)? as u32 | (*b.get(*p + 1)? as u32) << 8;
-            *p += 2;
-        }
-        match t {
-            0 => return Some(()),
-            1 => continue,
-            _ => {
-                path.push(id);
-                let r = nested(b, p, t, path, f, depth);
-                path.pop();
-                r?;
-            }
-        }
+        Value::Str(_) | Value::WStr(_) => {}
     }
 }
 
@@ -266,8 +172,8 @@ fn header_start(b: &[u8], end: usize) -> Option<usize> {
         if b[s] != 0x0a {
             return None;
         }
-        let mut q = s + 1;
-        let len = varint(b, &mut q)?;
+        let (len, n) = bond::uleb(&b[s + 1..])?;
+        let q = s + 1 + n;
         (q as u64 + len == end as u64).then_some(q)
     })
 }
@@ -275,6 +181,33 @@ fn header_start(b: &[u8], end: usize) -> Option<usize> {
 fn shifted(r: &[u8], s: u32) -> Vec<u8> {
     let at = |i: usize| r.get(i).copied().unwrap_or(0) as u32;
     (0..r.len()).map(|i| (((at(i) << 8 | at(i + 1)) << s) >> 8) as u8).collect()
+}
+
+/// `region`, from `START`, shifted by the bits that put the variant's Bond
+/// data on byte boundaries (the shift at which `ANCHOR` reads), and where
+/// the anchor is.
+pub(crate) fn aligned(region: &[u8]) -> Option<(Vec<u8>, usize)> {
+    (0..8).find_map(|s| {
+        let b = shifted(region, s);
+        let at = b.windows(ANCHOR.len()).position(|w| w == ANCHOR)?;
+        Some((b, at))
+    })
+}
+
+/// Where the path that closes the header struct is in aligned bytes.
+fn mode_path(b: &[u8]) -> Option<usize> {
+    b.windows(MODE_PATH.len()).position(|w| w == MODE_PATH)
+}
+
+/// Past the path at `at` and its NUL: where `BaseVariantData`'s fields
+/// start.
+fn past_path(b: &[u8], at: usize) -> Option<usize> {
+    Some(at + b[at..].iter().position(|&c| c == 0)? + 1)
+}
+
+/// Where `BaseVariantData`'s fields start in aligned bytes.
+pub(crate) fn settings_start(b: &[u8]) -> Option<usize> {
+    past_path(b, mode_path(b)?)
 }
 
 /// The blob's first entry, after the varint that gives its length: the
@@ -303,12 +236,7 @@ fn clean(b: &[u8]) -> bool {
 }
 
 pub fn read(chunk0: &[u8]) -> Option<Variant> {
-    let r = chunk0.get(START..)?;
-    let (b, at) = (0..8).find_map(|s| {
-        let b = shifted(r, s);
-        let at = b.windows(ANCHOR.len()).position(|w| w == ANCHOR)?;
-        Some((b, at))
-    })?;
+    let (b, at) = aligned(chunk0.get(START..)?)?;
     // Back to the blob's first entry far enough for the name, forward past
     // the labels.
     let span = 0x8000;
@@ -339,15 +267,17 @@ pub fn read(chunk0: &[u8]) -> Option<Variant> {
     let description = parts.get(first + LANGUAGES).and_then(|p| text(p)).unwrap_or_default();
     let mut v = Variant { name, description, stats, ..Variant::default() };
     // The settings struct follows the header struct's path and stop.
-    if let Some(at) = b.windows(MODE_PATH.len()).position(|w| w == MODE_PATH) {
-        let mut p = at + b[at..].iter().position(|&c| c == 0)? + 1;
-        if let Some(mut q) = header_start(&b, p) {
+    if let Some(at) = mode_path(&b) {
+        let p = past_path(&b, at)?;
+        if let Some(q) = header_start(&b, p) {
             let mut icon = 0;
-            let _ = fields(&b, &mut q, &mut Vec::new(), &mut |path: &[u32], x: i64| {
-                if path == ICON_INDEX {
-                    icon = x;
-                }
-            }, 0);
+            if let Ok(header) = bond::fields(&b[q..p]) {
+                walk(&header, &mut Vec::new(), &mut |path: &[u32], x: i64| {
+                    if path == ICON_INDEX {
+                        icon = x;
+                    }
+                });
+            }
             v.icon = u8::try_from(icon).ok();
         }
         let (mut last_chance_on, mut last_chance) = (false, None);
@@ -393,8 +323,9 @@ pub fn read(chunk0: &[u8]) -> Option<Variant> {
                 v.equipment = Some(x as u32);
             }
         };
-        // The fields past the settings aren't all read: a stop there changes nothing.
-        let _ = fields(&b, &mut p, &mut Vec::new(), &mut f, 0);
+        if let Ok(settings) = bond::fields(&b[p..]) {
+            walk(&settings, &mut Vec::new(), &mut f);
+        }
         options.sort_by_key(|o: &(u32, OptionValue)| o.0);
         options.dedup_by_key(|o| o.0);
         v.options = options;
@@ -408,18 +339,13 @@ pub fn read(chunk0: &[u8]) -> Option<Variant> {
     Some(v)
 }
 
-/// Every integer of the settings struct, with its path of field ids, for
+/// Every number of the settings struct, with its path of field ids, for
 /// surveys.
 #[cfg(feature = "research")]
 pub fn settings(chunk0: &[u8]) -> Vec<(Vec<u32>, i64)> {
     let mut out = Vec::new();
-    let Some(r) = chunk0.get(START..) else { return out };
-    let Some(b) = (0..8).map(|s| shifted(r, s)).find(|b| b.windows(ANCHOR.len()).any(|w| w == ANCHOR)) else {
-        return out;
-    };
-    let Some(at) = b.windows(MODE_PATH.len()).position(|w| w == MODE_PATH) else { return out };
-    let Some(end) = b[at..].iter().position(|&c| c == 0) else { return out };
-    let mut p = at + end + 1;
-    let _ = fields(&b, &mut p, &mut Vec::new(), &mut |path: &[u32], x: i64| out.push((path.to_vec(), x)), 0);
+    let Some((b, _)) = chunk0.get(START..).and_then(aligned) else { return out };
+    let Some(settings) = settings_start(&b).and_then(|p| bond::fields(&b[p..]).ok()) else { return out };
+    walk(&settings, &mut Vec::new(), &mut |path: &[u32], x: i64| out.push((path.to_vec(), x)));
     out
 }

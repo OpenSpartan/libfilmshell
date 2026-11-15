@@ -27,6 +27,7 @@
 use crate::container::Film;
 use crate::events::{Body, Layout, Value};
 use crate::payload::for_each_event_view;
+use crate::ZoneShape;
 use std::collections::BTreeMap;
 
 /// Event kinds, as serialized.
@@ -389,23 +390,6 @@ fn team_of_clauses(clauses: &[(u32, bool, u32)]) -> Option<i32> {
     clauses.iter().find(|c| c.0 == 3 && !c.1).and_then(|c| (c.2 > 0).then(|| c.2 as i32 - 1))
 }
 
-/// A zone's shape in world units.
-///
-/// A box (`a` its full extent along its forward axis, `b` along its right) or a
-/// cylinder (`a` its radius), `angle` the world direction of its forward axis
-/// (radians from +X), the extents above and below its centre, and the team the
-/// map gives it.
-#[derive(Clone, Copy, Debug, PartialEq, Default)]
-pub struct ZoneShape {
-    pub cylinder: bool,
-    pub a: f64,
-    pub b: f64,
-    pub top: f64,
-    pub bottom: f64,
-    pub angle: f64,
-    pub team: Option<i32>,
-}
-
 /// A crate's multiplayer properties at bit `at`: `[0][variant:5]`, a ULEB
 /// length, then that many bytes of Bond, bit-aligned.
 fn shape_at(c: &[u8], at: i64) -> Option<ZoneShape> {
@@ -427,25 +411,9 @@ fn shape_at(c: &[u8], at: i64) -> Option<ZoneShape> {
         return None;
     }
     let bytes: Vec<u8> = (0..len).map(|_| r.bits(8) as u8).collect();
-    // A map variant's PropertyStorage: its first list, the BaseProperties,
-    // holds the volume and the team.
-    let root = crate::bond::fields(&bytes).ok()?;
-    let base = root.first(0)?;
-    let (area, top, bottom) = crate::map_variant::boundary(base)?;
-    let (cylinder, a, b) = match area {
-        crate::ZoneArea::Cylinder { radius } => (true, radius, 0.0),
-        crate::ZoneArea::Box { length, width } => (false, length, width),
-    };
-    Some(ZoneShape {
-        cylinder,
-        a,
-        b,
-        top,
-        bottom,
-        // No orientation component: forward is engine +x, world +y.
-        angle: std::f64::consts::FRAC_PI_2,
-        team: base.int(8).map(|t| t as i32),
-    })
+    // A map variant's PropertyStorage. No orientation component: forward is
+    // engine +x, world +y.
+    crate::map_variant::volume(&crate::bond::fields(&bytes).ok()?, std::f64::consts::FRAC_PI_2)
 }
 
 /// A crate's orientation at bit `at` (forward-and-up, dynamic precision):

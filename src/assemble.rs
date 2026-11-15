@@ -4,7 +4,7 @@
 
 use crate::actions;
 use crate::analysis::{AccuracyData, AnalysisData, SpawnFactor, WeaponProfile};
-use crate::calibrate::{apply_calibration, level_matches, scale_paths_to_world, Pad, WORLD_PER_ENGINE};
+use crate::calibrate::{apply_calibration, engine_to_world, level_matches, scale_paths_to_world, Pad, WORLD_PER_ENGINE};
 use crate::components::{self, Params, SlotStates};
 use crate::container::{Film as Container, Framing};
 use crate::damage::{self, Cause};
@@ -1270,7 +1270,10 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
             let team = |t: i32| u8::try_from(t).ok().map(TeamId);
             for &id in &ids {
                 let (x, y) = match (snap.get(&id), places.get(&id).copied().flatten()) {
-                    (Some(a), _) => (-WORLD_PER_ENGINE * a[1] as f64, WORLD_PER_ENGINE * a[0] as f64),
+                    (Some(a), _) => {
+                        let [x, y, _] = engine_to_world(a.map(f64::from));
+                        (x, y)
+                    }
                     (None, Some(q)) => window_to_world(q, w, c),
                     (None, None) => continue,
                 };
@@ -1291,18 +1294,7 @@ pub(crate) fn assemble(chunks: Vec<Vec<u8>>, has_highlights: bool, hints: &Hints
                     (a.owner, a.capturing, a.progress, a.contested, a.inside)
                         == (b.owner, b.capturing, b.progress, b.contested, b.inside)
                 });
-                let shape = o.shape.map(|s| ZoneShape {
-                    area: if s.cylinder {
-                        ZoneArea::Cylinder { radius: s.a }
-                    } else {
-                        ZoneArea::Box { length: s.a, width: s.b }
-                    },
-                    top: s.top,
-                    bottom: s.bottom,
-                    angle: s.angle,
-                    team: s.team.and_then(team),
-                });
-                zones_out.push(Zone { entity: id, position: Position::new(x, y), letter: o.letter, shape, states });
+                zones_out.push(Zone { entity: id, position: Position::new(x, y), letter: o.letter, shape: o.shape, states });
             }
             for e in &evs {
                 let kind = match e.kind {

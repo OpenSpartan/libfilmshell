@@ -43,14 +43,8 @@ struct Track {
 
 impl Track {
     fn object(&self, to: Option<i64>) -> Option<WorldObject> {
-        (self.seen >= MIN_SEEN).then(|| WorldObject {
-            tag: self.tag,
-            entity_type: self.entity_type,
-            x: -10.0 * self.at[1] as f64,
-            y: 10.0 * self.at[0] as f64,
-            from: self.from,
-            to,
-        })
+        let [x, y, _] = crate::calibrate::engine_to_world(self.at.map(f64::from));
+        (self.seen >= MIN_SEEN).then_some(WorldObject { tag: self.tag, entity_type: self.entity_type, x, y, from: self.from, to })
     }
 }
 
