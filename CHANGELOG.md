@@ -170,8 +170,8 @@ packets and the model as JSON.
   Strongholds', Land Grab's, Total Control's and Extraction's zones, Oddball's ball stands and
   Assault's bomb spawns and sites. One object can serve several modes; minigames' objects are left
   out.
-- On 29 map variants (Forge downloads and the variants of film bundles) every gameplay object, 6,118
-  of them, and every objective placement, 434, agree with the asset tools' Python readers.
+- On 45 map variants every gameplay object the asset tools' former Python reader listed, 10,570 of
+  them, and every objective placement it made, 676, agree with it.
 
 ### Features
 

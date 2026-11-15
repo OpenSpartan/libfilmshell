@@ -39,9 +39,10 @@ sh .github/examples-on-films.sh /path/to/films 4   # films four at a time
 ```
 
 The map variant tests read a checkout of film-assets, a private repository: set `FILM_ASSETS_DIR`
-to it. They read its Forge downloads (`sources/forge/<asset>/map.mvar` and `version.json`) and
-compare them with its catalogue (`sources/catalogue.json`) and objective placements
-(`objectives/`). Without the variable they check nothing.
+to it. They read its map variants (`sources/maps/<asset>/`: the variant's `.mvar` file and
+`version.json`) and compare their objectives with the placements film-assets writes from them with
+this library (`objectives/`), so a change to `MapVariant::objectives` fails them until film-assets
+regenerates its placements. Without the variable they check nothing.
 
 ```sh
 FILM_ASSETS_DIR=/path/to/film-assets cargo test --release --all-features --test map_variants
