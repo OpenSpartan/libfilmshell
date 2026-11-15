@@ -26,6 +26,7 @@
 
 use crate::container::Film;
 use crate::events::{Body, Layout, Value};
+use crate::navpoint::{self, Clause, StateGroup, ZoneMarks};
 use crate::payload::for_each_event_view;
 use std::collections::BTreeMap;
 
@@ -310,23 +311,9 @@ pub fn event_places(events: &[ZoneEvent]) -> BTreeMap<u32, Option<[u32; 3]>> {
 // extents above and below, in 1/65536 engine units; its orientation (crate
 // row 2) a turn about the up axis.
 
-/// The navpoint state groups read here, by string id (the `nvpt` tag's names).
-const HAS_PROGRESS: u32 = 0x0b55_6074;
-const HAS_TEXT: u32 = 0x7244_9896;
-const CONTROL_POINT: u32 = 0x2946_0f42;
-/// `has_progress`'s state while its zone is contested.
-const CONTESTED: u32 = 0x63e8_e53f;
-/// `has_text`'s state while its hill counts down to going live ("incoming"):
-/// its radial progress is the countdown, not a capture.
-const INCOMING: u32 = 0x897e_705d;
 /// Managed object, navpoint.
 const MANAGER: u32 = 10;
 const NAVPOINT: u32 = 12;
-
-/// The letter whose string id is `id`, 'A' to 'Z'.
-fn letter_of(id: u32) -> Option<char> {
-    (b'a'..=b'z').find(|&c| crate::game::murmur3(&[c]) == id).map(|c| (c - 32) as char)
-}
 
 struct Bits<'a> {
     c: &'a [u8],
@@ -384,9 +371,9 @@ fn state_group(r: &mut Bits<'_>) -> Option<(u32, Vec<(u32, bool, u32)>, u32)> {
     Some((group, clauses, state))
 }
 
-/// The first team clause's value as a team id, None for none.
-fn team_of_clauses(clauses: &[(u32, bool, u32)]) -> Option<i32> {
-    clauses.iter().find(|c| c.0 == 3 && !c.1).and_then(|c| (c.2 > 0).then(|| c.2 as i32 - 1))
+/// A filter's clauses as the navpoint module takes them.
+fn clauses(cl: &[(u32, bool, u32)]) -> Vec<Clause> {
+    cl.iter().map(|&(kind, negated, value)| Clause { kind, negated, value }).collect()
 }
 
 /// A zone's shape in world units.
@@ -593,49 +580,38 @@ pub fn objects_reader<'a>(
                         match row {
                             6 => {
                                 if let Some(cl) = filter(&mut r, true) {
-                                    s.inside = cl.iter().find(|c| c.0 == 2 && !c.1).map_or(0, |c| {
-                                        if c.2 == u32::MAX {
-                                            0
-                                        } else {
-                                            c.2
-                                        }
-                                    });
+                                    s.inside = navpoint::players(&clauses(&cl));
                                 }
                             }
                             14 => {
                                 let v = r.bits(8).saturating_sub(127).min(126);
                                 s.progress = if countdown.contains(&op.index) { 0 } else { v };
                             }
-                            20 => {
-                                if let Some((_, cl, _)) = state_group(&mut r) {
-                                    s.owner = team_of_clauses(&cl).unwrap_or(-1);
-                                }
-                            }
-                            21..=23 => match state_group(&mut r) {
-                                Some((HAS_PROGRESS, cl, st)) => {
-                                    s.capturing = team_of_clauses(&cl).unwrap_or(-1);
-                                    s.contested = st == CONTESTED;
-                                }
-                                // "incoming" marks a countdown; the second
-                                // player mask is who contests (Ranked King of
-                                // the Hill sets no contested state).
-                                Some((HAS_TEXT, cl, st)) => {
-                                    if st == INCOMING {
+                            // Group 0, then the groups read by name
+                            // (navpoint::ZoneMarks).
+                            20..=23 => {
+                                if let Some((name, cl, state)) = state_group(&mut r) {
+                                    let team = |t: i32| u8::try_from(t).ok();
+                                    let mut marks = ZoneMarks {
+                                        owner: team(s.owner),
+                                        capturing: team(s.capturing),
+                                        contested: s.contested,
+                                        countdown: false,
+                                        letter,
+                                    };
+                                    marks.read(row == 20, &StateGroup { name, state, clauses: &clauses(&cl) });
+                                    s.owner = marks.owner.map_or(-1, i32::from);
+                                    s.capturing = marks.capturing.map_or(-1, i32::from);
+                                    s.contested = marks.contested;
+                                    letter = marks.letter;
+                                    // A hill that has counted down: its
+                                    // progress is the countdown's, not a capture.
+                                    if marks.countdown {
                                         countdown.insert(op.index);
                                         s.progress = 0;
                                     }
-                                    let masks: Vec<u32> = cl.iter().filter(|c| c.0 == 2).map(|c| c.2).collect();
-                                    if masks.get(1).is_some_and(|&m| m != 0 && m != u32::MAX) {
-                                        s.contested = true;
-                                    }
                                 }
-                                Some((CONTROL_POINT, _, st)) => {
-                                    if let Some(l) = letter_of(st) {
-                                        letter = Some(l);
-                                    }
-                                }
-                                _ => {}
-                            },
+                            }
                             _ => {}
                         }
                     }

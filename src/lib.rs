@@ -192,6 +192,7 @@ pub mod game;
 mod hints;
 pub mod map_variant;
 mod model;
+pub mod navpoint;
 mod tag;
 mod text;
 

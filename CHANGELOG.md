@@ -120,6 +120,11 @@ packets and the model as JSON.
 - `Display` for `Carried`, `FlagEventKind`, `SeedEventKind` and `ZoneEventKind`: short lowercase
   names.
 - `GameVariant::icon`: the mode's icon, an index into the game's sheet of mode icons.
+- For readers of a running game as much as of films: `GameMode::from_scripts` (the mode a set of
+  script names runs), `GameMode::from_script_paths` (the mode of a game variant held in memory, by
+  the script paths it names), and the `navpoint` module: `ZoneMarks::read` reads a zone navpoint's state groups into its owner,
+  capturing team, contest, countdown and letter, and `navpoint::players` its docking filter's
+  players, as the library reads them from films.
 
 ### Game events and text
 
