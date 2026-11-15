@@ -1,6 +1,8 @@
 use crate::{Position, TagId, TeamId};
 
-/// A spawn point of the map variant, which the film doesn't carry.
+/// A spawn point of the map variant, which the film doesn't carry:
+/// [`MapVariant::spawn_pads`](crate::map_variant::MapVariant::spawn_pads)
+/// reads them from the map's `map.mvar`.
 ///
 /// Spawn points let the library fit coordinates on a level it has no box for,
 /// and explain respawns
@@ -76,17 +78,18 @@ pub struct LevelBounds {
 /// one, and explain each respawn:
 ///
 /// ```no_run
-/// use filmshell::{Chunk, Film, Hints, Position, SpawnPad};
+/// use filmshell::{Chunk, Film, Hints, map_variant::MapVariant};
 ///
 /// # let chunks: Vec<Chunk> = Vec::new();
-/// // Spawn points from the map variant, in world units.
-/// let pads = [
-///     SpawnPad::initial(Position::new(12.0, -40.5)),
-///     SpawnPad::respawn(Position::new(-30.2, 18.0)),
-/// ];
-/// let film = Film::from_chunks_with(chunks, &Hints::new().spawn_pads(pads))?;
+/// # let mvar: Vec<u8> = Vec::new();
+/// // The map variant: `map.mvar` among the map's files.
+/// let map = MapVariant::from_bytes(&mvar)?;
+/// let film = Film::from_chunks_with(chunks, &Hints::new().spawn_pads(map.spawn_pads()))?;
 /// # Ok::<(), filmshell::Error>(())
 /// ```
+///
+/// [`SpawnPad::initial`] and [`SpawnPad::respawn`] make spawn points from
+/// positions known otherwise.
 #[derive(Clone, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Hints {
@@ -101,8 +104,9 @@ impl Hints {
         Hints::default()
     }
 
-    /// The `levl` tag the map variant is built on, in place of the one the
-    /// film names.
+    /// The `levl` tag the map variant is built on
+    /// ([`MapVariant::level`](crate::map_variant::MapVariant::level)), in
+    /// place of the one the film names.
     #[must_use]
     pub fn level(mut self, level: TagId) -> Hints {
         self.level = Some(level);

@@ -166,7 +166,8 @@
 //!   enums and value types such as [`game::Bounds`]. [`Film`] only serializes: as its model, each part under
 //!   its accessor's name. [`Chunk`], [`Error`] and the `game` catalogues'
 //!   entries ([`game::Level`], [`game::DamageEffect`] and the like) have
-//!   neither. A [`TimedEvent`] is `{"tick": 4279, "event": {"type": "kill",
+//!   neither, but for [`game::TagInfo`] and [`game::MpItem`], which only
+//!   serialize. A [`TimedEvent`] is `{"tick": 4279, "event": {"type": "kill",
 //!   "victim": 3, ...}}`, enum variants are snake_case,
 //!   [`TagId`]s, [`StringId`]s, [`Xuid`]s and [`Guid`]s are strings, a
 //!   [`PlayerMask`] is a list of player ids, and empty `Option` and `Vec`
