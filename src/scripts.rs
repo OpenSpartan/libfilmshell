@@ -9,9 +9,15 @@ pub fn script_names(chunk0: &[u8]) -> BTreeSet<String> {
     for (i, b) in s.iter_mut().enumerate() {
         *b = (chunk0[i] << 3) | (chunk0[i + 1] >> 5);
     }
+    names_in(&s)
+}
+
+/// Script names `s` holds as paths (`...\oddballevents.lua`), lower-cased:
+/// a game variant held in a running game's memory names its scripts so too.
+pub fn names_in(s: &[u8]) -> BTreeSet<String> {
     let name_char = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b' ';
     let mut out = BTreeSet::new();
-    for end in (4..s.len()).filter(|&e| &s[e - 4..e] == b".lua") {
+    for end in (4..=s.len()).filter(|&e| &s[e - 4..e] == b".lua") {
         let mut start = end - 4;
         while start > 0 && name_char(s[start - 1]) {
             start -= 1;

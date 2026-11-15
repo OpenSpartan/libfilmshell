@@ -46,7 +46,10 @@ pub enum GameMode {
 }
 
 impl GameMode {
-    pub(crate) fn from_scripts(scripts: &std::collections::BTreeSet<String>) -> GameMode {
+    /// The mode the scripts named `scripts` run: file names, lower-cased
+    /// (`oddballevents.lua`). Firefight's comes first, then each mode's own
+    /// event script, Slayer's last.
+    pub fn from_scripts(scripts: &std::collections::BTreeSet<String>) -> GameMode {
         let has = |s: &str| scripts.contains(s);
         if has("firefightevents.lua") {
             return if has("fbastionevents.lua") { GameMode::FirefightKingOfTheHill } else { GameMode::Firefight };
@@ -76,6 +79,15 @@ impl GameMode {
         } else {
             GameMode::Other
         }
+    }
+
+    /// The mode of the game variant in `bytes`, by the scripts it names as
+    /// paths (`...\oddballevents.lua`): a running game holds its variant so
+    /// in memory, as a film's chunk 0 does shifted by three bits. None when
+    /// it names none (a variant not loaded yet).
+    pub fn from_script_paths(bytes: &[u8]) -> Option<GameMode> {
+        let scripts = crate::scripts::names_in(bytes);
+        (!scripts.is_empty()).then(|| GameMode::from_scripts(&scripts))
     }
 
     /// Whether players fight players (every mode but Firefight).
@@ -361,5 +373,13 @@ mod tests {
         assert_eq!(mode(&["btbstockpileevents.lua", "stockpile.lua", "bigteambattle.lua"]), GameMode::Stockpile);
         assert_eq!(mode(&["slayerevents.lua"]), GameMode::Slayer);
         assert_eq!(mode(&["pvpevents.lua"]), GameMode::Other);
+    }
+
+    #[test]
+    fn a_running_games_variant_names_its_scripts_as_paths() {
+        let held = br"..scripts\gamemodes\oddballevents.lua..scripts/global/killevents.lua..oddball.lua";
+        assert_eq!(GameMode::from_script_paths(held), Some(GameMode::Oddball));
+        assert_eq!(GameMode::from_script_paths(br"..scripts\pvpevents.lua"), Some(GameMode::Other));
+        assert_eq!(GameMode::from_script_paths(b"no paths here"), None);
     }
 }
