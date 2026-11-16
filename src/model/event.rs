@@ -932,6 +932,6 @@ pub enum HighlightKind {
     Death,
     /// The player earned the medal with this index.
     Medal(u32),
-    /// A mode-related highlight.
+    /// A mode-related highlight. (e.g. Vehicle destroyed in Slayer, Ball taken in Oddball, Zone captured in Strongholds).
     Mode,
 }
