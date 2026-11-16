@@ -932,6 +932,7 @@ pub enum HighlightKind {
     Death,
     /// The player earned the medal with this index.
     Medal(u32),
-    /// A mode event (an objective tick).
+    /// A mode-related highlight, observed for vehicle destruction in Slayer.
+    /// The decoded highlight does not identify the specific event.
     Mode,
 }

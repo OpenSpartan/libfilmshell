@@ -128,6 +128,7 @@ packets and the model as JSON.
 
 ### Game events and text
 
+- Clarify that `HighlightKind::Mode` includes vehicle destruction in Slayer.
 - `Film::game_response` says what a mode script's game event is: its response in the mode's event
   tree, with the medal, the personal score and its text, the announcer's words and whether it writes
   to the kill feed (`game::GameResponse`). On the test films each player's personal score from them
