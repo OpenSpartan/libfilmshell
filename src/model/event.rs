@@ -933,6 +933,5 @@ pub enum HighlightKind {
     /// The player earned the medal with this index.
     Medal(u32),
     /// A mode-related highlight.
-    /// The decoded highlight does not identify the specific event.
     Mode,
 }
