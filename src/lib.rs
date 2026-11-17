@@ -97,6 +97,8 @@
 //! - [`map_variant`] reads a map variant, which a film doesn't carry: the
 //!   objects a map places, its spawn points for [`Hints`], and each game
 //!   mode's objectives.
+//! - [`floor`] makes a map's floor plan from its navigation mesh: the
+//!   outline of the floor players walk, cut to where they may be.
 //!
 //! # Time and space
 //!
@@ -162,7 +164,7 @@
 //!   `format` types; [`Rule`] only serializes), the
 //!   [`analysis`] results ([`analysis::AccuracyTicks`] only serializes), the
 //!   inputs [`ChunkKind`] and
-//!   [`Hints`] with its parts, the [`map_variant`] types, and the `game`
+//!   [`Hints`] with its parts, the [`map_variant`] and [`floor`] types, and the `game`
 //!   enums and value types such as [`game::Bounds`]. [`Film`] only serializes: as its model, each part under
 //!   its accessor's name. [`Chunk`], [`Error`] and the `game` catalogues'
 //!   entries ([`game::Level`], [`game::DamageEffect`] and the like) have
@@ -187,6 +189,7 @@ pub mod analysis;
 mod chunk;
 mod error;
 mod film;
+pub mod floor;
 #[cfg(feature = "raw")]
 pub mod format;
 pub mod game;
