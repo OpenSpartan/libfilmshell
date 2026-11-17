@@ -185,11 +185,15 @@ packets and the model as JSON.
   of edges, each edge's opposite edge and face, and the mesh's `Frame`). `NavMesh::rings` gives the
   outline of the floor in world units: the boundary's rings, chained through the corners a mesh
   repeats at its seams, crumbs dropped and the rest simplified, a hole marked by its winding and
-  each ring with the heights it spans. `NavMesh::boundary` gives the rings by vertex, and how many
-  runs never closed.
+  each ring with the heights it spans. A piece of the mesh whose faces run clockwise is turned, so
+  its floor is a floor, and each hole starts at a point inside its own floor, as a viewer pairs
+  them. `NavMesh::boundary` gives the rings by vertex, the piece each bounds, and how many runs
+  never closed. `floor::plan` makes one plan of several meshes, keeping a ring repeated exactly
+  once.
 - `NavMesh::rings_within` cuts a plan to where players may be: it leaves out the faces in a kill
   volume and in no safe volume of its kind (`floor::Volume`, `floor::playable`), and the pieces of
-  the mesh away from the map's spawn points and objectives.
+  the mesh away from the map's spawn points and objectives (a piece whose middle lies outside their
+  box and that comes near none of them).
 - `Ring::rounded` gives a ring to 0.1 world units, as a plan file holds it. With `serde` a ring
   is `{"z": [lowest, highest], "hole": false, "p": [x0, y0, x1, y1, ...]}`.
 

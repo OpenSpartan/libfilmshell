@@ -28,6 +28,17 @@
 //! every storey in one plan, and [`Ring::z`] is the range of heights a ring
 //! spans, for a viewer that shows one storey at a time.
 //!
+//! A piece of the mesh (faces joined through the edges between them) has an
+//! outer ring and its holes. A piece whose faces run clockwise seen from above
+//! would bound its floor clockwise, a hole in no floor, so a piece whose
+//! largest ring runs clockwise has every ring turned. A viewer pairs a hole
+//! with the smallest outer ring holding its first point, so each hole starts
+//! at a point inside its own floor (the outer ring of its piece holding most
+//! of its points) and in no smaller one, and a hole none of whose points is
+//! in its floor cuts nothing and is left out. [`plan`] makes one plan of
+//! several meshes (a level's sections), keeping a ring repeated exactly
+//! once.
+//!
 //! A mesh baked for a Forge map covers the map's whole canvas, its floor and
 //! backdrop too. [`NavMesh::rings_within`] keeps only where players may be: it
 //! leaves out the faces in a kill volume and in no safe volume of its kind
@@ -59,7 +70,7 @@
 //! assert_eq!(rings[0].p, [0.0, 0.0, 0.0, 20.0, -20.0, 20.0, -20.0, 0.0]);
 //! ```
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 /// The Douglas-Peucker tolerance, world units: how far a simplified ring may
@@ -192,6 +203,10 @@ pub struct Boundary {
     /// should be left: a mesh whose edges meet only in part leaves a few short
     /// ones.
     pub open: usize,
+    /// The piece of the mesh each ring bounds: the kept faces joined through
+    /// the edges between them, named by the lowest face's index. A piece's
+    /// outer ring and its holes share it.
+    pub pieces: Vec<usize>,
 }
 
 /// A plan cut to where players may be ([`NavMesh::rings_within`]).
@@ -286,26 +301,32 @@ impl NavMesh {
             }
         }
         let corner: Vec<usize> = (0..vertices).map(|v| find(&mut parent, v)).collect();
-        // The boundary edges, in the order found, and by start corner.
+        // The boundary edges, in the order found, and by start corner, and
+        // the pieces the edges between kept faces join.
         let mut boundary = Vec::new();
         let mut from: HashMap<usize, Vec<usize>> = HashMap::new();
+        let mut piece: Vec<usize> = (0..self.faces.len()).collect();
+        let mut face_of = vec![0; edges];
         for (f, face) in self.faces.iter().enumerate() {
             if !kept[f] {
                 continue;
             }
             for e in self.face_edges(face) {
+                face_of[e] = f;
                 let edge = &self.edges[e];
-                if edge.start >= vertices || edge.end >= vertices {
+                let across = edge.opposite_face.filter(|&g| kept.get(g).copied().unwrap_or(false));
+                if let Some(g) = across {
+                    join(&mut piece, f, g);
+                }
+                if across.is_some() || edge.start >= vertices || edge.end >= vertices {
                     continue;
                 }
-                if edge.opposite_face.is_none_or(|g| !kept.get(g).copied().unwrap_or(false)) {
-                    from.entry(corner[edge.start]).or_default().push(e);
-                    boundary.push(e);
-                }
+                from.entry(corner[edge.start]).or_default().push(e);
+                boundary.push(e);
             }
         }
         let mut used = vec![false; edges];
-        let (mut rings, mut open) = (Vec::new(), 0);
+        let (mut rings, mut pieces, mut open) = (Vec::new(), Vec::new(), 0);
         for &e0 in &boundary {
             if used[e0] {
                 continue;
@@ -329,9 +350,10 @@ impl NavMesh {
             }
             if ring.len() >= 3 {
                 rings.push(ring);
+                pieces.push(find(&mut piece, face_of[e0]));
             }
         }
-        Boundary { rings, open }
+        Boundary { rings, open, pieces }
     }
 
     /// The plan of the whole mesh: its boundary's rings in world units,
@@ -342,13 +364,15 @@ impl NavMesh {
 
     /// The plan of the faces `keep` keeps (by face index).
     pub fn rings_where(&self, keep: impl Fn(usize) -> bool) -> Vec<Ring> {
-        self.rings_of(self.boundary(keep).rings)
+        strip(self.pieces_of(self.boundary(keep)))
     }
 
-    /// Boundary rings by vertex as a plan's rings.
-    fn rings_of(&self, boundary: Vec<Vec<usize>>) -> Vec<Ring> {
+    /// A boundary's rings as a plan's, each with its piece: crumbs dropped,
+    /// the rest simplified, a piece wound clockwise turned and each hole
+    /// started inside its own floor.
+    fn pieces_of(&self, boundary: Boundary) -> Vec<(Ring, usize)> {
         let mut out = Vec::new();
-        for ring in boundary {
+        for (ring, piece) in boundary.rings.into_iter().zip(boundary.pieces) {
             let world: Vec<[f32; 3]> = ring.iter().map(|&v| self.world(self.vertices[v])).collect();
             let points: Vec<(f64, f64)> = world.iter().map(|v| (f64::from(v[0]), f64::from(v[1]))).collect();
             let a = area(&points);
@@ -361,12 +385,10 @@ impl NavMesh {
             }
             let low = world.iter().map(|v| v[2]).fold(f32::MAX, f32::min);
             let high = world.iter().map(|v| v[2]).fold(f32::MIN, f32::max);
-            out.push(Ring {
-                z: [f64::from(low), f64::from(high)],
-                hole: a < 0.0,
-                p: p.into_iter().flat_map(|(x, y)| [x, y]).collect(),
-            });
+            out.push((Ring { z: [f64::from(low), f64::from(high)], hole: a < 0.0, p: flat(p) }, piece));
         }
+        turn_pieces(&mut out);
+        start_holes(&mut out);
         out
     }
 
@@ -377,10 +399,11 @@ impl NavMesh {
     ///
     /// A piece is a set of faces joined through the edges between them. It
     /// stays when one of its faces comes within 40 world units of an anchor,
-    /// or has its centre in the anchors' box grown by 60 across and 30 up and
-    /// down: pieces joined only by a jump or a lift stay, a canvas's floor
-    /// far below the map, its backdrop and wall tops above the highest spawn
-    /// go. With no anchors only the volumes cut the plan.
+    /// or its middle (its faces' centres, by area) is in the anchors' box
+    /// grown by 60 across and 30 up and down: pieces joined only by a jump or
+    /// a lift stay, a canvas's floor far below the map, its backdrop, wall
+    /// tops above the highest spawn and a piece reaching into the box from
+    /// far outside it go. With no anchors only the volumes cut the plan.
     pub fn rings_within(&self, volumes: &[Volume], anchors: &[[f64; 3]]) -> Within {
         let faces: Vec<(Vec<[f64; 3]>, [f64; 3])> = (0..self.faces.len()).map(|f| self.face_world(f)).collect();
         let mut keep: Vec<bool> = faces.iter().map(|(_, c)| playable(volumes, [c[0], c[1], c[2] + STANDING])).collect();
@@ -396,7 +419,7 @@ impl NavMesh {
             let range =
                 |k: usize| anchors.iter().fold((f64::MAX, f64::MIN), |(lo, hi), a| (lo.min(a[k]), hi.max(a[k])));
             let (x, y, z) = (range(0), range(1), range(2));
-            let in_play = |c: &[f64; 3]| {
+            let in_play = |c: [f64; 3]| {
                 c[0] >= x.0 - PLAY_BOX
                     && c[0] <= x.1 + PLAY_BOX
                     && c[1] >= y.0 - PLAY_BOX
@@ -404,25 +427,191 @@ impl NavMesh {
                     && c[2] >= z.0 - PLAY_HEIGHT
                     && c[2] <= z.1 + PLAY_HEIGHT
             };
-            let mut played = vec![false; faces.len()];
+            // Each piece's area, its area times its middle, and whether it
+            // comes near an anchor.
+            let mut sums: HashMap<usize, (f64, [f64; 3], bool)> = HashMap::new();
             for f in (0..faces.len()).filter(|&f| keep[f]) {
-                let p = find(&mut piece, f);
-                if !played[p]
-                    && (in_play(&faces[f].1) || anchors.iter().any(|&a| face_distance(&faces[f].0, a) <= PLAY_REACH))
-                {
-                    played[p] = true;
+                let (corners, centre) = &faces[f];
+                let a = area(&corners.iter().map(|c| (c[0], c[1])).collect::<Vec<_>>()).abs();
+                let s = sums.entry(find(&mut piece, f)).or_insert((0.0, [0.0; 3], false));
+                s.0 += a;
+                for (m, c) in s.1.iter_mut().zip(centre) {
+                    *m += a * c;
                 }
+                s.2 |= anchors.iter().any(|&p| face_distance(corners, p) <= PLAY_REACH);
             }
+            let played: HashMap<usize, bool> = sums
+                .into_iter()
+                .map(|(p, (a, moment, near))| (p, near || in_play(moment.map(|m| m / a.max(1e-9)))))
+                .collect();
             for f in 0..faces.len() {
-                if keep[f] && !played[find(&mut piece, f)] {
+                if keep[f] && !played[&find(&mut piece, f)] {
                     keep[f] = false;
                     apart += 1;
                 }
             }
         }
-        let Boundary { rings, open } = self.boundary(|f| keep[f]);
-        Within { rings: self.rings_of(rings), out_of_play, apart, open }
+        let boundary = self.boundary(|f| keep[f]);
+        let open = boundary.open;
+        Within { rings: strip(self.pieces_of(boundary)), out_of_play, apart, open }
     }
+}
+
+/// One plan of several meshes, a level's sections, each in its frame.
+///
+/// Each mesh gives its rings ([`NavMesh::rings`]), its pieces apart from the
+/// others'. A ring repeated exactly is kept once (a level can hold empty
+/// meshes, each the same square at its origin), and each hole starts inside
+/// its own floor among them all.
+pub fn plan<'a>(meshes: impl IntoIterator<Item = &'a NavMesh>) -> Vec<Ring> {
+    let mut rings: Vec<(Ring, usize)> = Vec::new();
+    for mesh in meshes {
+        let base = rings.iter().map(|(_, piece)| piece + 1).max().unwrap_or(0);
+        rings.extend(mesh.pieces_of(mesh.boundary(|_| true)).into_iter().map(|(ring, piece)| (ring, base + piece)));
+    }
+    let mut seen = HashSet::new();
+    rings.retain(|(r, _)| {
+        seen.insert((r.z.map(f64::to_bits), r.hole, r.p.iter().map(|v| v.to_bits()).collect::<Vec<_>>()))
+    });
+    start_holes(&mut rings);
+    strip(rings)
+}
+
+/// The rings without their pieces.
+fn strip(rings: Vec<(Ring, usize)>) -> Vec<Ring> {
+    rings.into_iter().map(|(ring, _)| ring).collect()
+}
+
+/// A ring's corners as points.
+fn corners(p: &[f64]) -> Vec<(f64, f64)> {
+    p.chunks_exact(2).map(|c| (c[0], c[1])).collect()
+}
+
+/// Points as a ring's corners.
+fn flat(p: Vec<(f64, f64)>) -> Vec<f64> {
+    p.into_iter().flat_map(|(x, y)| [x, y]).collect()
+}
+
+/// A piece of mesh whose faces run clockwise (seen from above) bounds its
+/// floor clockwise and its holes counter-clockwise, and its floor would read
+/// as a hole in no floor, which viewers leave out. A piece's largest ring is
+/// its outer one, so where that runs clockwise every ring of the piece is
+/// turned.
+fn turn_pieces(rings: &mut [(Ring, usize)]) {
+    let mut largest: HashMap<usize, (f64, bool)> = HashMap::new();
+    for (ring, piece) in rings.iter() {
+        let a = area(&corners(&ring.p));
+        let e = largest.entry(*piece).or_insert((0.0, false));
+        if a.abs() > e.0 {
+            *e = (a.abs(), a < 0.0);
+        }
+    }
+    for (ring, piece) in rings.iter_mut() {
+        if largest[piece].1 {
+            let mut p = corners(&ring.p);
+            p.reverse();
+            ring.p = flat(p);
+            ring.hole = !ring.hole;
+        }
+    }
+}
+
+/// A point to 0.1 world units in single precision, as a plan file holds it.
+fn tenth_point(q: (f64, f64)) -> (f64, f64) {
+    let r = |v: f64| f64::from((v as f32 * 10.0).round() / 10.0);
+    (r(q.0), r(q.1))
+}
+
+/// Whether `q` is inside the ring `p` (even-odd), as a viewer tests it.
+fn ring_has(p: &[(f64, f64)], q: (f64, f64)) -> bool {
+    let mut inside = false;
+    let mut j = p.len() - 1;
+    for i in 0..p.len() {
+        let ((xi, yi), (xj, yj)) = (p[i], p[j]);
+        if (yi > q.1) != (yj > q.1) && q.0 < (xj - xi) * (q.1 - yi) / (yj - yi) + xi {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
+}
+
+/// How far `q` is from a ring's edges.
+fn edge_distance(p: &[(f64, f64)], q: (f64, f64)) -> f64 {
+    (0..p.len()).map(|i| segment_distance(q, p[i], p[(i + 1) % p.len()])).fold(f64::MAX, f64::min)
+}
+
+/// How clear of a ring's edge a hole's first point must be to be inside or
+/// outside it beyond doubt, world units.
+const CLEAR: f64 = 0.05;
+
+/// Turns each hole to start at a point inside its own floor: a viewer pairs
+/// a hole with the smallest outer ring holding its first point, and a hole
+/// whose first point lies on its floor's edge, past it or in a smaller floor
+/// (a rooftop over it) cuts another floor or none, and its own fills in. Its
+/// floor is the outer ring of its piece that holds most of its points, at
+/// 0.1 world units as a plan file holds them. The first point clearly inside
+/// it and in no smaller outer ring starts the hole, else the middle of the
+/// first edge whose middle is (a point on the hole's outline, so its shape is
+/// the same). A hole already starting so, or with no such point, is left as
+/// it is. A hole none of whose points is in its floor cuts nothing (a pillar
+/// at the floor's edge, which the simplified edge passed inside of), and
+/// goes.
+fn start_holes(rings: &mut Vec<(Ring, usize)>) {
+    let tenths: Vec<Vec<(f64, f64)>> =
+        rings.iter().map(|(ring, _)| corners(&ring.p).into_iter().map(tenth_point).collect()).collect();
+    let areas: Vec<f64> = tenths.iter().map(|p| area(p).abs()).collect();
+    let outer: Vec<usize> = (0..rings.len()).filter(|&o| !rings[o].0.hole && !tenths[o].is_empty()).collect();
+    let mut gone = vec![false; rings.len()];
+    for h in 0..rings.len() {
+        if !rings[h].0.hole || tenths[h].is_empty() {
+            continue;
+        }
+        let points = &tenths[h];
+        let held = |o: usize| points.iter().filter(|&&q| ring_has(&tenths[o], q)).count();
+        let Some(home) = outer
+            .iter()
+            .copied()
+            .filter(|&o| rings[o].1 == rings[h].1)
+            .map(|o| (o, held(o)))
+            .filter(|&(_, n)| n > 0)
+            .max_by(|a, b| a.1.cmp(&b.1).then(areas[b.0].total_cmp(&areas[a.0])))
+            .map(|(o, _)| o)
+        else {
+            gone[h] = true;
+            continue;
+        };
+        // Inside its floor and no smaller one, clear of their edges.
+        let starts = |q: (f64, f64)| {
+            ring_has(&tenths[home], q)
+                && edge_distance(&tenths[home], q) > CLEAR
+                && outer
+                    .iter()
+                    .filter(|&&o| o != home && areas[o] <= areas[home])
+                    .all(|&o| !ring_has(&tenths[o], q) && edge_distance(&tenths[o], q) > CLEAR)
+        };
+        if starts(points[0]) {
+            continue;
+        }
+        let n = points.len();
+        if let Some(k) = (0..n).find(|&k| starts(points[k])) {
+            rings[h].0.p.rotate_left(2 * k);
+        } else if let Some(k) = (0..n).find(|&k| {
+            let (a, b) = (points[k], points[(k + 1) % n]);
+            starts(tenth_point(((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0)))
+        }) {
+            let mut p = corners(&rings[h].0.p);
+            let (a, b) = (p[k], p[(k + 1) % n]);
+            p.rotate_left(k + 1);
+            p.insert(0, ((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0));
+            rings[h].0.p = flat(p);
+        }
+    }
+    let mut k = 0;
+    rings.retain(|_| {
+        k += 1;
+        !gone[k - 1]
+    });
 }
 
 /// The shoelace area, positive counter-clockwise.
@@ -755,11 +944,80 @@ mod tests {
     }
 
     #[test]
-    fn a_clockwise_ring_is_a_hole_and_crumbs_are_dropped() {
-        let hole = mesh(&[[0.0, 0.0, 0.0], [0.0, 2.0, 0.0], [2.0, 2.0, 0.0], [2.0, 0.0, 0.0]], &[&[0, 1, 2, 3]]);
-        assert!(hole.rings()[0].hole);
+    fn a_piece_wound_clockwise_is_a_floor_and_crumbs_are_dropped() {
+        // One square, its corners clockwise seen from above: its ring runs
+        // clockwise, and the piece is turned.
+        let turned = mesh(&[[0.0, 0.0, 0.0], [0.0, 2.0, 0.0], [2.0, 2.0, 0.0], [2.0, 0.0, 0.0]], &[&[0, 1, 2, 3]]);
+        let rings = turned.rings();
+        assert_eq!(rings.len(), 1);
+        assert!(!rings[0].hole && area(&points(&rings[0])) > 0.0);
         let crumb = mesh(&[[0.0, 0.0, 0.0], [0.1, 0.0, 0.0], [0.0, 0.1, 0.0]], &[&[0, 1, 2]]);
         assert!(crumb.rings().is_empty());
+    }
+
+    fn piece(p: &[(f64, f64)], hole: bool, piece: usize) -> (Ring, usize) {
+        (Ring { z: [0.0, 0.0], hole, p: flat(p.to_vec()) }, piece)
+    }
+
+    #[test]
+    fn a_hole_starts_inside_its_own_floor() {
+        let floor = piece(&[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)], false, 0);
+        // A pillar against the floor's edge, its first point on it.
+        let pillar = piece(&[(0.0, 5.0), (3.0, 7.0), (3.0, 3.0)], true, 0);
+        // A roof of another piece over the floor's middle, smaller than the floor.
+        let roof = piece(&[(4.0, 4.0), (9.0, 4.0), (9.0, 9.0), (4.0, 9.0)], false, 1);
+        // A hole whose first point is under the roof.
+        let well = piece(&[(5.0, 5.0), (5.0, 2.0), (2.0, 2.0), (2.0, 5.0)], true, 0);
+        // A hole none of whose points is in its floor cuts nothing.
+        let past = piece(&[(12.0, 1.0), (12.0, 2.0), (11.0, 2.0)], true, 0);
+        // A hole none of whose corners will do starts at the middle of an
+        // edge: its first corner and the next on the floor's edge, the third
+        // under the roof.
+        let notch = piece(&[(0.0, 2.0), (2.0, 0.0), (6.0, 6.0)], true, 0);
+        let mut rings = vec![floor, pillar, roof, well, past, notch];
+        start_holes(&mut rings);
+        assert_eq!(rings.len(), 5);
+        assert_eq!(corners(&rings[1].0.p)[0], (3.0, 7.0));
+        assert_eq!(corners(&rings[3].0.p)[0], (5.0, 2.0));
+        assert_eq!(corners(&rings[4].0.p), [(1.0, 1.0), (2.0, 0.0), (6.0, 6.0), (0.0, 2.0)]);
+    }
+
+    #[test]
+    fn a_plan_of_several_meshes_keeps_a_repeated_ring_once() {
+        let square = mesh(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [0.0, 1.0, 0.0]], &[&[0, 1, 2, 3]]);
+        let mut apart = square.clone();
+        apart.frame = Frame { translation: [5.0, 0.0, 0.0], ..Frame::IDENTITY };
+        assert_eq!(plan([&square, &square, &square]), square.rings());
+        assert_eq!(plan([&square, &apart, &square]).len(), 2);
+        assert!(plan([]).is_empty());
+    }
+
+    #[test]
+    fn a_piece_reaching_into_the_game_from_far_outside_it_goes() {
+        // A square the spawn stands on, and apart from it a strip from far
+        // outside the anchors' box, its nearest face just inside the box.
+        let v: Vec<[f32; 3]> = vec![
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [5.0, 0.0, 0.0],
+            [5.0, 1.0, 0.0],
+            [6.2, 0.0, 0.0],
+            [6.2, 1.0, 0.0],
+            [40.0, 0.0, 0.0],
+            [40.0, 1.0, 0.0],
+        ];
+        let nav = mesh(&v, &[&[0, 1, 2, 3], &[4, 6, 7, 5], &[6, 8, 9, 7]]);
+        // World: x = -10 ey, y = 10 ex. The spawn at y 5 and the box to y 65:
+        // the strip's nearest face is 45 from the spawn, its centre (y 56) in
+        // the box, the strip's middle (y 225) far past it.
+        let spawn = [-5.0, 5.0, 0.0];
+        let within = nav.rings_within(&[], &[spawn]);
+        assert_eq!((within.rings.len(), within.apart), (1, 2));
+        // With its middle in the box, it stays.
+        let wider = nav.rings_within(&[], &[spawn, [-5.0, 300.0, 0.0]]);
+        assert_eq!((wider.rings.len(), wider.apart), (2, 0));
     }
 
     #[test]
