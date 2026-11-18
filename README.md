@@ -144,6 +144,25 @@ fn print_objectives(mvar: &[u8]) -> Result<(), filmshell::Error> {
 }
 ```
 
+## Floor plans
+
+A map viewer draws the floor players walk from the map's navigation mesh. `floor::NavMesh` holds one in plain terms
+(its vertices, its faces as runs of edges, each edge's opposite edge and face, and where the mesh sits), from a reader
+of a map's files or of a running game. `NavMesh::rings` gives its floor plan in world units: the outline of the floor
+as rings, holes and every storey included, each with the heights it spans. `NavMesh::rings_within` cuts the plan to
+where players may be, by the map's kill and safe volumes and its spawn points:
+
+```rust
+use filmshell::floor::NavMesh;
+
+fn print_plan(mesh: &NavMesh) {
+    for ring in mesh.rings() {
+        let kind = if ring.hole { "hole" } else { "floor" };
+        println!("{kind}, {} corners, z {:.1} to {:.1}", ring.p.len() / 2, ring.z[0], ring.z[1]);
+    }
+}
+```
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
