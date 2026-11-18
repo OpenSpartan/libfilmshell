@@ -932,6 +932,8 @@ pub enum HighlightKind {
     Death,
     /// The player earned the medal with this index.
     Medal(u32),
-    /// A mode event (an objective tick).
+    /// A mode-related event.
+    ///
+    /// Examples include *Warthog destroyed* in Slayer, *Ball taken* in Oddball, or *Zone captured* in Strongholds.
     Mode,
 }
